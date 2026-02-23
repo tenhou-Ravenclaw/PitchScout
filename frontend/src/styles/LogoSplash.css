@@ -15,15 +15,12 @@
 @keyframes splashOverlayFade {
   0% {
     opacity: 1;
-    pointer-events: auto;
   }
   75% {
     opacity: 1;
-    pointer-events: auto;
   }
   100% {
     opacity: 0;
-    pointer-events: none;
   }
 }
 

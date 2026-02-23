@@ -1,38 +1,34 @@
 /**
  * 【api.ts】
- * 役割：サーバー（バックエンド）と通信するための「窓口」です。
- * データの送り方（関数）や、データの形（型定義）をここにまとめています。
- * * 💡 設計図 (FRONTEND_STRUCTURE.md) に基づく改善案：
- * 現在このファイルは「モノリス（巨大な1つの塊）」になっています。
- * 将来的には「共通設定」「録音系」「楽曲系」のようにファイルを分けると管理が楽になります。
+ * 役割：サーバー（バックエンド）と通信するための「依頼書（関数）」と「データの形（型定義）」をまとめたファイルです。
+ * ここにある関数を呼び出すことで、録音データの解析や楽曲の検索が行われます。
  */
 
 import axios from "axios";
 import { supabase } from "./supabaseClient";
 
-/** サーバーからの返答を待つ最大時間（10分） */
+/** 通信のタイムアウト時間を設定（10分間待つ設定） */
 const TIMEOUT_MS = 600000; 
 
-/** * ── 共通設定 (Axios Client) ──
- * 💡 移動先案: src/lib/axios.ts
- * サーバーの住所（URL）や待ち時間を設定した「通信機」を作成します。
+/**
+ * ── 通信機 (Axios) の初期設定 ──
+ * 本番環境（Vercelなど）と開発環境（自分のPC）で、通信相手の住所（URL）を自動で切り替えます。
  */
 const API = axios.create({
-  // 本番環境（Vercel等）なら '/api'、自分のPCでテスト中なら 'http://127.0.0.1:8000' を自動で使い分けます
   baseURL: process.env.REACT_APP_API_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://127.0.0.1:8000"),
   timeout: TIMEOUT_MS,
 });
 
-/** * ── 認証の自動化 (Interceptors) ──
- * 通信をする「直前」に、ログイン情報を自動でヘッダーに付け加える仕組みです。
- * これにより、毎回ログイン情報を書かなくても「ログインが必要な機能」が使えます。
+/**
+ * ── 認証の自動化 (Interceptors) ──
+ * サーバーにリクエストを送る「直前」に、Supabaseからログイン情報を取得し、
+ * 「私はログイン済みのユーザーです」という証明（トークン）を自動でヘッダーに付与します。
  */
 API.interceptors.request.use(async (config) => {
   if (supabase) {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (token) {
-      // サーバーに対して「私はこのユーザーです」という証明書（トークン）を送ります
       config.headers.Authorization = `Bearer ${token}`;
     }
   }
@@ -40,10 +36,9 @@ API.interceptors.request.use(async (config) => {
 });
 
 // ── 型定義 (Interfaces) ───────────────────────────────────
-// TypeScriptで扱うデータの「形」を決めて、プログラムのミスを防ぎます。
-// 💡 移動先案: 各 features/ フォルダ配下の types.ts
+// サーバーとやり取りするデータの「設計図」です。どんな項目が入っているかを定義します。
 
-/** 歌唱分析の詳細スコア（総合点や安定性など） */
+/** 歌唱分析の詳細（スコアなど） */
 export interface SingingAnalysis {
   overall_score: number;
   range_score: number;
@@ -52,14 +47,14 @@ export interface SingingAnalysis {
   expression_score: number;
 }
 
-/** 声の種類（テノール、バリトンなど） */
+/** 声質の種類（バリトン、テノールなど） */
 export interface VoiceType {
   voice_type?: string;
   range_class?: string;
   description?: string;
 }
 
-/** おすすめされる楽曲のデータ形式 */
+/** おすすめ楽曲のデータ */
 export interface RecommendedSong {
   id: number;
   title: string;
@@ -71,7 +66,7 @@ export interface RecommendedSong {
   fit?: string;
 }
 
-/** 声質が似ているアーティストの情報 */
+/** 声が似ているアーティストの情報 */
 export interface SimilarArtist {
   id: number;
   name: string;
@@ -80,7 +75,7 @@ export interface SimilarArtist {
   similarity_score: number;
 }
 
-/** 一般的な楽曲のデータ形式 */
+/** 一般的な楽曲データ */
 export interface Song {
   id: number;
   artist_id: number;
@@ -105,7 +100,7 @@ export interface FavoriteArtist {
   created_at: string;
 }
 
-/** お気に入り登録された楽曲 */
+/** お気に入り楽曲の情報 */
 export interface FavoriteSong {
   favorite_id: string;
   song_id: number;
@@ -117,14 +112,17 @@ export interface FavoriteSong {
   created_at: string;
 }
 
-/** 解析結果の全体をまとめたデータ型 */
+/**
+ * 解析結果の全体像
+ * 画面表示に必要な全てのフィールドを網羅したメインのデータ形式です。
+ */
 export interface AnalysisResult {
   overall_min: string;
   overall_max: string;
   overall_min_hz: number;
   overall_max_hz: number;
 
-  // 地声（チェストボイス）の詳細
+  // 地声（チェスト）の詳細
   chest_min?: string;
   chest_max?: string;
   chest_min_hz?: number;
@@ -147,14 +145,14 @@ export interface AnalysisResult {
   error?: string;
 }
 
-/** ユーザーの音域（楽曲検索で「歌いやすさ」を判定するために使用） */
+/** ユーザーの音域データ（楽曲とのマッチング用） */
 export interface UserRange {
   chest_min_hz: number;
   chest_max_hz: number;
   falsetto_max_hz?: number;
 }
 
-/** 複数の履歴から計算された「統合音域」データ */
+/** 過去の履歴を合算した「統合音域」のデータ形式 */
 export interface IntegratedVocalRange {
   overall_min?: string;
   overall_max?: string;
@@ -168,19 +166,19 @@ export interface IntegratedVocalRange {
   falsetto_max_hz?: number;
   chest_ratio?: number;
   falsetto_ratio?: number;
-  data_count: number;
-  limit: number;
+  data_count: number;  
+  limit: number;       
   singing_analysis?: SingingAnalysis;
   voice_type?: VoiceType;
   recommended_songs?: RecommendedSong[];
   similar_artists?: SimilarArtist[];
 }
 
-// ── API 通信関数 ──────────────────────────────────────────
-// ここから下の関数を使って、実際にサーバーからデータを取ってきます。
+// ── API 関数 ──────────────────────────────────────────
+// 実際にサーバーにデータを送ったり、受け取ったりする関数群です。
 
-/** * マイク録音した音声を解析する関数 
- * 💡 移動先案: src/features/karaoke/api/
+/** * マイクで録音した音声を解析する関数 
+ *
  */
 export const analyzeVoice = async (blob: Blob, noFalsetto: boolean = false): Promise<AnalysisResult> => {
   const formData = new FormData();
@@ -190,8 +188,8 @@ export const analyzeVoice = async (blob: Blob, noFalsetto: boolean = false): Pro
   return res.data;
 };
 
-/** * アップロードされたカラオケ音源を解析する関数 
- * 💡 移動先案: src/features/karaoke/api/
+/** * アップロードした音源（カラオケなど）を解析する関数 
+ *
  */
 export const analyzeKaraoke = async (
   file: File | Blob,
@@ -205,14 +203,14 @@ export const analyzeKaraoke = async (
   return res.data;
 };
 
-/** 楽曲検索の結果を受け取るための形式 */
+/** 楽曲検索の返答形式 */
 export interface SongsResponse {
   songs: Song[];
   total: number;
 }
 
 /** * 楽曲の一覧や検索結果を取得する関数 
- * 💡 移動先案: src/features/songs/api/
+ *
  */
 export const getSongs = async (
   limit: number = 20,
@@ -222,7 +220,6 @@ export const getSongs = async (
 ): Promise<SongsResponse> => {
   const params: Record<string, any> = { limit, offset };
   if (query) params.q = query;
-  // ユーザーの音域がある場合、サーバー側で「推奨キー」を計算してもらうためにデータを送ります
   if (userRange) {
     params.chest_min_hz = userRange.chest_min_hz;
     params.chest_max_hz = userRange.chest_max_hz;
@@ -234,7 +231,7 @@ export const getSongs = async (
   return res.data;
 };
 
-/** アーティストの基本データ */
+/** アーティストの基本情報 */
 export interface Artist {
   id: number;
   name: string;
@@ -243,14 +240,14 @@ export interface Artist {
   reading: string;
 }
 
-/** アーティスト一覧の結果形式 */
+/** アーティスト一覧の返答形式 */
 export interface ArtistsResponse {
   artists: Artist[];
   total: number;
 }
 
-/** * アーティストの一覧を取得する関数（ページネーション対応） 
- * 💡 移動先案: src/features/songs/api/
+/** * アーティスト一覧をページごとに取得する関数 
+ *
  */
 export const getArtists = async (
   limit: number = 10,
@@ -263,9 +260,7 @@ export const getArtists = async (
   return res.data;
 };
 
-/** * 特定のアーティストが歌っている全楽曲を取得する関数 
- * 💡 移動先案: src/features/songs/api/
- */
+/** 特定のアーティストに紐づく楽曲を全て取得する関数 */
 export const getArtistSongs = async (
   artistId: number,
   userRange?: UserRange | null,
@@ -282,13 +277,13 @@ export const getArtistSongs = async (
   return res.data;
 };
 
-/** お気に入りアーティストのリストを取得 */
+/** 自分がお気に入りに登録したアーティスト一覧を取得する関数 */
 export const getFavoriteArtists = async (): Promise<FavoriteArtist[]> => {
   const res = await API.get<FavoriteArtist[]>("/favorite-artists");
   return res.data;
 };
 
-/** アーティストをお気に入りに追加 */
+/** アーティストをお気に入りに追加する関数 */
 export const addFavoriteArtist = async (artistId: number, artistName: string): Promise<FavoriteArtist> => {
   const res = await API.post<FavoriteArtist>("/favorite-artists", {
     artist_id: artistId,
@@ -297,39 +292,38 @@ export const addFavoriteArtist = async (artistId: number, artistName: string): P
   return res.data;
 };
 
-/** アーティストをお気に入りから削除 */
+/** アーティストをお気に入りから削除する関数 */
 export const removeFavoriteArtist = async (artistId: number): Promise<{ message: string }> => {
   const res = await API.delete<{ message: string }>(`/favorite-artists/${artistId}`);
   return res.data;
 };
 
-// ── お気に入り楽曲 API ──
-// 💡 移動先案: src/features/songs/api/
+// ── お気に入り楽曲 API ─────────────────────────────────
 
-/** お気に入り楽曲の一覧を取得（最大100件） */
+/** お気に入り楽曲の一覧を取得する関数 */
 export const getFavorites = async (limit = 100): Promise<FavoriteSong[]> => {
   const res = await API.get("/favorites", { params: { limit } });
   return res.data;
 };
 
-/** 楽曲をお気に入りに追加 */
+/** 楽曲をお気に入りに追加する関数 */
 export const addFavorite = async (songId: number) => {
   const res = await API.post("/favorites", { song_id: songId });
   return res.data;
 };
 
-/** 楽曲をお気に入りから削除 */
+/** 楽曲をお気に入りから削除する関数 */
 export const removeFavorite = async (songId: number) => {
   await API.delete(`/favorites/${songId}`);
 };
 
-/** 指定した曲がお気に入り済みかどうかをチェック */
+/** 指定した曲がお気に入り登録済みか確認する関数 */
 export const checkFavorite = async (songId: number): Promise<boolean> => {
   const res = await API.get(`/favorites/check/${songId}`);
   return res.data.is_favorite;
 };
 
-/** 1件分の分析履歴レコード */
+/** 解析履歴の1件分のデータ形式 */
 export interface AnalysisHistoryRecord {
   id: string;
   user_id: string;
@@ -342,22 +336,20 @@ export interface AnalysisHistoryRecord {
   result_json?: AnalysisResult | null;
 }
 
-/** * 過去の分析履歴をすべて取得する関数 
- * 💡 移動先案: src/features/songs/api/ (または analysis/api/)
- */
+/** 過去の全ての解析履歴を取得する関数 */
 export const getAnalysisHistory = async (limit = 50): Promise<AnalysisHistoryRecord[]> => {
   const res = await API.get<AnalysisHistoryRecord[]>("/analysis/history", { params: { limit } });
   return res.data;
 };
 
-/** 特定の履歴を削除 */
+/** 特定の解析履歴を削除する関数 */
 export const deleteAnalysisHistory = async (recordId: string): Promise<{ message: string }> => {
   const res = await API.delete(`/analysis/history/${recordId}`);
   return res.data;
 };
 
-/** * 直近の解析データを元にした「今のあなたの音域」を取得する関数 
- * 💡 移動先案: src/features/analysis/api/
+/** * 直近の履歴を元に「統合された音域」を取得する関数 
+ *
  */
 export const getIntegratedVocalRange = async (limit = 20): Promise<IntegratedVocalRange> => {
   const res = await API.get<IntegratedVocalRange>("/analysis/integrated-range", { params: { limit } });

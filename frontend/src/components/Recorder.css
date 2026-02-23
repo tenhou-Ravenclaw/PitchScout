@@ -1,52 +1,27 @@
-/**
- * 【Recorder.css】
- * 役割：録音画面（Recorder.tsx）で使用するアニメーションと特殊な装飾を定義します。
- */
-
-/* ── 録音中の円形インジケーターの回転アニメーション ── */
 @keyframes spinRing {
-  from { 
-    transform: rotate(0deg); 
-    transform-origin: center; 
-  }
-  to { 
-    transform: rotate(360deg); 
-    transform-origin: center; 
-  }
+  from { transform: rotate(0deg); transform-origin: center; }
+  to { transform: rotate(360deg); transform-origin: center; }
 }
 
-/* ── 停止ボタンの周りの光る（パルス）アニメーション ──
-   影を大きくしたり小さくしたりして、録音中であることを強調します。
-*/
 @keyframes pulseShadow {
-  0% { 
-    box-shadow: 0 0 20px rgba(232,121,249,0.4), inset 0 0 10px rgba(0,0,0,0.5); 
-  }
-  50% { 
-    box-shadow: 0 0 50px rgba(232,121,249,0.8), inset 0 0 10px rgba(0,0,0,0.5); 
-  }
-  100% { 
-    box-shadow: 0 0 20px rgba(232,121,249,0.4), inset 0 0 10px rgba(0,0,0,0.5); 
-  }
+  0% { box-shadow: 0 0 20px rgba(232,121,249,0.4), inset 0 0 10px rgba(0,0,0,0.5); }
+  50% { box-shadow: 0 0 50px rgba(232,121,249,0.8), inset 0 0 10px rgba(0,0,0,0.5); }
+  100% { box-shadow: 0 0 20px rgba(232,121,249,0.4), inset 0 0 10px rgba(0,0,0,0.5); }
 }
 
-/* ── ふわっと表示させる（フェードイン）アニメーション ── */
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-/* 録音停止ボタンにパルスアニメーションを適用 */
 .recorder-stop-btn {
   animation: pulseShadow 1.5s infinite;
 }
 
-/* 録音中の外周リングに回転アニメーションを適用 */
 .recorder-ring-circle {
   animation: spinRing 2s linear infinite;
 }
 
-/* 録音画面全体の表示時のフェードイン */
 .recorder-fade-in {
   animation: fadeIn 0.3s ease-out forwards;
 }

@@ -1,45 +1,27 @@
-/**
- * 【ResultView.tsx】
- * 役割：音声解析の結果（音域、スコア、おすすめ楽曲、類似アーティスト）を視覚的に表示する部品です。
- * 💡 設計図（FRONTEND_STRUCTURE.md）に基づく移動案：
- * 1. 移動先: src/features/analysis/components/ResultView.tsx
- */
-
 import React from "react";
-// APIから解析結果の型定義を読み込みます
 import { AnalysisResult } from "../api";
 
 interface Props {
-  result: AnalysisResult; // 表示する解析データ
+  result: AnalysisResult;
 }
 
-/* ───── ヘルパー関数（データの見せ方を整える） ───── */
-
-/** Hz（周波数）を四捨五入して単位を付ける */
+/* ───── helpers ───── */
 const fmtHz = (hz: number) => `${Math.round(hz)} Hz`;
-
-/** 音階ラベルが空なら「—」を表示する */
 const fmtNote = (label: string | undefined) => label || "—";
 
-/* ───── スコアに応じた色・ランクの判定 ───── */
-
-/** スコアが高いほど緑、低いほど赤にするためのクラス名 */
+/* ───── score → color ───── */
 const scoreColor = (score: number) => {
   if (score >= 80) return "text-emerald-500";
   if (score >= 60) return "text-sky-500";
   if (score >= 40) return "text-amber-500";
   return "text-rose-400";
 };
-
-/** プログレスバー（背景色）用のクラス名 */
 const scoreBg = (score: number) => {
   if (score >= 80) return "bg-emerald-500";
   if (score >= 60) return "bg-sky-500";
   if (score >= 40) return "bg-amber-500";
   return "bg-rose-400";
 };
-
-/** スコアを S ~ D ランクに変換 */
 const scoreRank = (score: number) => {
   if (score >= 90) return "S";
   if (score >= 80) return "A";
@@ -49,17 +31,13 @@ const scoreRank = (score: number) => {
 };
 
 /* ════════════════════════════════════════════════
-   メインコンポーネント
+   Main Component
    ════════════════════════════════════════════════ */
 const ResultView: React.FC<Props> = ({ result }) => {
-  
-  // ── エラー表示 ──
-  // 解析中に不具合があった場合の表示
   if (result.error) {
     return (
       <div className="flex flex-col items-center justify-center py-16 px-4">
         <div className="w-16 h-16 rounded-full bg-rose-900/30 flex items-center justify-center mb-4 border border-rose-500/30">
-          {/* 警告アイコン */}
           <svg className="w-8 h-8 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
           </svg>
@@ -69,7 +47,6 @@ const ResultView: React.FC<Props> = ({ result }) => {
     );
   }
 
-  // 表示に必要なデータの存在チェック
   const hasChest = result.chest_min != null;
   const hasFalsetto = result.falsetto_min != null;
   const analysis = result.singing_analysis;
@@ -80,15 +57,12 @@ const ResultView: React.FC<Props> = ({ result }) => {
   return (
     <div className="space-y-6">
 
-      {/* ──── 1. 声質バッジ + 総合音域 ────
-          一番上に目立つように、声のタイプと最低・最高音を表示します。
-      */}
+      {/* ──── 1. Voice Type Badge + Overall Range ──── */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-500 via-blue-500 to-sky-400 p-6 text-white">
         <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-white/10" />
         <div className="absolute -bottom-6 -left-6 w-28 h-28 rounded-full bg-white/5" />
 
         <div className="relative z-10">
-          {/* バリトン、テノールなどの分類を表示 */}
           {voiceType.voice_type && (
             <div className="inline-block bg-white/20 backdrop-blur-sm rounded-full px-3 py-1 text-xs font-semibold tracking-wide mb-3">
               {voiceType.range_class} ・ {voiceType.voice_type}
@@ -109,7 +83,6 @@ const ResultView: React.FC<Props> = ({ result }) => {
             {fmtHz(result.overall_min_hz)} 〜 {fmtHz(result.overall_max_hz)}
           </p>
 
-          {/* 声の解説文 */}
           {voiceType.description && (
             <p className="text-sm text-white/80 mt-4 leading-relaxed max-w-lg">
               {voiceType.description}
@@ -118,19 +91,15 @@ const ResultView: React.FC<Props> = ({ result }) => {
         </div>
       </div>
 
-      {/* ──── 2. 声区バランス（地声・裏声） ────
-          どちらの声が多く使われていたかを割合のバーで表示します。
-      */}
+      {/* ──── 2. Chest / Falsetto Ratio Bar ──── */}
       {result.chest_ratio !== undefined && (
         <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">声区バランス</h3>
           <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden flex border border-white/5">
-            {/* 地声のバー */}
             <div
               className="h-full bg-indigo-500 transition-all duration-700 opacity-90"
               style={{ width: `${result.chest_ratio}%` }}
             />
-            {/* 裏声のバー */}
             <div
               className="h-full bg-emerald-400 transition-all duration-700 opacity-90"
               style={{ width: `${result.falsetto_ratio}%` }}
@@ -149,9 +118,8 @@ const ResultView: React.FC<Props> = ({ result }) => {
         </div>
       )}
 
-      {/* ──── 3. 音域詳細カード（地声・裏声それぞれ） ──── */}
+      {/* ──── 3. Range Detail Cards ──── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* 地声の最低・最高音 */}
         {hasChest && (
           <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
             <div className="flex items-center gap-2 mb-3">
@@ -181,7 +149,6 @@ const ResultView: React.FC<Props> = ({ result }) => {
             </div>
           </div>
         )}
-        {/* 裏声の最低・最高音 */}
         {hasFalsetto && (
           <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
             <div className="flex items-center gap-2 mb-3">
@@ -213,9 +180,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
         )}
       </div>
 
-      {/* ──── 4. 歌唱力スコア ────
-          AIが算出した歌唱力の各項目をバーで表示します。
-      */}
+      {/* ──── 4. Singing Analysis Scores ──── */}
       {analysis && (
         <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
           <div className="flex items-center justify-between mb-4">
@@ -257,7 +222,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
         </div>
       )}
 
-      {/* ──── 5. 声が似ているアーティスト ──── */}
+      {/* ──── 5. Similar Artists ──── */}
       {artists.length > 0 && (
         <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
           <h3 className="text-sm font-bold text-slate-200 mb-3">声が似ているアーティスト</h3>
@@ -267,14 +232,13 @@ const ResultView: React.FC<Props> = ({ result }) => {
                 key={a.id}
                 className="flex-shrink-0 w-28 flex flex-col items-center text-center"
               >
-                {/* アーティスト名の頭文字をアイコンにする */}
                 <div
                   className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md ring-2 ring-white/10 ${
                     i === 0
-                      ? "bg-gradient-to-br from-amber-400 to-orange-500" // 1位
+                      ? "bg-gradient-to-br from-amber-400 to-orange-500"
                       : i === 1
-                      ? "bg-gradient-to-br from-slate-500 to-slate-600" // 2位
-                      : "bg-gradient-to-br from-blue-500 to-indigo-600" // 3位以下
+                      ? "bg-gradient-to-br from-slate-500 to-slate-600"
+                      : "bg-gradient-to-br from-blue-500 to-indigo-600"
                   }`}
                 >
                   {a.name.charAt(0)}
@@ -294,7 +258,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
         </div>
       )}
 
-      {/* ──── 6. あなたへのおすすめ楽曲 ──── */}
+      {/* ──── 6. Recommended Songs ──── */}
       {songs.length > 0 && (
         <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
           <h3 className="text-sm font-bold text-slate-200 mb-1">おすすめの曲</h3>
@@ -302,7 +266,6 @@ const ResultView: React.FC<Props> = ({ result }) => {
 
           <div className="space-y-1">
             {songs.map((song, i) => {
-              // マッチ度（％）に応じた色判定
               const matchColor =
                 song.match_score >= 95 ? "bg-emerald-900/50 text-emerald-400 border border-emerald-500/30" :
                   song.match_score >= 80 ? "bg-sky-900/50 text-sky-400 border border-sky-500/30" :
@@ -325,11 +288,9 @@ const ResultView: React.FC<Props> = ({ result }) => {
                       {song.artist}
                     </div>
                   </div>
-                  {/* PCサイズでのみ音域を表示 */}
                   <div className="hidden sm:block text-xs text-slate-500 whitespace-nowrap">
                     {song.lowest_note}〜{song.highest_note}
                   </div>
-                  {/* キーおすすめバッジ */}
                   {song.recommended_key !== undefined && (
                     <span
                       className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap border ${
@@ -349,7 +310,6 @@ const ResultView: React.FC<Props> = ({ result }) => {
                         : `${song.recommended_key}`}
                     </span>
                   )}
-                  {/* マッチ度％ */}
                   <span
                     className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${matchColor}`}
                   >
@@ -362,7 +322,6 @@ const ResultView: React.FC<Props> = ({ result }) => {
         </div>
       )}
 
-      {/* 判定失敗時のフォールバック */}
       {!hasChest && !hasFalsetto && (
         <div className="text-center py-8 text-slate-500">
           <p>声の種類を判定できませんでした。</p>
@@ -373,5 +332,4 @@ const ResultView: React.FC<Props> = ({ result }) => {
   );
 };
 
-// 無駄な再読み込みを防ぐ React.memo
 export default React.memo(ResultView);

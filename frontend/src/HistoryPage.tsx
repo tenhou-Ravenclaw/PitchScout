@@ -1,57 +1,50 @@
+// frontend/src/HistoryPage.tsx
 /**
  * 【HistoryPage.tsx】
- * 役割：過去の歌唱分析結果を一覧で表示し、詳細の確認や削除を行う画面です。
- * 💡 設計図（FRONTEND_STRUCTURE.md）に基づく移動案：
- * 1. 移動先: src/features/songs/pages/HistoryPage.tsx
- * 2. 改善点：スワイプの座標計算ロジックが長いため、「useSwipeToDelete」のような
- * カスタムフックに切り出すと、画面側のコードがスッキリして読みやすくなります。
+ * 役割：過去の音声解析結果を一覧で表示し、管理（閲覧・削除）するためのページです。
+ * 特徴：スマホでの「スワイプ削除」と、PCでの「削除ボタン」の両方に対応した高度なUIを備えています。
  */
-
 import React, { useEffect, useState, useRef } from "react";
-// API通信用の関数をインポート
+// API通信用の関数と型定義をインポート
 import {
   getAnalysisHistory,
   AnalysisHistoryRecord,
   deleteAnalysisHistory,
 } from "./api";
+// ログイン状態を確認するためのフック
 import { useAuth } from "./contexts/AuthContext";
 
-/** * 画面が受け取るデータ（Props）の定義
- */
+/** 画面のプロパティ（設定） */
 interface HistoryPageProps {
   onLoginClick: () => void; // ログインボタンが押された時の処理
-  onSelectRecord: (record: AnalysisHistoryRecord) => void; // 履歴が選ばれた時の処理
+  onSelectRecord: (record: AnalysisHistoryRecord) => void; // 履歴がクリックされた時の処理
 }
 
-/** * スワイプの状態を管理するための型定義
- */
+/** スワイプ操作の状態を記録するための型 */
 interface SwipeState {
-  startX: number;   // タッチ開始位置
-  currentX: number; // 現在の指の位置
-  startTime: number; // タッチ開始時刻
+  startX: number;
+  currentX: number;
+  startTime: number;
 }
 
 const HistoryPage: React.FC<HistoryPageProps> = ({
   onLoginClick,
   onSelectRecord,
 }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated } = useAuth(); // 認証状態を取得
   
   // ── 状態管理 (State) ──
-  const [history, setHistory] = useState<AnalysisHistoryRecord[]>([]); // 履歴リスト本体
-  const [loading, setLoading] = useState(true); // 読み込み中フラグ
-  const [error, setError] = useState<string | null>(null); // エラーメッセージ
-  
-  // スワイプ演出用の状態
-  const [swipedId, setSwipedId] = useState<string | null>(null); // 現在スワイプされている項目のID
-  const [deletingId, setDeletingId] = useState<string | null>(null); // 削除アニメーション中のID
-  const [swipeOffset, setSwipeOffset] = useState<number>(0); // どのくらい横にずれているか(px)
-  
-  // 指の動きをリアルタイムに記録するための参照（再描画を発生させずに値を保持）
-  const swipeStates = useRef<Record<string, SwipeState>>({});
+  const [history, setHistory] = useState<AnalysisHistoryRecord[]>([]); // 履歴データ
+  const [loading, setLoading] = useState(true);                        // 読み込み中フラグ
+  const [error, setError] = useState<string | null>(null);             // エラーメッセージ
+  const [swipedId, setSwipedId] = useState<string | null>(null);       // 現在スワイプ中のアイテムID
+  const [deletingId, setDeletingId] = useState<string | null>(null);   // 現在削除アニメーション中のID
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);           // スワイプの移動距離
+  const swipeStates = useRef<Record<string, SwipeState>>({});         // 各アイテムのスワイプ状態を保持
 
   /**
-   * 画面表示時に履歴データをサーバーから取得
+   * ── 効果 (Effect): 履歴データの取得 ──
+   * ログインしている場合、サーバーから解析履歴を取得します。
    */
   useEffect(() => {
     if (!isAuthenticated) {
@@ -74,31 +67,28 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
     fetchHistory();
   }, [isAuthenticated]);
 
-  /**
-   * 削除ボタン（PC用等）が押された時の処理
-   */
+  /** ── 削除処理（ボタンクリック時：確認あり） ── */
   const handleDelete = async (e: React.MouseEvent, recordId: string) => {
-    e.stopPropagation(); // 親要素のクリック（詳細画面へ飛ぶ）を防ぐ
+    e.stopPropagation(); // 親要素のクリックイベント（詳細画面への遷移）を阻止
     if (!window.confirm("この履歴を削除しますか？")) return;
 
     await performDelete(recordId);
   };
 
-  /**
-   * 実際の削除処理を実行する共通関数
-   */
+  /** ── 削除の実行ロジック ── */
   const performDelete = async (recordId: string) => {
-    // 1. 削除アニメーションを開始
+    // 削除アニメーション（横に消えていく）を開始
     setDeletingId(recordId);
     setSwipedId(null);
     setSwipeOffset(0);
 
-    // 2. アニメーション（0.3秒）が終わるのを待つ
+    // アニメーションが終わるまで少し待機
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     try {
+      // サーバー側のデータを削除
       await deleteAnalysisHistory(recordId);
-      // 3. 成功したらリストから取り除く（画面更新）
+      // 画面上のリストからも消す
       setHistory((prev) => prev.filter((record) => record.id !== recordId));
     } catch (err) {
       alert("削除に失敗しました。");
@@ -108,9 +98,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
     }
   };
 
-  // ── スワイプ操作の制御 (スマホ用) ──
-
-  /** タッチ開始 */
+  /** ── スワイプハンドラー: 開始 ── */
   const handleTouchStart = (e: React.TouchEvent, recordId: string) => {
     const touch = e.touches[0];
     swipeStates.current[recordId] = {
@@ -120,62 +108,63 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
     };
   };
 
-  /** 指を動かしている最中 */
+  /** ── スワイプハンドラー: 移動中 ── */
   const handleTouchMove = (e: React.TouchEvent, recordId: string) => {
     const touch = e.touches[0];
     const state = swipeStates.current[recordId];
     if (!state) return;
 
     state.currentX = touch.clientX;
-    const diff = state.startX - touch.clientX; // 左向きの移動距離
+    const diff = state.startX - touch.clientX; // 左方向への移動量
 
+    // リアルタイムでアイテムの表示位置を更新
     if (diff > 0) {
-      // 左へスワイプ：最大250pxまで動きに追従
-      const offset = Math.min(diff, 250);
+      const offset = Math.min(diff, 250); // 最大250pxまでスワイプ可能
       setSwipeOffset(offset);
       setSwipedId(recordId);
     } else {
-      // 右へ戻る：リセット
       setSwipeOffset(0);
       setSwipedId(null);
     }
   };
 
-  /** 指を離した時：スワイプ距離に応じて「削除」か「戻す」か判定 */
+  /** ── スワイプハンドラー: 終了 ── */
   const handleTouchEnd = async (recordId: string) => {
     const state = swipeStates.current[recordId];
     if (!state) return;
 
     const diff = state.startX - state.currentX;
 
+    // スワイプの深さに応じて処理を分岐
     if (diff > 150) {
-      // 150px以上：勢いよくスワイプされたとみなして削除実行
+      // 150px以上：削除確定（確認なしで実行）
       delete swipeStates.current[recordId];
       await performDelete(recordId);
     } else if (diff > 60) {
-      // 60-150px：削除ボタンが見える位置で止める
+      // 60-150px：削除ボタンが見える状態で止める
       setSwipedId(recordId);
       setSwipeOffset(120);
       delete swipeStates.current[recordId];
     } else {
-      // 60px未満：スワイプ不十分として元の位置に戻す
+      // 60px未満：元の位置に戻す
       setSwipedId(null);
       setSwipeOffset(0);
       delete swipeStates.current[recordId];
     }
   };
 
-  /** キャンセル処理 */
+  // スワイプ状態を解除する
   const cancelSwipe = () => {
     setSwipedId(null);
     setSwipeOffset(0);
   };
 
-  // ── 条件付きレンダリング：未ログイン状態 ──
+  /** ── 未ログイン時の表示 ── */
   if (!isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
         <div className="w-full max-w-sm bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl border border-white/10 p-8 text-center">
+          {/* 履歴を象徴する時計アイコン（SVG） */}
           <svg className="w-12 h-12 text-cyan-500/50 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -189,9 +178,10 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
     );
   }
 
-  // ── メイン表示：履歴リスト ──
+  /** ── メインの履歴リスト表示 ── */
   return (
     <div className="min-h-screen p-8 max-w-4xl mx-auto">
+      {/* タイトルエリア */}
       <div className="flex flex-col mb-8 pb-4 border-b border-cyan-500/30">
         <h2 className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-yellow-400 drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] tracking-wider">
           HISTORY
@@ -204,25 +194,20 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
       ) : error ? (
         <div className="text-red-400 bg-red-900/20 p-4 rounded-lg">{error}</div>
       ) : history.length === 0 ? (
-        <div className="text-center text-slate-400 bg-slate-800/50 p-8 rounded-2xl">
-          履歴がありません。録音・アップロードして分析してみましょう。
-        </div>
+        <div className="text-center text-slate-400 bg-slate-800/50 p-8 rounded-2xl">履歴がありません。</div>
       ) : (
         <div className="space-y-3">
           {history.map((record) => (
             <div
               key={record.id}
-              className={`relative overflow-hidden rounded-xl transition-all duration-300 ${deletingId === record.id
-                ? "opacity-0 -translate-x-full max-h-0 my-0" // 削除時の消えるアニメーション
-                : "opacity-100 translate-x-0 max-h-96"
-                }`}
+              className={`relative overflow-hidden rounded-xl transition-all duration-300 ${deletingId === record.id ? "opacity-0 -translate-x-full max-h-0 my-0" : "opacity-100 translate-x-0 max-h-96"}`}
               onTouchStart={(e) => handleTouchStart(e, record.id)}
               onTouchMove={(e) => handleTouchMove(e, record.id)}
               onTouchEnd={() => handleTouchEnd(record.id)}
             >
-              {/* === 背面レイヤー：削除ボタン (スワイプすると現れる) === */}
+              {/* === 背景：削除確定時に見える赤いエリア === */}
               <div className="absolute inset-0 bg-red-950 flex items-center justify-end pr-6 rounded-xl border border-red-500 shadow-[inset_0_0_30px_rgba(239,68,68,0.6)]">
-                <button onClick={(e) => handleDelete(e, record.id)} className="flex items-center gap-2 text-red-100 font-bold text-sm">
+                <button onClick={(e) => handleDelete(e, record.id)} className="flex items-center gap-2 text-red-100 font-bold text-sm drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
@@ -230,21 +215,22 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
                 </button>
               </div>
 
-              {/* === 前面レイヤー：履歴アイテムの内容 === */}
+              {/* === 前面：実際の履歴カード（スワイプで動く部分） === */}
               <div
                 style={{
                   transform: swipedId === record.id ? `translateX(-${swipeOffset}px)` : "translateX(0)",
                   transition: swipeStates.current[record.id] ? "none" : "transform 0.2s ease-out",
                 }}
-                className="bg-slate-950/80 backdrop-blur-xl p-6 rounded-xl border border-cyan-500/80 shadow-[inset_0_0_15px_rgba(34,211,238,0.2)] flex flex-col sm:flex-row justify-between sm:items-center gap-4 relative group cursor-pointer hover:border-cyan-400 transition-all duration-300 overflow-hidden"
+                className="bg-slate-950/80 backdrop-blur-xl p-6 rounded-xl border border-cyan-500/80 shadow-[inset_0_0_15px_rgba(34,211,238,0.2),0_0_15px_rgba(34,211,238,0.4)] flex flex-col sm:flex-row justify-between sm:items-center gap-4 relative group cursor-pointer hover:-translate-y-1 hover:scale-[1.02] transition-all duration-300 overflow-hidden"
                 onClick={() => {
                   if (swipedId === record.id) cancelSwipe();
-                  else onSelectRecord(record);
+                  else onSelectRecord(record); // レコードが選択されたら詳細を表示
                 }}
               >
-                {/* 装飾用スキャンライン演出 */}
-                <div className="absolute inset-0 pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(255,255,255,0.03)_2px,rgba(255,255,255,0.03)_4px)] z-0"></div>
+                {/* 装飾用のデジタルスキャンライン */}
+                <div className="absolute inset-0 pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(255,255,255,0.03)_2px,rgba(255,255,255,0.03)_4px)]"></div>
 
+                {/* 左側：日時と解析タイプ */}
                 <div className="relative z-10">
                   <p className="text-sm text-cyan-400/80 font-bold mb-1 tracking-widest">
                     {new Date(record.created_at).toLocaleString("ja-JP")}
@@ -257,18 +243,23 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
                   </div>
                 </div>
 
+                {/* 右側：音域スコアと削除ボタン（PC用） */}
                 <div className="relative z-10 flex items-center gap-4">
-                  <div className="bg-transparent border border-cyan-400 px-4 py-2 rounded-lg text-center min-w-[100px]">
+                  <div className="bg-transparent border border-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.3)] px-4 py-2 rounded-lg text-center min-w-[100px]">
                     <p className="text-xs text-cyan-400 font-bold mb-1 opacity-80">地声</p>
-                    <p className="font-mono font-bold text-cyan-300">{record.vocal_range_min || "-"} ~ {record.vocal_range_max || "-"}</p>
+                    <p className="font-mono font-bold text-cyan-300 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]">
+                      {record.vocal_range_min || "-"} ~ {record.vocal_range_max || "-"}
+                    </p>
                   </div>
-                  <div className="bg-transparent border border-pink-400 px-4 py-2 rounded-lg text-center min-w-[80px]">
+                  <div className="bg-transparent border border-pink-400 shadow-[0_0_8px_rgba(244,114,182,0.3)] px-4 py-2 rounded-lg text-center min-w-[80px]">
                     <p className="text-xs text-pink-400 font-bold mb-1 opacity-80">裏声最高</p>
-                    <p className="font-mono font-bold text-pink-300">{record.falsetto_max || "-"}</p>
+                    <p className="font-mono font-bold text-pink-300 drop-shadow-[0_0_5px_rgba(244,114,182,0.8)]">
+                      {record.falsetto_max || "-"}
+                    </p>
                   </div>
 
-                  {/* 削除ボタン（PC用：タッチデバイス以外で表示） */}
-                  <button onClick={(e) => handleDelete(e, record.id)} className="hidden sm:block ml-2 px-6 py-2 border border-red-500 text-red-500 hover:bg-red-600 hover:text-white rounded-lg transition-all text-sm font-bold z-10">
+                  {/* PCでのみ表示される削除ボタン */}
+                  <button onClick={(e) => handleDelete(e, record.id)} className="hidden sm:block ml-2 px-6 py-2 bg-transparent border border-red-500 text-red-500 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-300 text-sm font-bold tracking-widest">
                     削除
                   </button>
                 </div>
@@ -281,5 +272,4 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   );
 };
 
-// 無駄な再描画を防ぐためにReact.memoを使用
 export default React.memo(HistoryPage);
