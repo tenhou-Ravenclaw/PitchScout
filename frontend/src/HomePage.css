@@ -1,26 +1,28 @@
-/* --- Cyberpunk Neon Landing Page Styles --- */
+/**
+ * 【HomePage.css】
+ * 役割：トップ画面（Landing）やメニュー画面で使用する、サイバーパンク風のデザインを定義します。
+ * 💡 設計図（FRONTEND_STRUCTURE.md）に基づく移動案：
+ * 1. 移動先: src/assets/styles/HomePage.css
+ */
 
+/* ── 共通の色の設定 (Variables) ── */
 :root {
-  --neon-red: 255, 0, 85;
-  /* Vibrant Neon Red/Pink */
-  --neon-blue: 0, 255, 255;
-  /* Cyan/Electric Blue */
-  --bg-dark: #020617;
-  /* Deepest Slate/Black */
+  --neon-red: 255, 0, 85;    /* ネオン風の赤/ピンク */
+  --neon-blue: 0, 255, 255;  /* 電気的な水色（シアン） */
+  --bg-dark: #020617;        /* 非常に深い紺色（背景用） */
 }
 
-/* Parent Container - Seamless Dark Background */
+/* ── 全体の背景設定 ── */
 .landing-container {
   position: relative;
   width: 100%;
-  height: 100vh;
-  overflow: hidden;
+  height: 100vh;      /* 画面いっぱいの高さ */
+  overflow: hidden;    /* はみ出た部分は隠す */
   background-color: var(--bg-dark);
 }
 
-/* 
- * Common Section Styles 
- * Using drop-shadow filter on the CLIPPED element creates the "border" effect along the cut.
+/* * ── 左右のセクション共通スタイル ──
+ * 斜めにカットされた見た目（clip-path）や、ぼかし効果などを設定します。
  */
 .landing-section {
   position: absolute;
@@ -28,6 +30,7 @@
   left: 0;
   width: 100%;
   height: 100%;
+  /* 動き（ホバー時など）を滑らかにする設定 */
   transition:
     clip-path 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
     filter 0.3s ease,
@@ -35,169 +38,107 @@
   will-change: clip-path, filter;
   z-index: 10;
 
-  /* Glass/Mist Effect */
+  /* 背景を少し透かしてぼかすエフェクト */
   backdrop-filter: blur(2px);
 }
 
 /* =========================================================================
-   LEFT SECTION (NEW RECORD)
+   左側セクション (NEW RECORD)
    ========================================================================= */
 .landing-section.left {
-  /* Mist Interior */
+  /* 中央から外側へ広がるグラデーション */
   background: radial-gradient(
-    circle at 30% 50%,
-    rgba(var(--neon-red), 0.15),
-    rgba(var(--neon-red), 0.05) 70%,
-    transparent
+    circle at center,
+    rgba(var(--neon-red), 0.1) 0%,
+    transparent 70%
   );
+  /* 画面を斜めに切り取る設定（左半分） */
+  clip-path: polygon(0 0, 55% 0, 45% 100%, 0 100%);
+  border-right: 1px solid rgba(var(--neon-red), 0.3);
+}
 
-  /* Initial Split */
-  clip-path: polygon(0 0, 45% 0, 55% 100%, 0 100%);
-
-  /* The Neon Glow Border (Filter Stack) */
-  filter: drop-shadow(0 0 2px rgba(var(--neon-red), 1))
-    drop-shadow(0 0 8px rgba(var(--neon-red), 0.5));
-
-  /* Internal Border Shine (via box-shadow inset) - Subtle */
-  box-shadow: inset 0 0 50px rgba(var(--neon-red), 0.1);
+/* マウスが乗った時（ホバー）の演出 */
+.landing-section.left:hover {
+  background: radial-gradient(
+    circle at center,
+    rgba(var(--neon-red), 0.2) 0%,
+    transparent 80%
+  );
+  /* 少しだけ形を広げて、選んでいることを強調します */
+  clip-path: polygon(0 0, 60% 0, 50% 100%, 0 100%);
+  z-index: 20;
 }
 
 /* =========================================================================
-   RIGHT SECTION (HISTORY)
+   右側セクション (HISTORY)
    ========================================================================= */
 .landing-section.right {
-  /* Mist Interior */
   background: radial-gradient(
-    circle at 70% 50%,
-    rgba(var(--neon-blue), 0.15),
-    rgba(var(--neon-blue), 0.05) 70%,
-    transparent
+    circle at center,
+    rgba(var(--neon-blue), 0.05) 0%,
+    transparent 70%
   );
-
-  /* Initial Split */
-  clip-path: polygon(45% 0, 100% 0, 100% 100%, 55% 100%);
-
-  /* The Neon Glow Border (Filter Stack) */
-  filter: drop-shadow(0 0 2px rgba(var(--neon-blue), 1))
-    drop-shadow(0 0 8px rgba(var(--neon-blue), 0.5));
-
-  box-shadow: inset 0 0 50px rgba(var(--neon-blue), 0.1);
+  /* 画面を斜めに切り取る設定（右半分） */
+  clip-path: polygon(55% 0, 100% 0, 100% 100%, 45% 100%);
 }
 
-/* =========================================================================
-   HOVER INTERACTIONS (POWER UP)
-   ========================================================================= */
-
-/* HOVER LEFT -> Left Powers Up */
-.landing-container:has(.left:hover) .left {
-  /* Expand */
-  clip-path: polygon(0 0, 55% 0, 65% 100%, 0 100%);
+.landing-section.right:hover {
+  background: radial-gradient(
+    circle at center,
+    rgba(var(--neon-blue), 0.15) 0%,
+    transparent 80%
+  );
+  /* 少しだけ形を広げます */
+  clip-path: polygon(50% 0, 100% 0, 100% 100%, 40% 100%);
   z-index: 20;
-
-  /* Intensify Glow / "Snap" effect — single shadow for performance */
-  filter: drop-shadow(0 0 12px rgba(var(--neon-red), 0.8)) brightness(1.15);
-
-  /* More visible mist */
-  background: radial-gradient(
-    circle at 30% 50%,
-    rgba(var(--neon-red), 0.25),
-    rgba(var(--neon-red), 0.1) 80%,
-    transparent
-  );
 }
 
-.landing-container:has(.left:hover) .right {
-  /* Shrink */
-  clip-path: polygon(55% 0, 100% 0, 100% 100%, 65% 100%);
-  filter: brightness(0.6) grayscale(0.5);
-  /* Dim the other side */
-}
-
-/* HOVER RIGHT -> Right Powers Up */
-.landing-container:has(.right:hover) .right {
-  /* Expand */
-  clip-path: polygon(35% 0, 100% 0, 100% 100%, 45% 100%);
-  z-index: 20;
-
-  filter: drop-shadow(0 0 12px rgba(var(--neon-red), 0.8)) brightness(1.15);
-
-  background: radial-gradient(
-    circle at 70% 50%,
-    rgba(var(--neon-blue), 0.25),
-    rgba(var(--neon-blue), 0.1) 80%,
-    transparent
-  );
-}
-
-.landing-container:has(.right:hover) .left {
-  /* Shrink */
-  clip-path: polygon(0 0, 35% 0, 45% 100%, 0 100%);
-  filter: brightness(0.6) grayscale(0.5);
-}
-
-/* =========================================================================
-   CONTENT & TEXT
-   ========================================================================= */
+/* ── 文字やコンテンツの配置 ── */
 .landing-content {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  z-index: 30;
-  color: white;
-  text-align: center;
-  width: 40%;
-  padding: 2rem;
-
-  /* Text Shadow for legibility over neon */
-  text-shadow: 0 4px 10px rgba(0, 0, 0, 0.8);
+  padding: 0 10%;
 }
 
 .landing-section.left .landing-content {
-  left: 5%;
   text-align: left;
+  align-items: flex-start;
 }
 
 .landing-section.right .landing-content {
-  right: 5%;
   text-align: right;
   align-items: flex-end;
 }
 
-/* Animations included but applied via utility classes in TSX if needed */
-@keyframes neonPulse {
-  0%,
-  100% {
-    opacity: 0.8;
-  }
+/* ── アニメーションの定義 ── */
 
-  50% {
-    opacity: 1;
-  }
+/* ネオンが呼吸するように明滅するアニメーション */
+@keyframes neonPulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
 }
 
+/* 画面外からスライドしてくるアニメーション */
 @keyframes slideInLeft {
   0% {
     transform: translateX(-100%) skewX(-10deg);
     opacity: 0;
   }
-
   100% {
     transform: translateX(0) skewX(0);
     opacity: 1;
   }
-
-  /* Settle to normal */
 }
 
-/* Tweaking animations to match the clean design */
+/* 上記のアニメーションを実際に適用するためのクラス */
 .animate-slide-in-left {
   animation: slideInLeft 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 
-/* Mobile Adjustments */
+/* ── スマホ用の調整 (Mobile) ──
+   画面が狭いときは、左右分割ではなく上下分割に変更します。
+*/
 @media (max-width: 768px) {
   .landing-section.left {
+    /* 上側に配置 */
     clip-path: polygon(0 0, 100% 0, 100% 45%, 0 55%);
     background: linear-gradient(
       to bottom,
@@ -207,30 +148,12 @@
   }
 
   .landing-section.right {
+    /* 下側に配置 */
     clip-path: polygon(0 55%, 100% 45%, 100% 100%, 0 100%);
     background: linear-gradient(
       to top,
       rgba(var(--neon-blue), 0.15),
       transparent
     );
-  }
-
-  .landing-content {
-    width: 80%;
-    left: 10% !important;
-    right: auto !important;
-    text-align: center !important;
-    align-items: center !important;
-  }
-
-  /* Specifically position the top (left) and bottom (right) content blocks to avoid collision */
-  .landing-section.left .landing-content {
-    top: 30% !important;
-    transform: translateY(-50%) !important;
-  }
-
-  .landing-section.right .landing-content {
-    top: 70% !important;
-    transform: translateY(-50%) !important;
   }
 }

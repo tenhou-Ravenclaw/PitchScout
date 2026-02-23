@@ -1,16 +1,37 @@
+/**
+ * 【index.css】
+ * 役割：アプリ全体に適用される「グローバルなスタイル（基本ルール）」を定義します。
+ * 💡 設計図（FRONTEND_STRUCTURE.md）に基づく移動案：
+ * 1. 移動先: src/assets/styles/index.css
+ */
+
+/* ── Tailwind CSS の読み込み ──
+   この3行を書くことで、Tailwindの便利なクラス（flex, text-whiteなど）が
+   アプリ全体で使えるようになります。
+*/
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * ── 全体（body）のデフォルト設定 ──
+ * どの画面でも共通の余白、フォント、文字の滑らかさを設定します。
+ */
 body {
   margin: 0;
+  /* OSごとの標準的なフォントを自動で選ぶ設定 */
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
+  /* 文字を綺麗に見せるためのレンダリング設定 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/**
+ * ── 等幅フォント（code）の設定 ──
+ * プログラムのコードを表示する際などに使われるフォントです。
+ */
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;

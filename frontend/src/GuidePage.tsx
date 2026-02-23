@@ -1,15 +1,32 @@
+/**
+ * 【GuidePage.tsx】
+ * 役割：アプリの使い方（ステップ、コツ、キー判定の見方）を視覚的に説明するガイド画面です。
+ * 💡 設計図（FRONTEND_STRUCTURE.md）に基づく移動案：
+ * 1. 移動先: src/features/help/pages/GuidePage.tsx (または src/pages/GuidePage.tsx)
+ * 2. 改善点：現在は「steps」や「tips」といったデータが同じファイル内にありますが、
+ * これを「src/features/help/constants/guideData.ts」などに分けると、
+ * 文言の修正がしやすくなり、このファイル自体の見通しも良くなります。
+ */
+
 import React from "react";
+// アイコン素材の読み込み
 import {
   MicrophoneIcon,
   MusicalNoteIcon,
   ChartBarIcon,
 } from "@heroicons/react/24/solid";
 
+/**
+ * ステップごとのデータ定義
+ * 💡 こうして配列にデータをまとめておくことで、後からステップを増やしたり、
+ * 順番を入れ替えたりするのが簡単になります。
+ */
 const steps = [
   {
     icon: MicrophoneIcon,
     color: "text-cyan-400",
     decorationColor: "border-cyan-400",
+    // Tailwindの複雑なクラス（光の演出など）をプロパティとして持たせています
     borderGlow:
       "border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.2)] group-hover:shadow-[0_0_30px_rgba(34,211,238,0.6)] group-hover:border-cyan-400",
     textGlow: "drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]",
@@ -54,6 +71,7 @@ const steps = [
   },
 ];
 
+/** 使い方のコツ（Tips）のデータ */
 const tips = [
   { emoji: "🎯", text: "静かな場所で録音すると精度が上がります" },
   { emoji: "⏱️", text: "低音〜高音まで幅広く出すと音域を正確に測定できます" },
@@ -68,7 +86,8 @@ const GuidePage: React.FC = () => {
   return (
     <div className="min-h-[calc(100vh-80px)] bg-transparent p-6 sm:p-8 overflow-hidden font-sans text-slate-300">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
+        
+        {/* ── ヘッダー ── */}
         <div className="mb-12 text-center">
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-yellow-400 mb-4 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] tracking-wide">
             HOW TO USE
@@ -78,18 +97,22 @@ const GuidePage: React.FC = () => {
           </p>
         </div>
 
-        {/* Steps */}
+        {/* ── 各ステップのリスト表示 ── */}
         <div className="space-y-12 sm:space-y-16 mb-16 relative">
-          {/* 背景の縦線（サイバー感） */}
+          {/* 背景の装飾：中央を貫くサイバーな縦線 */}
           <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-fuchsia-500/30 to-transparent -translate-x-1/2 hidden md:block z-0"></div>
 
           {steps.map((step, i) => {
+            // ステップごとに左右交互に配置するための判定
             const isEven = i % 2 !== 0;
             return (
               <div
                 key={i}
                 className={`group relative w-full md:w-[80%] ${isEven ? "md:ml-auto md:mr-0 pl-0 md:pl-8" : "md:mr-auto md:ml-0 pr-0 md:pr-8"} z-10 transition-all duration-500 hover:-translate-y-2 hover:scale-[1.02] perspective-1000`}
               >
+                {/* ── ステップのカード ──
+                    clipPath を使って、右下の角が欠けたようなデジタル的な形状にしています。
+                */}
                 <div
                   className={`relative bg-slate-900/80 backdrop-blur-xl p-6 sm:p-8 border-2 ${step.borderGlow} transition-all duration-500 overflow-hidden`}
                   style={{
@@ -97,20 +120,22 @@ const GuidePage: React.FC = () => {
                       "polygon(0 0, 100% 0, 100% calc(100% - 30px), calc(100% - 30px) 100%, 0 100%)",
                   }}
                 >
-                  {/* Giant Watermark Number */}
+                  {/* 背景の巨大な数字（透かし） */}
                   <div
                     className={`absolute -bottom-10 ${isEven ? "-left-4 sm:-left-8" : "-right-4 sm:-right-8"} text-[10rem] sm:text-[14rem] font-black italic text-white opacity-10 pointer-events-none select-none leading-none z-0 mix-blend-overlay`}
                   >
                     {i + 1}
                   </div>
 
-                  {/* Content */}
+                  {/* カード内のコンテンツ */}
                   <div className="relative z-10 flex flex-col sm:flex-row items-start gap-5 sm:gap-6">
+                    {/* アイコン部分 */}
                     <div
                       className={`p-4 bg-slate-800/80 rounded-lg border border-slate-700/50 ${step.color} shadow-inner`}
                     >
                       <step.icon className="w-8 h-8 sm:w-10 sm:h-10" />
                     </div>
+                    {/* テキスト部分 */}
                     <div className="flex-1">
                       <h2
                         className={`text-2xl sm:text-3xl font-black italic mb-2 tracking-wide ${step.color} ${step.textGlow}`}
@@ -120,6 +145,7 @@ const GuidePage: React.FC = () => {
                       <p className="text-base sm:text-lg text-slate-300 mb-4 font-bold tracking-wide">
                         {step.desc}
                       </p>
+                      {/* 詳細な箇条書き */}
                       <ul className="space-y-2">
                         {step.details.map((d, j) => (
                           <li
@@ -134,7 +160,7 @@ const GuidePage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Decoration Lines */}
+                  {/* カードの四隅の装飾ライン */}
                   <div
                     className={`absolute top-0 right-0 w-16 h-1 border-t-2 border-r-2 ${step.decorationColor} opacity-50`}
                   ></div>
@@ -147,9 +173,10 @@ const GuidePage: React.FC = () => {
           })}
         </div>
 
-        {/* Tips & Extras */}
+        {/* ── 下部のTips ＆ キー設定の見方 ── */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
-          {/* Tips */}
+          
+          {/* 左側：システムTips */}
           <div className="bg-slate-900/80 backdrop-blur-xl p-6 border-l-4 border-l-cyan-500 shadow-[0_0_15px_rgba(0,0,0,0.5)] group hover:border-cyan-400 hover:shadow-[0_0_20px_rgba(34,211,238,0.3)] transition-all duration-300">
             <h3 className="text-lg font-black italic text-cyan-400 mb-4 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)] tracking-wide">
               SYSTEM TIPS
@@ -169,24 +196,29 @@ const GuidePage: React.FC = () => {
             </div>
           </div>
 
-          {/* Key Change Legend */}
+          {/* 右側：キー設定の見方（凡例）
+              楽曲一覧で表示されるバッジの意味を説明します。
+          */}
           <div className="bg-slate-900/80 backdrop-blur-xl p-6 border-l-4 border-l-fuchsia-500 shadow-[0_0_15px_rgba(0,0,0,0.5)] group hover:border-fuchsia-400 hover:shadow-[0_0_20px_rgba(232,121,249,0.3)] transition-all duration-300">
             <h3 className="text-lg font-black italic text-fuchsia-400 mb-4 drop-shadow-[0_0_5px_rgba(232,121,249,0.8)] tracking-wide">
               KEY SETTING LEGEND
             </h3>
             <div className="space-y-4 text-sm text-slate-400">
+              {/* ±0 の説明 */}
               <div className="flex items-center gap-3">
                 <span className="inline-flex items-center justify-center w-14 h-7 rounded-sm bg-emerald-900/40 text-emerald-400 border border-emerald-500/50 text-xs font-black italic shadow-[0_0_5px_rgba(52,211,153,0.5)]">
                   ±0
                 </span>
                 <span>原曲キーであなたの音域にぴったり</span>
               </div>
+              {/* -2 の説明 */}
               <div className="flex items-center gap-3">
                 <span className="inline-flex items-center justify-center w-14 h-7 rounded-sm bg-sky-900/40 text-sky-400 border border-sky-500/50 text-xs font-black italic shadow-[0_0_5px_rgba(14,165,233,0.5)]">
                   -2
                 </span>
                 <span>キーを2つ下げると歌いやすい</span>
               </div>
+              {/* +3 の説明 */}
               <div className="flex items-center gap-3">
                 <span className="inline-flex items-center justify-center w-14 h-7 rounded-sm bg-amber-900/40 text-amber-400 border border-amber-500/50 text-xs font-black italic shadow-[0_0_5px_rgba(245,158,11,0.5)]">
                   +3
@@ -201,4 +233,5 @@ const GuidePage: React.FC = () => {
   );
 };
 
+// React.memo を使うことで、親が再描画されても内容が変わらなければスキップします
 export default React.memo(GuidePage);

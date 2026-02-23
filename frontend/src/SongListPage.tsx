@@ -1,106 +1,202 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { getArtists, getArtistSongs, Artist, UserRange, getFavoriteArtists, addFavoriteArtist, removeFavoriteArtist, getFavorites, addFavorite, removeFavorite, Song, getSongs } from './api';
+/**
+ * 【SongListPage.tsx】
+ * 役割：楽曲検索、五十音順のアーティスト一覧、お気に入り登録など、
+ * ユーザーが歌いたい曲を探すための主要な画面です。
+ * * 💡 将来的な改善案（FRONTEND_STRUCTURE.md より）:
+ * 1. 移動先: src/features/songs/pages/SongListPage.tsx
+ * 2. 巨大な「SEARCH_ALIASES（辞書）」は外部ファイルへ切り出す
+ * 3. 楽曲テーブル（SongTable）などをコンポーネントとして独立させ、コード量を減らす
+ */
+
+import React, { useEffect, useState, useCallback } from 'react';
+// API通信用の道具をインポート
+import { 
+  getArtists, 
+  getArtistSongs, 
+  Artist, 
+  UserRange, 
+  getFavoriteArtists, 
+  addFavoriteArtist, 
+  removeFavoriteArtist, 
+  getFavorites, 
+  addFavorite, 
+  removeFavorite, 
+  Song, 
+  getSongs 
+} from './api';
+// アイコン素材
 import { StarIcon as StarSolid } from '@heroicons/react/24/solid';
 import { StarIcon as StarOutline, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { HeartIcon } from '@heroicons/react/24/outline';
+import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useAuth } from './contexts/AuthContext';
-import { SEARCH_ALIASES } from './constants/searchAliases';
-import SongTable from './components/SongTable';
 
-const INDEX_KANA = ['あ', 'か', 'さ', 'た', 'な', 'は', 'ま', 'や', 'ら', 'わ'];
-
-const GOJUON_ROWS = [
-  { label: 'あ行', kana: ['あ', 'い', 'う', 'え', 'お'] },
-  { label: 'か行', kana: ['か', 'き', 'く', 'け', 'こ'] },
-  { label: 'さ行', kana: ['さ', 'し', 'す', 'せ', 'そ'] },
-  { label: 'た行', kana: ['た', 'ち', 'つ', 'て', 'と'] },
-  { label: 'な行', kana: ['な', 'に', 'ぬ', 'ね', 'の'] },
-  { label: 'は行', kana: ['は', 'ひ', 'ふ', 'へ', 'ほ'] },
-  { label: 'ま行', kana: ['ま', 'み', 'む', 'め', 'も'] },
-  { label: 'や行', kana: ['や', 'ゆ', 'よ'] },
-  { label: 'ら行', kana: ['ら', 'り', 'る', 'れ', 'ろ'] },
-  { label: 'わ行', kana: ['わ', 'を', 'ん'] },
-];
-
-// 濁音・半濁音→清音マップ
-const DAKUTEN_MAP: Record<string, string> = {
-  'が': 'か', 'ぎ': 'き', 'ぐ': 'く', 'げ': 'け', 'ご': 'こ',
-  'ざ': 'さ', 'じ': 'し', 'ず': 'す', 'ぜ': 'せ', 'ぞ': 'そ',
-  'だ': 'た', 'ぢ': 'ち', 'づ': 'つ', 'で': 'て', 'ど': 'と',
-  'ば': 'は', 'び': 'ひ', 'ぶ': 'ふ', 'べ': 'へ', 'ぼ': 'ほ',
-  'ぱ': 'は', 'ぴ': 'ひ', 'ぷ': 'ふ', 'ぺ': 'へ', 'ぽ': 'ほ',
-  'ゔ': 'う',
+/**
+ * ── ヘルパー部品：キーバッジ ──
+ * 曲のキー（±0など）を色付きで表示します。
+ * 💡 移動先案: src/components/ui/KeyBadge.tsx
+ */
+const keyBadge = (key: number, fit?: string) => {
+  const label = key === 0 ? "\u00b10" : key > 0 ? `+${key}` : `${key}`;
+  let color: string;
+  // おすすめ度（fit）によって色を変更
+  if (fit === "perfect") color = "bg-emerald-900/30 text-emerald-400 border border-emerald-500/30";
+  else if (fit === "good") color = "bg-sky-900/30 text-sky-400 border border-sky-500/30";
+  else if (fit === "ok") color = "bg-amber-900/30 text-amber-400 border border-amber-500/30";
+  else if (fit === "hard") color = "bg-rose-900/30 text-rose-400 border border-rose-500/30";
+  else color = "bg-slate-800 text-slate-500 border border-slate-700";
+  return (
+    <span className={`inline-flex items-center justify-center min-w-[2.5rem] h-6 rounded-full text-xs font-bold ${color}`}>
+      {label}
+    </span>
+  );
 };
 
-/** reading の先頭文字を基本ひらがなに正規化（カタカナ→ひらがな + 濁音/半濁音→清音） */
-function getBaseKana(reading: string): string {
-  if (!reading) return '';
-  let code = reading.codePointAt(0) ?? 0;
-  // カタカナ→ひらがな
-  if (code >= 0x30A1 && code <= 0x30F6) code -= 0x60;
-  const hira = String.fromCodePoint(code);
-  return DAKUTEN_MAP[hira] || hira;
-}
+// 五十音順ジャンプ用の配列
+const INDEX_KANA = ['\u3042', '\u304b', '\u3055', '\u305f', '\u306a', '\u306f', '\u307e', '\u3084', '\u3089', '\u308f'];
 
+/**
+ * ── ヘルパー関数：読みから「行」を判定 ──
+ * 「あいうえお」のどの行に属するかを数字で返します。
+ */
+const getConsonantRow = (reading: string): number => {
+  if (!reading) return 99;
+  let code = reading.codePointAt(0) ?? 0;
+  // カタカナをひらがなに変換
+  if (code >= 0x30A1 && code <= 0x30F6) code -= 0x60;
+  if (code >= 0x3041 && code <= 0x3093) {
+    if (code <= 0x304A) return 0; // あ
+    if (code <= 0x3054) return 1; // か
+    if (code <= 0x305E) return 2; // さ
+    if (code <= 0x3069) return 3; // た
+    if (code <= 0x306E) return 4; // な
+    if (code <= 0x307D) return 5; // は
+    if (code <= 0x3082) return 6; // ま
+    if (code <= 0x3088) return 7; // や
+    if (code <= 0x308D) return 8; // ら
+    return 9; // わ
+  }
+  return 99;
+};
+
+/**
+ * ── 検索エイリアス（略称辞書） ──
+ * 💡 移動先案: src/constants/searchAliases.ts
+ * ユーザーが「ミセス」と打っても「Mrs. GREEN APPLE」を検索できるようにします。
+ */
+const SEARCH_ALIASES: Record<string, string> = {
+  "ミセス": "Mrs. GREEN APPLE",
+  "みせす": "Mrs. GREEN APPLE",
+  "ヒゲダン": "Official髭男dism",
+  "ひげだん": "Official髭男dism",
+  "ワンオク": "ONE OK ROCK",
+  "わんおく": "ONE OK ROCK",
+  "バウンディ": "Vaundy",
+  "ばうんでぃ": "Vaundy",
+  "キングヌー": "King Gnu",
+  "きんぐぬー": "King Gnu",
+  "ヌー": "King Gnu",
+  "ヨアソビ": "YOASOBI",
+  "よあそび": "YOASOBI",
+  "セカオワ": "SEKAI NO OWARI",
+  "せかおわ": "SEKAI NO OWARI",
+  "ラッド": "RADWIMPS",
+  "らっど": "RADWIMPS",
+  "ヨルシカ": "ヨルシカ",
+  "ずとまよ": "ずっと真夜中でいいのに。",
+  "ズトマヨ": "ずっと真夜中でいいのに。",
+  "マカエン": "マカロニえんぴつ",
+  "まかえん": "マカロニえんぴつ",
+  "サウシー": "Saucy Dog",
+  "さうしー": "Saucy Dog",
+  "リョクシャカ": "緑黄色社会",
+  "りょくしゃか": "緑黄色社会",
+  "マイヘア": "My Hair is Bad",
+  "まいへあ": "My Hair is Bad",
+  "ノベブラ": "Novelbright",
+  "ノーベル": "Novelbright",
+  "ビーファ": "BE:FIRST",
+  "びーふぁ": "BE:FIRST",
+  "アド": "Ado",
+  "あど": "Ado",
+  "ユーリ": "優里",
+  "ゆうり": "優里",
+  "ミスチル": "Mr.Children",
+  "みすちる": "Mr.Children",
+  "ポルノ": "ポルノグラフィティ",
+  "バンプ": "BUMP OF CHICKEN",
+  "アジカン": "ASIAN KUNG-FU GENERATION",
+  "エルレ": "ELLEGARDEN",
+  "ウーバー": "UVERworld",
+  "ラルク": "L'Arc~en~Ciel",
+  "ブルハ": "THE BLUE HEARTS",
+  "モンパチ": "MONGOL800",
+  "ドロス": "![Alexandros]",
+  "アレキ": "![Alexandros]",
+  "スピッツ": "スピッツ",
+  "源さん": "星野源"
+};
+
+const ARTISTS_PER_PAGE = 10;
 const SONGS_PER_PAGE = 10;
 
 const SongListPage: React.FC<{
-  searchQuery?: string;
-  userRange?: UserRange | null;
+  searchQuery?: string;     // URL等から渡される検索語
+  userRange?: UserRange | null; // 解析済みの音域データ
   onLoginClick?: () => void;
   onSearchChange?: (query: string) => void;
 }> = ({ searchQuery = "", userRange, onLoginClick, onSearchChange }) => {
   const { isAuthenticated } = useAuth();
 
-  // 検索クエリ
-  const [activeQuery, setActiveQuery] = useState(searchQuery);
-  const [searchInput, setSearchInput] = useState(searchQuery);
-  useEffect(() => {
-    setActiveQuery(searchQuery);
-    setSearchInput(searchQuery);
-  }, [searchQuery]);
-
-  // アーティスト一覧
+  // ── 状態管理 (State) ──
+  const [activeQuery, setActiveQuery] = useState(searchQuery); // 実際に検索に使っている語
+  const [searchInput, setSearchInput] = useState(searchQuery); // 入力中の文字
+  
+  // アーティスト一覧データ
   const [artists, setArtists] = useState<Artist[]>([]);
+  const [totalArtists, setTotalArtists] = useState(0);
+  const [artistPage, setArtistPage] = useState(0);
+  const [pageInput, setPageInput] = useState("1");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 五十音タブ: 選択中の行
-  const [selectedRow, setSelectedRow] = useState('あ');
-
-  // 楽曲検索結果
+  // 楽曲検索結果データ
   const [searchSongs, setSearchSongs] = useState<Song[]>([]);
   const [totalSearchSongs, setTotalSearchSongs] = useState(0);
   const [searchPage, setSearchPage] = useState(0);
   const [searchPageInput, setSearchPageInput] = useState("1");
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // 選択中のアーティスト
+  // アーティスト詳細表示
   const [selectedArtist, setSelectedArtist] = useState<Artist | null>(null);
   const [artistSongs, setArtistSongs] = useState<Song[]>([]);
   const [songsLoading, setSongsLoading] = useState(false);
 
-  // お気に入りアーティスト
+  // お気に入りIDのセット
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
-
-  // お気に入り曲
   const [favoriteSongIds, setFavoriteSongIds] = useState<Set<number>>(new Set());
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
 
-  // アーティスト全件取得
-  const fetchArtists = useCallback(async () => {
+  // ── データ取得関数 ──
+
+  /** アーティスト一覧を取得 */
+  const fetchArtists = useCallback(async (page: number) => {
     setLoading(true);
     try {
-      const data = await getArtists(10000, 0);
+      // 略称があれば変換、なければそのまま使用
+      const effectiveQuery = SEARCH_ALIASES[activeQuery] || activeQuery;
+      const data = await getArtists(ARTISTS_PER_PAGE, page * ARTISTS_PER_PAGE, effectiveQuery);
       setArtists(data.artists);
+      setTotalArtists(data.total);
       setError(null);
     } catch (err: any) {
-      setError("楽曲の取得に失敗しました");
+      setError("\u697d\u66f2\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeQuery]);
 
-  // 楽曲検索
+  /** 特定のキーワードで曲を検索 */
   const fetchSearchSongs = useCallback(async (page: number) => {
     if (!activeQuery) {
       setSearchSongs([]);
@@ -116,109 +212,60 @@ const SongListPage: React.FC<{
     } catch (err: any) {
       setError("\u697d\u66f2\u691c\u7d22\u306b\u5931\u6557\u3057\u307e\u3057\u305f");
       setSearchSongs([]);
-      setTotalSearchSongs(0);
     } finally {
       setSearchLoading(false);
     }
   }, [activeQuery, userRange]);
 
-  // アーティスト全件を初回ロード
-  useEffect(() => {
-    fetchArtists();
-  }, [fetchArtists]);
+  // ── 副作用 (Effects) ──
 
-  // 検索クエリが変わったらページをリセット
+  // 検索語が変わったらページを1枚目に戻す
   useEffect(() => {
     if (activeQuery) {
       setSearchPage(0);
       setSearchPageInput("1");
     } else {
+      setArtistPage(0);
+      setPageInput("1");
       setSelectedArtist(null);
     }
   }, [activeQuery]);
 
-  // ページが変わったら取得（楽曲検索）
+  // アーティスト一覧の読み込み
   useEffect(() => {
-    if (activeQuery) {
-      fetchSearchSongs(searchPage);
-      setSearchPageInput((searchPage + 1).toString());
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchPage, activeQuery]);
+    if (!activeQuery) fetchArtists(artistPage);
+  }, [artistPage, activeQuery, fetchArtists]);
 
-  // お気に入りアーティスト取得
+  // 楽曲検索結果の読み込み
   useEffect(() => {
-    getFavoriteArtists()
-      .then(favs => setFavoriteIds(favs.map(f => f.artist_id)))
-      .catch(e => console.error("\u304a\u6c17\u306b\u5165\u308a\u540c\u671f\u5931\u6557", e));
-  }, []);
+    if (activeQuery) fetchSearchSongs(searchPage);
+  }, [searchPage, activeQuery, fetchSearchSongs]);
 
-  // お気に入り曲ID一括取得
+  // 初期化時にお気に入り情報を取得
   useEffect(() => {
-    if (!isAuthenticated) {
-      setFavoriteSongIds(new Set());
-      return;
+    getFavoriteArtists().then(favs => setFavoriteIds(favs.map(f => f.artist_id)));
+    if (isAuthenticated) {
+      getFavorites(500).then(favs => setFavoriteSongIds(new Set(favs.map(f => f.song_id))));
     }
-    getFavorites(500)
-      .then(favs => setFavoriteSongIds(new Set(favs.map(f => f.song_id))))
-      .catch(err => console.error("\u304a\u6c17\u306b\u5165\u308a\u66f2\u53d6\u5f97\u5931\u6557:", err));
   }, [isAuthenticated]);
 
-  // 五十音グループ化
-  type GroupedRow = {
-    label: string;
-    rowKey: string; // INDEX_KANA の先頭かな（あ, か, さ...）
-    sections: { kana: string; artists: Artist[] }[];
-  };
+  // ── イベント操作 ──
 
-  const groupedArtists = useMemo<GroupedRow[]>(() => {
-    const kanaMap = new Map<string, Artist[]>();
-    for (const artist of artists) {
-      const base = getBaseKana(artist.reading || '');
-      if (!base) continue;
-      const list = kanaMap.get(base) || [];
-      list.push(artist);
-      kanaMap.set(base, list);
-    }
-
-    const result: GroupedRow[] = [];
-    for (const row of GOJUON_ROWS) {
-      const sections: { kana: string; artists: Artist[] }[] = [];
-      for (const k of row.kana) {
-        const list = kanaMap.get(k);
-        if (list && list.length > 0) {
-          sections.push({ kana: k, artists: list });
-        }
-      }
-      if (sections.length > 0) {
-        result.push({ label: row.label, rowKey: row.kana[0], sections });
-      }
-    }
-    return result;
-  }, [artists]);
-
-  // 選択中の行だけ抽出
-  const activeRow = useMemo(() => {
-    return groupedArtists.find(row => row.rowKey === selectedRow) || null;
-  }, [groupedArtists, selectedRow]);
-
-  // アーティスト選択時に楽曲取得
+  /** アーティストをクリックした時にその人の曲を表示 */
   const handleSelectArtist = useCallback(async (artist: Artist) => {
     setSelectedArtist(artist);
     setSongsLoading(true);
     try {
       const songs = await getArtistSongs(artist.id, userRange);
       setArtistSongs(songs);
-    } catch (err) {
-      console.error("\u697d\u66f2\u53d6\u5f97\u5931\u6557:", err);
-      setArtistSongs([]);
     } finally {
       setSongsLoading(false);
     }
   }, [userRange]);
 
+  /** アーティストの星（お気に入り）を切り替え */
   const toggleFavorite = async (e: React.MouseEvent, id: number, name: string) => {
-    e.stopPropagation();
+    e.stopPropagation(); // 行クリックイベントが発生しないように止める
     try {
       if (favoriteIds.includes(id)) {
         await removeFavoriteArtist(id);
@@ -228,32 +275,30 @@ const SongListPage: React.FC<{
         setFavoriteIds(prev => [...prev, id]);
       }
     } catch (err: any) {
-      alert(err.response?.data?.detail || "\u30ed\u30b0\u30a4\u30f3\u304c\u5fc5\u8981\u3001\u307e\u305f\u306f\u4e0a\u9650\uff11\uff10\u7d44\u3067\u3059");
+      alert("\u30ed\u30b0\u30a4\u30f3\u304c\u5fc5\u8981\u3001\u307e\u305f\u306f\u4e0a\u9650\uff11\uff10\u7d44\u3067\u3059");
     }
   };
 
-  // ハートトグル（曲単位）- functional state update で依存を最小化
+  /** 曲のハート（お気に入り）を切り替え */
   const handleToggleFavoriteSong = useCallback(async (songId: number) => {
     if (!isAuthenticated) {
       onLoginClick?.();
       return;
     }
-    const wasFavorite = favoriteSongIds.has(songId);
+    // オプティミスティック更新（通信完了を待たずに画面を変える）
+    let wasFavorite = false;
     setFavoriteSongIds(prev => {
+      wasFavorite = prev.has(songId);
       const next = new Set(prev);
       wasFavorite ? next.delete(songId) : next.add(songId);
       return next;
     });
     setTogglingIds(prev => new Set(prev).add(songId));
-
     try {
-      if (wasFavorite) {
-        await removeFavorite(songId);
-      } else {
-        await addFavorite(songId);
-      }
+      if (wasFavorite) await removeFavorite(songId);
+      else await addFavorite(songId);
     } catch (err) {
-      console.error("\u304a\u6c17\u306b\u5165\u308a\u66f2\u66f4\u65b0\u5931\u6557:", err);
+      // 失敗したら元に戻す
       setFavoriteSongIds(prev => {
         const next = new Set(prev);
         wasFavorite ? next.add(songId) : next.delete(songId);
@@ -266,259 +311,241 @@ const SongListPage: React.FC<{
         return next;
       });
     }
-  }, [isAuthenticated, onLoginClick, favoriteSongIds]);
+  }, [isAuthenticated, onLoginClick]);
 
+  // ── ページネーション操作 ──
+  const totalPages = Math.ceil(totalArtists / ARTISTS_PER_PAGE);
   const totalSearchPages = Math.ceil(totalSearchSongs / SONGS_PER_PAGE);
 
   const handleNext = () => {
-    if (searchPage + 1 < totalSearchPages) setSearchPage(p => p + 1);
+    if (activeQuery) { if (searchPage + 1 < totalSearchPages) setSearchPage(p => p + 1); }
+    else { if (artistPage + 1 < totalPages) setArtistPage(p => p + 1); }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handlePrev = () => {
-    if (searchPage > 0) setSearchPage(p => p - 1);
+    if (activeQuery) { if (searchPage > 0) setSearchPage(p => p - 1); }
+    else { if (artistPage > 0) setArtistPage(p => p - 1); }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handlePageJump = () => {
-    let p = parseInt(searchPageInput, 10);
-    if (isNaN(p)) { setSearchPageInput((searchPage + 1).toString()); return; }
-    if (p < 1) p = 1; if (p > totalSearchPages) p = totalSearchPages;
-    setSearchPage(p - 1); setSearchPageInput(p.toString());
+    if (activeQuery) {
+      let p = parseInt(searchPageInput, 10);
+      if (isNaN(p) || p < 1) p = 1;
+      setSearchPage(p - 1);
+    } else {
+      let p = parseInt(pageInput, 10);
+      if (isNaN(p) || p < 1) p = 1;
+      setArtistPage(p - 1);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleIndexJump = useCallback((char: string) => {
-    setSelectedRow(char);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  /** 五十音ジャンプ：目的の行まで二分探索でページを飛ばす */
+  const handleIndexJump = useCallback(async (char: string) => {
+    const targetRow = INDEX_KANA.indexOf(char);
+    if (targetRow === -1 || totalArtists === 0) return;
+    setLoading(true);
+    try {
+      let low = 0, high = Math.max(totalPages - 1, 0), found = 0;
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const { artists: page } = await getArtists(ARTISTS_PER_PAGE, mid * ARTISTS_PER_PAGE);
+        if (!page.length) break;
+        const firstRow = getConsonantRow(page[0].reading || "");
+        const lastRow = getConsonantRow(page[page.length - 1].reading || "");
+        if (targetRow < firstRow) high = mid - 1;
+        else if (targetRow > lastRow) low = mid + 1;
+        else { found = mid; high = mid - 1; }
+      }
+      setArtistPage(found);
+      setPageInput((found + 1).toString());
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setLoading(false);
+    }
+  }, [totalArtists, totalPages]);
 
-  // アーティスト別曲一覧表示
+  // ── 表示 (Render) ──
+
+  // アーティスト詳細モード
   if (selectedArtist) {
     return (
-      <div className="flex flex-col items-center min-h-[calc(100vh-80px)] bg-transparent p-4 sm:p-8">
+      <div className="flex flex-col items-center min-h-[calc(100vh-80px)] p-4 sm:p-8">
         <div className="w-full max-w-5xl mb-6">
-          <button
-            onClick={() => setSelectedArtist(null)}
-            className="text-slate-500 hover:text-cyan-400 font-bold flex items-center gap-2 transition-all duration-300 mb-6 drop-shadow-[0_0_5px_rgba(34,211,238,0)] hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]"
-          >
-            &larr; アーティスト一覧に戻る
+          <button onClick={() => setSelectedArtist(null)} className="text-slate-500 hover:text-cyan-400 font-bold mb-6">
+            &larr; \u30a2\u30fc\u30c6\u30a3\u30b9\u30c8\u4e00\u89a7\u306b\u623b\u308b
           </button>
           <div className="flex items-center gap-6">
-            <div className="relative w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center text-cyan-400 text-2xl font-bold border-2 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.6)]">
+            <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center text-cyan-400 text-2xl font-bold border-2 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.6)]">
               {selectedArtist.name.charAt(0)}
             </div>
             <div>
-              <h1 className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
+              <h1 className="text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-400">
                 {selectedArtist.name}
               </h1>
-              <p className="text-sm text-cyan-400 mt-1 font-bold tracking-widest">{artistSongs.length}{'\u66f2'}</p>
+              <p className="text-cyan-400 font-bold">{artistSongs.length}\u66f2</p>
             </div>
           </div>
         </div>
 
         {songsLoading ? (
-          <p className="mt-6 text-slate-500">{'\u8aad\u307f\u8fbc\u307f\u4e2d...'}</p>
+          <p className="text-slate-500">\u8aad\u307f\u8fbc\u307f\u4e2d...</p>
         ) : (
-          <SongTable
-            songs={artistSongs}
-            artistNameOverride={selectedArtist.name}
-            userRange={userRange ?? null}
-            favoriteSongIds={favoriteSongIds}
-            togglingIds={togglingIds}
-            onToggleFavorite={handleToggleFavoriteSong}
-          />
+          <div className="w-full max-w-5xl bg-slate-900/60 backdrop-blur-md rounded-xl border border-white/10 overflow-hidden">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-slate-800/50 text-xs text-slate-400 border-b border-white/5">
+                  <th className="py-3 px-5">#</th>
+                  <th className="py-3 px-4">Title</th>
+                  <th className="py-3 px-4">Lowest</th>
+                  <th className="py-3 px-4">Highest</th>
+                  {userRange && <th className="py-3 px-4 text-center">Key</th>}
+                  <th className="py-3 px-2 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {artistSongs.map((song, i) => (
+                  <tr key={song.id} className="border-b border-cyan-500/10 hover:bg-cyan-900/20 text-sm">
+                    <td className="py-3 px-5 text-slate-500">{i + 1}</td>
+                    <td className="py-3 px-4 font-medium">
+                      <a href={`https://www.google.com/search?q=${encodeURIComponent(`${selectedArtist.name} ${song.title} \u6b4c\u8a5e`)}`} target="_blank" rel="noopener noreferrer" className="text-slate-200 hover:text-cyan-400">
+                        {song.title}
+                      </a>
+                    </td>
+                    <td className="py-3 px-4 text-slate-400">{song.lowest_note || '-'}</td>
+                    <td className="py-3 px-4 text-slate-400">{song.highest_note || '-'}</td>
+                    {userRange && (
+                      <td className="py-3 px-4 text-center">
+                        {song.recommended_key !== undefined ? keyBadge(song.recommended_key, song.fit) : '-'}
+                      </td>
+                    )}
+                    <td className="py-3 px-2">
+                      <button onClick={() => handleToggleFavoriteSong(song.id)} disabled={togglingIds.has(song.id)}>
+                        {favoriteSongIds.has(song.id) ? <HeartIconSolid className="w-5 h-5 text-rose-500" /> : <HeartIcon className="w-5 h-5 text-slate-500" />}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     );
   }
 
+  // メイン画面（検索 ＆ アーティスト一覧）
   return (
-    <div className="flex flex-col items-center min-h-[calc(100vh-80px)] bg-transparent p-4 sm:p-8">
+    <div className="flex flex-col items-center min-h-[calc(100vh-80px)] p-4 sm:p-8">
       <div className="w-full max-w-3xl flex flex-col mb-4 gap-6">
-        <form
-          className="relative w-full group"
-          onSubmit={(e) => {
-            e.preventDefault(); // エンターキーでのページリロードを防ぐ
-            if (onSearchChange) {
-              onSearchChange(searchInput);
-            }
-          }}
-        >
-          <input
-            type="text"
-            placeholder="楽曲名・アーティスト名で検索..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full pl-10 pr-10 py-3 bg-slate-900/40 backdrop-blur-md border border-cyan-500/30 rounded-lg text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-400 focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.6)] placeholder-slate-500 transition-all duration-300"
-          />
-          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-cyan-400 transition-colors" />
-
-          {/* クリアボタン (入力がある時のみ表示) */}
+        <form className="relative w-full group" onSubmit={(e) => { e.preventDefault(); if (onSearchChange) onSearchChange(searchInput); }}>
+          <input type="text" placeholder="\u697d\u66f2\u540d\u30fb\u30a2\u30fc\u30c6\u30a3\u30b9\u30c8\u540d\u3067\u691c\u7d22..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="w-full pl-10 pr-10 py-3 bg-slate-900/40 border border-cyan-500/30 rounded-lg text-slate-200 focus:ring-1 focus:ring-cyan-400" />
+          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
           {searchInput && (
-            <button
-              type="button" // ★重要: エンターキーでこのボタンが誤爆しないように type="button" を追加
-              onClick={() => {
-                setSearchInput('');
-                setActiveQuery('');
-                if (onSearchChange) {
-                  onSearchChange('');
-                }
-              }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-cyan-400 hover:drop-shadow-[0_0_5px_rgba(34,211,238,0.8)] transition-all"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+            <button type="button" onClick={() => { setSearchInput(''); setActiveQuery(''); if (onSearchChange) onSearchChange(''); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-cyan-400">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           )}
         </form>
-        <div>
-          <h1 className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-400 mb-2 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
-            {activeQuery ? '楽曲検索結果' : 'ARTISTS'}
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <h1 className="text-3xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-yellow-400">
+            {activeQuery ? '\u697d\u66f2\u691c\u7d22\u7d50\u679c' : 'ARTISTS'}
           </h1>
-          <p className="text-xs text-slate-400 font-bold tracking-wide">
-            {activeQuery
-              ? `"${activeQuery}" の検索結果`
-              : (userRange ? "音域に合わせたキーおすすめを表示中" : "録音すると、キーおすすめが表示されます")
-            }
-          </p>
+          {!activeQuery && (
+            <div className="flex flex-wrap gap-2">
+              {INDEX_KANA.map(char => (
+                <button key={char} onClick={() => handleIndexJump(char)} className="w-8 h-8 text-sm font-bold text-slate-400 bg-slate-900/60 border border-cyan-900/50 rounded-sm hover:text-cyan-300 hover:border-cyan-400 transition-all">
+                  {char}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-
-      {/* 五十音タブ: sticky で画面上部に固定 */}
-      {!activeQuery && (
-        <div className="sticky top-0 md:top-[4.5rem] z-40 w-full max-w-3xl bg-slate-900/95 backdrop-blur-md border-b border-cyan-500/20 py-3 px-4 mb-4 -mx-4 sm:-mx-8">
-          <div className="flex flex-wrap gap-2 justify-center">
-            {INDEX_KANA.map(char => (
-              <button
-                key={char}
-                onClick={() => handleIndexJump(char)}
-                className={`w-8 h-8 flex items-center justify-center text-sm font-bold border rounded-sm transition-all duration-300 ${
-                  char === selectedRow
-                    ? 'bg-cyan-900/60 text-cyan-300 border-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.6)]'
-                    : 'text-slate-400 bg-slate-900/60 border-cyan-900/50 hover:bg-cyan-900/40 hover:text-cyan-300 hover:border-cyan-400 hover:shadow-[0_0_10px_rgba(34,211,238,0.6)]'
-                }`}
-              >
-                {char}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {error && <p className="text-rose-400 mb-4">{error}</p>}
 
       {activeQuery ? (
-        // 楽曲検索結果表示
+        // 楽曲検索結果の表示
         <>
-          {searchLoading ? (
-            <p className="mt-6 text-slate-500">{'読み込み中...'}</p>
-          ) : searchSongs.length === 0 ? (
-            <p className="mt-6 text-slate-400 text-center">該当する楽曲が見つかりません</p>
-          ) : (
-            <SongTable
-              songs={searchSongs}
-              rowOffset={searchPage * SONGS_PER_PAGE}
-              showArtistColumn
-              userRange={userRange ?? null}
-              favoriteSongIds={favoriteSongIds}
-              togglingIds={togglingIds}
-              onToggleFavorite={handleToggleFavoriteSong}
-            />
+          {searchLoading ? <p className="text-slate-500">\u8aad\u307f\u8fbc\u307f\u4e2d...</p> : (
+            <div className="w-full max-w-5xl bg-slate-900/60 backdrop-blur-md rounded-xl border border-white/10 overflow-hidden">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-slate-800/50 text-xs text-slate-400 border-b border-white/5">
+                    <th className="py-3 px-5">#</th>
+                    <th className="py-3 px-4">Song</th>
+                    <th className="py-3 px-4">Artist</th>
+                    {userRange && <th className="py-3 px-4 text-center">Key</th>}
+                    <th className="py-3 px-2 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {searchSongs.map((song, i) => (
+                    <tr key={song.id} className="border-b border-cyan-500/10 hover:bg-cyan-900/20 text-sm">
+                      <td className="py-3 px-5 text-slate-500">{searchPage * SONGS_PER_PAGE + i + 1}</td>
+                      <td className="py-3 px-4 font-medium">
+                        <a href={`https://www.google.com/search?q=${encodeURIComponent(`${song.artist} ${song.title} \u6b4c\u8a5e`)}`} target="_blank" rel="noopener noreferrer" className="text-slate-200 hover:text-cyan-400">
+                          {song.title}
+                        </a>
+                      </td>
+                      <td className="py-3 px-4 text-slate-400">{song.artist}</td>
+                      {userRange && (
+                        <td className="py-3 px-4 text-center">
+                          {song.recommended_key !== undefined ? keyBadge(song.recommended_key, song.fit) : '-'}
+                        </td>
+                      )}
+                      <td className="py-3 px-2">
+                        <button onClick={() => handleToggleFavoriteSong(song.id)} disabled={togglingIds.has(song.id)}>
+                          {favoriteSongIds.has(song.id) ? <HeartIconSolid className="w-5 h-5 text-rose-500" /> : <HeartIcon className="w-5 h-5 text-slate-500" />}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-
-          {/* 楽曲検索結果のページネーション */}
+          {/* 楽曲検索のページネーション */}
           {!searchLoading && totalSearchSongs > SONGS_PER_PAGE && (
-            <div className="flex items-center justify-center gap-4 mt-8">
-              <button
-                onClick={handlePrev}
-                disabled={searchPage === 0}
-                className="px-4 py-2 bg-slate-800 border border-slate-700 text-slate-300 rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors shadow-sm text-sm"
-              >
-                {'前のページ'}
-              </button>
-              <div className="flex items-center gap-2 text-slate-400 text-sm font-medium">
-                <input
-                  type="text"
-                  value={searchPageInput}
-                  onChange={(e) => setSearchPageInput(e.target.value)}
-                  onBlur={handlePageJump}
-                  onKeyDown={(e) => e.key === 'Enter' && handlePageJump()}
-                  className="w-12 h-9 text-center bg-slate-800 border border-slate-700 rounded-lg focus:ring-2 focus:ring-cyan-500/50 text-slate-200"
-                />
-                <span>/ {totalSearchPages}</span>
-              </div>
-              <button
-                onClick={handleNext}
-                disabled={searchPage + 1 >= totalSearchPages}
-                className="px-4 py-2 bg-slate-800 border border-slate-700 text-slate-300 rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors shadow-sm text-sm"
-              >
-                {'次のページ'}
-              </button>
+            <div className="flex items-center gap-4 mt-8">
+              <button onClick={handlePrev} disabled={searchPage === 0} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg disabled:opacity-50">Prev</button>
+              <input type="text" value={searchPageInput} onChange={e => setSearchPageInput(e.target.value)} onBlur={handlePageJump} className="w-12 h-9 text-center bg-slate-800 rounded-lg" />
+              <button onClick={handleNext} disabled={searchPage + 1 >= totalSearchPages} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg disabled:opacity-50">Next</button>
             </div>
           )}
         </>
       ) : (
-        // アーティスト一覧表示（五十音グループ）
+        // アーティスト一覧の表示
         <>
-          {loading && <p className="mt-6 text-slate-500">読み込み中...</p>}
-
-          {activeRow ? (
-            <div className="w-full max-w-3xl flex flex-col gap-6">
-              {/* 行ヘッダー */}
-              <div className="flex items-center gap-3">
-                <div className="w-1 h-8 bg-gradient-to-b from-cyan-400 to-fuchsia-500 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.6)]" />
-                <h2 className="text-xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-400 tracking-wider">
-                  {activeRow.label}
-                </h2>
-              </div>
-
-              {/* 段セクション */}
-              <div className="flex flex-col gap-3">
-                {activeRow.sections.map((section) => (
-                  <div key={section.kana} className="bg-slate-900/60 backdrop-blur-md rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.5)] border border-cyan-500/20 overflow-hidden">
-                    {/* 段サブヘッダー */}
-                    <div className="flex items-center gap-2 px-5 py-2 bg-slate-800/40 border-b border-cyan-500/10">
-                      <span className="text-sm font-bold text-cyan-400">{section.kana}</span>
-                      <span className="text-xs text-slate-500">{section.artists.length}組</span>
+          {loading && <p className="text-slate-500">\u8aad\u307f\u8fbc\u307f\u4e2d...</p>}
+          <div className="w-full max-w-3xl bg-slate-900/60 backdrop-blur-md rounded-xl border border-cyan-500/20 overflow-hidden">
+            {artists.map((artist) => (
+              <div key={artist.id} className="group relative flex items-center w-full border-b border-cyan-500/10 last:border-0 hover:bg-cyan-900/20 transition-all">
+                <button onClick={() => handleSelectArtist(artist)} className="flex-1 flex items-center justify-between p-4 pl-6 text-left">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-cyan-400 font-bold border-2 border-cyan-400">
+                      {artist.name.charAt(0)}
                     </div>
-
-                    {/* アーティスト行 */}
-                    {section.artists.map((artist) => (
-                      <div key={artist.id} className="group relative flex items-center w-full border-b border-cyan-500/10 last:border-0 hover:bg-cyan-900/20 transition-all duration-300">
-                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400 opacity-0 group-hover:opacity-100 shadow-[0_0_10px_rgba(34,211,238,1)] transition-opacity duration-300"></div>
-                        <button
-                          onClick={() => handleSelectArtist(artist)}
-                          className="flex-1 flex items-center justify-between p-4 pl-6 text-left"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="relative w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-cyan-400 font-bold text-sm border-2 border-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.5)] group-hover:shadow-[0_0_15px_rgba(34,211,238,0.8)] transition-all duration-300">
-                              {artist.name.charAt(0)}
-                            </div>
-                            <p className="font-bold text-slate-200 group-hover:text-cyan-400 transition-colors drop-shadow-[0_0_5px_rgba(34,211,238,0)] group-hover:drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]">{artist.name}</p>
-                          </div>
-                          <span className="text-xs text-cyan-400 bg-slate-900/80 px-3 py-1 rounded-sm border border-cyan-500/30 shadow-[0_0_5px_rgba(34,211,238,0.2)]">{artist.song_count}曲</span>
-                        </button>
-
-                        <button
-                          onClick={(e) => toggleFavorite(e, artist.id, artist.name)}
-                          className="p-4 pr-6 transition-transform hover:scale-125 z-10"
-                        >
-                          {favoriteIds.includes(artist.id) ? (
-                            <StarSolid className="w-6 h-6 text-amber-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]" />
-                          ) : (
-                            <StarOutline className="w-6 h-6 text-slate-500 hover:text-cyan-400 transition-colors" />
-                          )}
-                        </button>
-                      </div>
-                    ))}
+                    <p className="font-bold text-slate-200 group-hover:text-cyan-400">{artist.name}</p>
                   </div>
-                ))}
+                  <span className="text-xs text-cyan-400 bg-slate-900/80 px-3 py-1 rounded-sm border border-cyan-500/30">{artist.song_count}\u66f2</span>
+                </button>
+                <button onClick={(e) => toggleFavorite(e, artist.id, artist.name)} className="p-4 pr-6">
+                  {favoriteIds.includes(artist.id) ? <StarSolid className="w-6 h-6 text-amber-400" /> : <StarOutline className="w-6 h-6 text-slate-500" />}
+                </button>
               </div>
+            ))}
+          </div>
+          {/* アーティスト一覧のページネーション */}
+          {!loading && totalArtists > ARTISTS_PER_PAGE && (
+            <div className="flex items-center gap-4 mt-8">
+              <button onClick={handlePrev} disabled={artistPage === 0} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg disabled:opacity-50">\u524d\u306e\u30da\u30fc\u30b8</button>
+              <input type="text" value={pageInput} onChange={e => setPageInput(e.target.value)} onBlur={handlePageJump} className="w-12 h-9 text-center bg-slate-800 rounded-lg" />
+              <button onClick={handleNext} disabled={artistPage + 1 >= totalPages} className="px-4 py-2 bg-slate-800 text-slate-300 rounded-lg disabled:opacity-50">\u6b21\u306e\u30da\u30fc\u30b8</button>
             </div>
-          ) : !loading && (
-            <p className="mt-6 text-slate-400 text-center">該当するアーティストがいません</p>
           )}
         </>
       )}
