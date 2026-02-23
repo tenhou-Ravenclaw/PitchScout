@@ -1,0 +1,15 @@
+{
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
+  "files.exclude": {
+    "**/.env": true,
+    "**/.env.*": true
+  },
+  "search.exclude": {
+    "**/.env": true,
+    "**/.env.*": true,
+    "**/node_modules": true,
+    "**/venv": true,
+    "**/__pycache__": true
+  },
+  "github.copilot.chat.codeGeneration.useInstructionFiles": true
+}
