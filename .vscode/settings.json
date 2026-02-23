@@ -1,9 +1,5 @@
 {
   "typescript.tsdk": "frontend/node_modules/typescript/lib",
-  "files.exclude": {
-    "**/.env": true,
-    "**/.env.*": true
-  },
   "search.exclude": {
     "**/.env": true,
     "**/.env.*": true,
