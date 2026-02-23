@@ -1,45 +1,42 @@
 /**
  * 【FavoritesPage.tsx】
- * 役割：ユーザーがお気に入り登録した曲を一覧表示し、解除（削除）操作を行う画面です。
- * 💡 設計図（FRONTEND_STRUCTURE.md）に基づく移動案：
- * 1. 移動先: src/features/songs/pages/FavoritesPage.tsx
- * 2. 改善点：楽曲を表示するテーブル部分を「SongTable.tsx」として共通化すると、
- * 楽曲一覧画面（SongListPage）と同じ見た目を保ちつつ、コードを短くできます。
+ * 役割：ユーザーがお気に入り登録した楽曲を一覧表示するページです。
+ * 特徴：ログイン状態のチェック、データの読み込み待ち、0件時の表示などを細かく管理しています。
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
-// API通信用の関数や型をインポート
+// API通信用の関数や型定義をインポート
 import { getFavorites, removeFavorite, FavoriteSong, UserRange } from './api';
+// ハートアイコン（塗りつぶし）を使用
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
+// 認証状態（ログインしているか）を確認する道具
 import { useAuth } from './contexts/AuthContext';
 
-/** * 画面が受け取るデータ（Props）の定義
- */
+/** 画面が受け取るプロパティ（設定）の定義 */
 interface FavoritesPageProps {
-    userRange?: UserRange | null; // キーおすすめ用のユーザー音域
-    onLoginClick?: () => void;    // ログインを促すための関数
+    userRange?: UserRange | null; // ユーザーの音域（将来的な拡張用）
+    onLoginClick?: () => void;    // ログインボタンが押された時の動き
 }
 
 const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
+    // 認証状態を取得
     const { isAuthenticated } = useAuth();
     
     // ── 状態管理 (State) ──
-    const [favorites, setFavorites] = useState<FavoriteSong[]>([]); // お気に入り曲のリスト本体
-    const [loading, setLoading] = useState(true); // 読み込み中フラグ
-    // 現在削除処理中の曲IDを管理（二重クリック防止用）
-    const [removingIds, setRemovingIds] = useState<Set<number>>(new Set());
+    const [favorites, setFavorites] = useState<FavoriteSong[]>([]); // お気に入り曲のリスト
+    const [loading, setLoading] = useState(true);                   // 読み込み中フラグ
+    const [removingIds, setRemovingIds] = useState<Set<number>>(new Set()); // 削除処理中の曲IDを管理
 
     /**
-     * 画面を開いた時にお気に入りデータを取得
+     * ── データの取得 (Effect) ──
+     * ログインしている場合、サーバーからお気に入りリスト（最大500件）を取得します。
      */
     useEffect(() => {
-        // ログインしていなければ処理しない
         if (!isAuthenticated) {
             setLoading(false);
             return;
         }
         setLoading(true);
-        // 最大500件まで取得を試みる
         getFavorites(500)
             .then(setFavorites)
             .catch(err => console.error("お気に入り取得失敗:", err))
@@ -47,33 +44,31 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
     }, [isAuthenticated]);
 
     /**
-     * お気に入り解除（削除）の処理
-     * 💡 「オプティミスティック更新」を行っています。
+     * ── お気に入りの削除処理 ──
+     * オプティミスティック更新（通信完了を待たずに画面から消す）を採用しています。
      */
     const handleRemove = useCallback(async (songId: number) => {
         // すでに削除処理中なら何もしない
         if (removingIds.has(songId)) return;
 
-        // 削除前のリストを一時保存（失敗した時のバックアップ）
         const removed = favorites.find(f => f.song_id === songId);
         
-        // ── オプティミスティック更新 ──
-        // サーバーからの返事を待たずに、まず画面上のリストから消す
+        // 1. 先に画面から消す（体感速度を上げる）
         setFavorites(prev => prev.filter(f => f.song_id !== songId));
-        // 処理中フラグを立てる
+        // 2. 処理中リストに追加
         setRemovingIds(prev => new Set(prev).add(songId));
 
         try {
-            // サーバーに削除を依頼
+            // 3. サーバーへ削除リクエストを送る
             await removeFavorite(songId);
         } catch (err) {
             console.error("お気に入り削除失敗:", err);
-            // 💡 失敗した場合は、バックアップからリストを元に戻す
+            // 4. 失敗した場合はリストを元に戻す（ロールバック）
             if (removed) {
                 setFavorites(prev => [...prev, removed].sort((a, b) => a.title.localeCompare(b.title, "ja")));
             }
         } finally {
-            // 処理中フラグを下ろす
+            // 5. 処理中リストから外す
             setRemovingIds(prev => {
                 const next = new Set(prev);
                 next.delete(songId);
@@ -82,14 +77,16 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
         }
     }, [favorites, removingIds]);
 
-    // ── 条件付きレンダリング：未ログイン ──
+    /** ── 表示判定：未ログインの場合 ── */
     if (!isAuthenticated) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
                 <div className="w-full max-w-sm bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl border border-white/10 p-8 text-center">
                     <HeartIconSolid className="w-12 h-12 text-rose-500/50 mx-auto mb-4" />
                     <h2 className="text-xl font-bold text-white mb-2">お気に入り</h2>
-                    <p className="text-slate-400 text-sm mb-6">ログインするとお気に入りの楽曲を保存できます</p>
+                    <p className="text-slate-400 text-sm mb-6">
+                        ログインするとお気に入りの楽曲を保存できます
+                    </p>
                     <button
                         onClick={onLoginClick}
                         className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-xl px-6 py-3 text-sm transition-colors shadow-lg shadow-cyan-500/20"
@@ -101,7 +98,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
         );
     }
 
-    // ── 条件付きレンダリング：読み込み中 ──
+    /** ── 表示判定：読み込み中の場合 ── */
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
@@ -110,20 +107,22 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
         );
     }
 
-    // ── 条件付きレンダリング：データ0件 ──
+    /** ── 表示判定：0件の場合 ── */
     if (favorites.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
                 <div className="text-center">
                     <HeartIconSolid className="w-12 h-12 text-slate-700 mx-auto mb-4" />
                     <h2 className="text-xl font-bold text-white mb-2">お気に入りはまだありません</h2>
-                    <p className="text-slate-400 text-sm">楽曲一覧でハートをタップして追加しましょう</p>
+                    <p className="text-slate-400 text-sm">
+                        楽曲一覧でハートをタップして追加しましょう
+                    </p>
                 </div>
             </div>
         );
     }
 
-    // ── メイン表示：お気に入りテーブル ──
+    /** ── 表示判定：お気に入り一覧のテーブル表示 ── */
     return (
         <div className="flex flex-col items-center min-h-[calc(100vh-80px)] bg-transparent p-4 sm:p-8">
             <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2 drop-shadow-md">お気に入り</h1>
@@ -152,12 +151,12 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
                                 <td className="py-3 px-4 text-slate-400 whitespace-nowrap hidden sm:table-cell">{fav.highest_note || '-'}</td>
                                 <td className="py-3 px-4 text-slate-400 whitespace-nowrap hidden sm:table-cell">{fav.falsetto_note || '-'}</td>
                                 <td className="py-3 px-2 text-center">
+                                    {/* お気に入り解除ボタン（ハート） */}
                                     <button
                                         onClick={() => handleRemove(fav.song_id)}
                                         disabled={removingIds.has(fav.song_id)}
                                         className="p-1 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50"
                                     >
-                                        {/* お気に入り中なので、常に塗られたハートを表示 */}
                                         <HeartIconSolid className="w-5 h-5 text-rose-500" />
                                     </button>
                                 </td>
