@@ -143,10 +143,10 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
             <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2 drop-shadow-md">お気に入り</h1>
             <p className="text-sm text-slate-400 mb-6">{favorites.length}曲</p>
 
-            <div className="w-full max-w-5xl bg-slate-900/60 backdrop-blur-md shadow-xl rounded-xl overflow-hidden border border-white/10">
+            <div className="table-container">
                 <table className="w-full text-left">
                     <thead>
-                        <tr className="bg-slate-800/50 text-xs text-slate-400 uppercase border-b border-white/5">
+                        <tr className="table-header">
                             <th className="py-3 px-5 font-medium">#</th>
                             <th className="py-3 px-4 font-medium">Title</th>
                             <th className="py-3 px-4 font-medium">Artist</th>
@@ -158,7 +158,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
                     </thead>
                     <tbody>
                         {favorites.map((fav, i) => (
-                            <tr key={fav.favorite_id} className="border-b border-white/5 hover:bg-white/5 transition-colors text-sm group">
+                            <tr key={fav.favorite_id} className="table-row group">
                                 <td className="py-3 px-5 text-slate-500 text-xs">{i + 1}</td>
                                 <td className="py-3 px-4 text-slate-200 font-medium group-hover:text-white transition-colors">{fav.title}</td>
                                 <td className="py-3 px-4 text-slate-400">{fav.artist || '-'}</td>

@@ -281,10 +281,10 @@ const SongListPage: React.FC<{
         {songsLoading ? (
           <p className="mt-6 text-slate-500">{'\u8aad\u307f\u8fbc\u307f\u4e2d...'}</p>
         ) : (
-          <div className="w-full max-w-5xl bg-slate-900/60 backdrop-blur-md shadow-xl rounded-xl overflow-hidden border border-white/10">
+          <div className="table-container">
             <table className="w-full text-left">
               <thead>
-                <tr className="bg-slate-800/50 text-xs text-slate-400 uppercase border-b border-white/5">
+                <tr className="table-header">
                   <th className="py-3 px-5 font-medium">#</th>
                   <th className="py-3 px-4 font-medium">Title</th>
                   <th className="py-3 px-4 font-medium">Lowest</th>
@@ -296,7 +296,7 @@ const SongListPage: React.FC<{
               </thead>
               <tbody>
                 {artistSongs.map((song, i) => (
-                  <tr key={song.id} className="border-b border-cyan-500/10 hover:bg-cyan-900/20 transition-all duration-300 text-sm group">
+                  <tr key={song.id} className="table-row group">
                     <td className="py-3 px-5 text-slate-500 text-xs">{i + 1}</td>
                     <td className="py-3 px-4 font-medium">
                       <a
@@ -389,10 +389,10 @@ const SongListPage: React.FC<{
           ) : searchSongs.length === 0 ? (
             <p className="mt-6 text-slate-400 text-center">該当する楽曲が見つかりません</p>
           ) : (
-            <div className="w-full max-w-5xl bg-slate-900/60 backdrop-blur-md shadow-xl rounded-xl overflow-hidden border border-white/10">
+            <div className="table-container">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="bg-slate-800/50 text-xs text-slate-400 uppercase border-b border-white/5">
+                  <tr className="table-header">
                     <th className="py-3 px-5 font-medium">#</th>
                     <th className="py-3 px-4 font-medium">楽曲</th>
                     <th className="py-3 px-4 font-medium">アーティスト</th>
@@ -405,7 +405,7 @@ const SongListPage: React.FC<{
                 </thead>
                 <tbody>
                   {searchSongs.map((song, i) => (
-                    <tr key={song.id} className="border-b border-cyan-500/10 hover:bg-cyan-900/20 transition-all duration-300 text-sm group">
+                    <tr key={song.id} className="table-row group">
                       <td className="py-3 px-5 text-slate-500 text-xs">{searchPage * SONGS_PER_PAGE + i + 1}</td>
                       <td className="py-3 px-4 font-medium">
                         <a

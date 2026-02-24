@@ -24,7 +24,7 @@
 src/
 ├── index.tsx                  # エントリポイント
 ├── App.tsx                    # Provider 初期化 + BrowserRouter 起動
-├── routes.tsx                 # RouteObject 定義（URL と画面の対応表）
+├── routes.tsx                 # RouteObject 定義 + インラインルートラッパー関数
 ├── api.ts                     # 互換レイヤー（src/api/ を再エクスポート）
 ├── api/                       # API モジュール本体
 │   ├── client.ts              # Axios インスタンス + JWT 自動付与
@@ -48,30 +48,77 @@ src/
 │   ├── Layout.tsx              # 共通レイアウト（Header/BottomNav/Outlet）
 │   ├── Recorder.tsx            # マイク録音 + 波形ビジュアライザー
 │   ├── KaraokeUploader.tsx     # カラオケ音源アップロード
-│   └── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
+│   ├── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
+│   ├── Pagination.tsx          # テーブルページネーション
+│   ├── SearchBar.tsx           # 楽曲検索バー
+│   ├── SyllableIndex.tsx       # 五十音インデックス
+│   ├── ErrorBanner.tsx         # エラー表示バナー
+│   ├── Toast.tsx               # トースト通知
+│   └── LogoSplash.tsx          # ロゴシャドウアニメーション
 │
-├── Landing.tsx                 # ランディング画面 (NEW RECORD / HISTORY)
-├── Home.tsx                    # メニュー画面 (録音方法選択グリッド)
-├── LoginPage.tsx               # ログイン画面 (Google OAuth ボタン)
-├── AnalysisResultPage.tsx      # 分析結果ダッシュボード (レーダーチャート付き)
-├── SongListPage.tsx            # 楽曲一覧 (アーティスト別グリッド + 曲テーブル)
-├── FavoritesPage.tsx           # お気に入り一覧
-├── HistoryPage.tsx             # 分析履歴一覧
-├── GuidePage.tsx               # 使い方ガイド
-├── pages/                      # 録音・アップロード・結果のページ本体
-├── routeWrappers/              # Context とページを橋渡しするラッパー
+├── hooks/
+│   ├── useToast.ts             # トースト通知管理
+│   ├── useFavoriteArtists.ts   # お気に入りアーティスト取得
+│   └── useFavoriteSongs.ts     # お気に入り曲取得デバウンス
+│
+├── constants/
+│   └── songListConstants.ts    # 楽曲検索定数・ユーティリティ
+│
+├── utils/
+│   └── keyBadge.ts             # キーバッジ色付けロジック
+│
+├── pages/
+│   ├── Home.tsx                # メニュー画面 (録音方法選択グリッド)
+│   ├── Landing.tsx             # ランディング画面 (NEW RECORD / HISTORY)
+│   ├── LoginPage.tsx           # ログイン画面 (Google OAuth ボタン)
+│   ├── AnalysisResultPage.tsx  # 分析結果ダッシュボード (レーダーチャート付き)
+│   ├── SongListPage.tsx        # 楽曲一覧 (アーティスト別グリッド + 曲テーブル)
+│   ├── FavoritesPage.tsx       # お気に入り一覧
+│   ├── HistoryPage.tsx         # 分析履歴一覧
+│   ├── GuidePage.tsx           # 使い方ガイド
+│   ├── RecorderPage.tsx        # マイク / カラオケ録音ラッパー
+│   ├── UploaderPage.tsx        # 音源アップロード
+│   └── ResultPage.tsx          # 録音/アップロード直後の中間結果
+│
+├── styles/
+│   ├── index.css               # グローバル CSS (Tailwind + @layer components)
+│   └── LogoSplash.css          # ロゴシャドウアニメーション専用
 │
 ├── assets/
 │   └── logo.png                # アプリロゴ
-│
-├── index.css                   # グローバル CSS (Tailwind ディレクティブ)
-├── HomePage.css                # Landing 用カスタム CSS (アニメーション等)
 │
 ├── App.test.tsx                # テスト
 ├── setupTests.ts               # テスト設定
 ├── react-app-env.d.ts          # CRA 型定義
 └── reportWebVitals.ts          # パフォーマンス計測
+
+**ファイル総数**: 28 ファイル（`src/routeWrappers/` 廃止により 37 → 28 に削減）
 ```
+
+### 2.1 主要ディレクトリ説明
+
+#### `pages/` — ページコンポーネント統一ディレクトリ
+- 全 11 個のページコンポーネントを集約
+- 各ページは **Context 非依存** で、Props を受け取り表示のみを行う
+- `routes.tsx` 内の **インラインルートラッパー関数** が Context と受け渡しを担当
+
+#### `hooks/` — 再利用フックの集約
+- `useToast`: トースト通知ロジック（4 ページで使用）
+- `useFavoriteArtists`: お気に入りアーティスト取得（デバウンス付き）
+- `useFavoriteSongs`: お気に入り曲の一括取得と更新
+
+#### `constants/` — 定数とユーティリティ
+- `songListConstants.ts`: 楽曲検索用の五十音インデックス・検索エイリアス（150+ 行）
+
+#### `utils/` — 共有ユーティリティ
+- `keyBadge.ts`: キーバッジの色付けロジック
+
+#### `styles/` — グローバルスタイル
+- `index.css`: Tailwind @layer components で共有 CSS クラス定義
+  - `.table-container`: テーブルベースカード
+  - `.table-header`: テーブルヘッダースタイル
+  - `.table-row`: テーブル行スタイル (group対応)
+- `LogoSplash.css`: ロゴシャドウアニメーション専用
 
 ---
 
@@ -79,12 +126,48 @@ src/
 
 現行フロントエンドは `ViewState` ではなく、`react-router-dom` による URL ルーティングで画面管理を行う。
 
-### 3.1 ルーティング方針（現行）
+### 3.1 ルーティング方針
 
-- `App.tsx` は `BrowserRouter` + Provider 初期化を担当する。
-- `routes.tsx` で URL と画面コンポーネントを定義する。
-- `Layout.tsx` 配下に `Outlet` を配置し、`Header` / `BottomNav` を共通レイアウトとして扱う。
-- Context の受け渡しは `routeWrappers/` で行い、ページ本体の責務を分離する。
+- `App.tsx` は `BrowserRouter` + Provider 初期化を担当する
+- `routes.tsx` で URL と画面コンポーネントを定義し、**6 個のインラインルートラッパー関数** を含む
+- `Layout.tsx` 配下に `Outlet` を配置し、`Header` / `BottomNav` を共通レイアウトとして扱う
+- **ルートラッパー関数** が AppContext / AuthContext を読み取り、ページコンポーネントに Props で渡す
+- ページコンポーネント（`src/pages/` 配下）は **Context に直接依存しない** — Props のみを受け取る設計
+
+#### インラインルートラッパーパターン
+
+`routes.tsx` 内に以下 6 個のラッパー関数が定義される：
+
+```typescript
+// UserContext とページコンポーネントを橋渡し
+function LandingRoute() {
+  const { isAuthenticated } = useAuth();
+  return <Landing isAuthenticated={isAuthenticated} />;
+}
+
+function HomeRoute() {
+  const navigate = useNavigate();
+  const { isAnalyzing } = useAnalysisContext();
+  const { setIsFromHistory } = useAppContext();
+  const handleSelectRecord = (type: "micro" | "karaoke") => {
+    setIsFromHistory(false);
+    navigate(`/${type === "micro" ? "record" : "karaoke"}`);
+  };
+  return <Home onSelectRecord={handleSelectRecord} isAnalyzing={isAnalyzing} />;
+}
+
+function AnalysisRoute() {
+  const { result } = useAppContext();
+  return <AnalysisResultPage result={result} />;
+}
+
+// 他 SongListRoute, FavoritesRoute, HistoryRoute も同様
+```
+
+**メリット:**
+- `routeWrappers/` ディレクトリ不要 — routes.tsx で全て完結
+- ページコンポーネントが Context に依存しない — 再利用性・テスト性向上
+- ファイル総数削減（-6 ファイル）
 
 ### 3.2 URL 一覧（現行）
 

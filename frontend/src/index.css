@@ -8,6 +8,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── 共通コンポーネントクラス ── */
+@layer components {
+  /* テーブル: コンテナ */
+  .table-container {
+    @apply w-full max-w-5xl bg-slate-900/60 backdrop-blur-md shadow-xl rounded-xl overflow-hidden border border-white/10;
+  }
+
+  /* テーブル: ヘッダー行 */
+  .table-header {
+    @apply bg-slate-800/50 text-xs text-slate-400 uppercase border-b border-white/5;
+  }
+
+  /* テーブル: データ行 */
+  .table-row {
+    @apply border-b border-cyan-500/10 hover:bg-cyan-900/20 transition-all duration-300 text-sm;
+  }
+}
+
 /* ── 全体のフォント・文字設定 ── */
 body {
   margin: 0;
