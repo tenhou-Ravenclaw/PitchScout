@@ -6,11 +6,12 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 // ── api.ts から解析用の関数と型をインポート ──
-import { analyzeVoice, analyzeKaraoke, AnalysisResult } from "../api";
+import { analyzeVoice, analyzeKaraoke, AnalysisResult, toUserMessage } from "../api";
 import { MicrophoneIcon, StopIcon } from "@heroicons/react/24/solid";
 import "./Recorder.css";
 // 解析の進捗管理（タイマーやラベル）を行う Context
 import { useAnalysis } from '../contexts/AnalysisContext';
+import ErrorBanner from "./ErrorBanner";
 
 interface Props {
   onResult: (data: AnalysisResult) => void; // 解析結果を受け取る関数
@@ -28,6 +29,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
   } = useAnalysis();
 
   const [noFalsetto, setNoFalsetto] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // ── 録音およびビジュアライザー用の参照 (Ref) ──
   const mediaRecorder = useRef<MediaRecorder | null>(null);
@@ -122,6 +124,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
 
   /** ── 録音開始ロジック ── */
   const startRecording = async () => {
+    setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -157,16 +160,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
           onResult(data);
         } catch (err: unknown) {
           stopAnalysisTimer();
-          const axiosErr = err as { code?: string; message?: string; response?: { data?: { error?: string } } };
-          let errorMsg: string;
-          // タイムアウトやネットワークエラーの判別
-          if (axiosErr?.message?.includes("timeout")) {
-            errorMsg = "⏱️ 処理時間が10分を超えたため、タイムアウトしました。録音が長すぎるか、サーバーの負荷が高い可能性があります。もう一度お試しください。";
-          } else if (axiosErr?.code === "ECONNABORTED" || axiosErr?.message?.includes("Network Error")) {
-            errorMsg = "ネットワークエラーが発生しました。サーバーに接続できないか、通信が途中で切断された可能性があります。もう一度お試しください。";
-          } else {
-            errorMsg = axiosErr?.response?.data?.error || axiosErr?.message || "解析に失敗しました。もう一度お試しください。";
-          }
+          const errorMsg = toUserMessage(err, "解析に失敗しました。もう一度お試しください。");
           onResult({ error: errorMsg } as AnalysisResult);
         } finally {
           setTimeout(() => {
@@ -203,7 +197,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
       }, 100);
     } catch (e) {
       console.error("録音開始エラー:", e);
-      alert("マイクの使用が許可されていないか、エラーが発生しました。");
+      setError(toUserMessage(e, "マイクの使用が許可されていないか、録音開始に失敗しました。"));
     }
   };
 
@@ -229,6 +223,8 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
 
   return (
     <div className="flex flex-col items-center w-full gap-4 font-sans">
+      {error && <ErrorBanner message={error} className="max-w-3xl" />}
+
       {/* ── 裏声除外オプション ── */}
       <label className="flex items-center gap-3 text-sm cursor-pointer select-none group transition-all duration-300 text-cyan-400 [text-shadow:0_0_8px_rgba(34,211,238,0.6)] hover:text-cyan-300 hover:[text-shadow:0_0_15px_rgba(34,211,238,1)] z-10 relative">
         <div className="relative flex items-center justify-center">

@@ -7,7 +7,7 @@
 
 import React from "react";
 // 認証機能（ログイン処理など）を管理するカスタムフックを読み込みます
-import { useAuth } from "./contexts/AuthContext";
+import { useAuth } from "../contexts/AuthContext";
 
 const LoginPage: React.FC = () => {
   /**

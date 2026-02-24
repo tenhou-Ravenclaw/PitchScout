@@ -6,3 +6,4 @@ export * from "./songs";
 export * from "./favorites";
 export * from "./history";
 export * from "./integratedRange";
+export * from "./error";

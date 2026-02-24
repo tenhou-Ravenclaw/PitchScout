@@ -6,10 +6,11 @@
 
 import React, { useState, useRef } from "react";
 // APIから解析関数と型をインポート
-import { analyzeKaraoke, AnalysisResult } from "../api";
+import { analyzeKaraoke, AnalysisResult, toUserMessage } from "../api";
 import { CloudArrowUpIcon, DocumentArrowUpIcon } from "@heroicons/react/24/solid";
 // 解析の状態（進捗やラベル）を管理するためのフック
 import { useAnalysis } from '../contexts/AnalysisContext';
+import ErrorBanner from "./ErrorBanner";
 
 interface Props {
   onResult: (data: AnalysisResult) => void; // 解析完了時に実行される関数
@@ -78,14 +79,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
     } catch (err: unknown) {
       // 通信エラーやタイムアウトの処理
       stopAnalysisTimer();
-      const axiosErr = err as { code?: string; message?: string; response?: { data?: { error?: string } } };
-      if (axiosErr?.message?.includes("timeout")) {
-        setError("⏱️ 処理時間が10分を超えたため、タイムアウトしました。録音が長すぎるか、サーバーの負荷が高い可能性があります。もう一度お試しください。");
-      } else if (axiosErr?.code === "ECONNABORTED" || axiosErr?.message?.includes("Network Error")) {
-        setError("ネットワークエラーが発生しました。サーバーに接続できないか、通信が途中で切断された可能性があります。もう一度お試しください。");
-      } else {
-        setError(axiosErr?.response?.data?.error || "解析に失敗しました。もう一度お試しください。");
-      }
+      setError(toUserMessage(err, "解析に失敗しました。もう一度お試しください。"));
     } finally {
       // 少し待ってから解析中表示をリセットします
       setTimeout(() => {
@@ -258,12 +252,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
 
       {/* エラー表示エリア */}
       {error && (
-        <div className="w-full max-w-lg bg-red-950/80 backdrop-blur-md border border-red-500/50 rounded-xl p-4 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
-          <p className="text-sm font-bold text-red-400 tracking-wide text-center">
-            <span className="animate-pulse mr-2">⚠️</span>
-            {error}
-          </p>
-        </div>
+        <ErrorBanner message={error} className="max-w-lg" />
       )}
 
     </div>

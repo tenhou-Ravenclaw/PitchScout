@@ -8,7 +8,7 @@ import React from 'react';
 // アイコン素材（マイク、時計）をインポート
 import { MicrophoneIcon, ClockIcon } from '@heroicons/react/24/solid';
 // この画面専用のスタイルシート（斜め分割やネオンエフェクト）
-import './HomePage.css';
+import '../HomePage.css';
 
 /** 画面が外から受け取る関数（クリック時の動き）の定義 */
 interface Props {

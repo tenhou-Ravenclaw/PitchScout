@@ -8,39 +8,21 @@ import React, { useState, useEffect } from "react";
 import {
   AnalysisResult,
   IntegratedVocalRange,
-  getFavoriteArtists,
-  addFavoriteArtist,
-  removeFavoriteArtist,
   getIntegratedVocalRange,
-} from "./api"; // API通信用の型定義と関数をインポート
+  toUserMessage,
+} from "../api"; // API通信用の型定義と関数をインポート
 import { StarIcon as StarSolid } from "@heroicons/react/24/solid";
 import { StarIcon as StarOutline } from "@heroicons/react/24/outline";
-import { useAuth } from "./contexts/AuthContext"; // 認証状態を取得するためのカスタムフック
+import { useAuth } from "../contexts/AuthContext"; // 認証状態を取得するためのカスタムフック
+import { useToast } from "../hooks/useToast";
+import { useFavoriteArtists } from "../hooks/useFavoriteArtists";
+import Toast from "../components/Toast";
+import { keyBadge } from "../utils/keyBadge";
 
 /** ページが外部（AnalysisRouteなど）から受け取るプロパティの定義 */
 interface AnalysisResultPageProps {
   result: AnalysisResult | null;
 }
-
-/* ───── ヘルパーコンポーネント: キーバッジ ───── 
- * 楽曲の推奨キー（±0など）を、歌いやすさ（fit）に応じて色分けして表示します。
- */
-const keyBadge = (key: number, fit?: string) => {
-  const label = key === 0 ? "±0" : key > 0 ? `+${key}` : `${key}`;
-  let color: string;
-  // フィット感（perfect, good, ok, hard）に基づいて背景色と文字色を決定
-  if (fit === "perfect") color = "bg-emerald-900/30 text-emerald-400 border border-emerald-500/30";
-  else if (fit === "good") color = "bg-sky-900/30 text-sky-400 border border-sky-500/30";
-  else if (fit === "ok") color = "bg-amber-900/30 text-amber-400 border border-amber-500/30";
-  else if (fit === "hard") color = "bg-rose-900/30 text-rose-400 border border-rose-500/30";
-  else color = "bg-slate-800 text-slate-500 border border-slate-700";
-  
-  return (
-    <span className={`inline-flex items-center justify-center min-w-[2.5rem] h-6 rounded-full text-xs font-bold ${color}`}>
-      {label}
-    </span>
-  );
-};
 
 /* ───── 歌唱力レーダーチャート (SVG) ───── 
  * 音域、安定性、表現力などのスコアを多角形で視覚化します。
@@ -86,24 +68,10 @@ const RadarChart: React.FC<{ data: { label: string; value: number }[] }> = ({ da
    ════════════════════════════════════════════════ */
 const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result }) => {
   const { isAuthenticated } = useAuth(); // ログイン中かどうかを判定
-  const [favoriteIds, setFavoriteIds] = useState<number[]>([]); // お気に入りアーティストのIDリスト
+  const { favoriteIds, toggleFavorite, isFavorite } = useFavoriteArtists(); // お気に入りアーティスト管理
   const [integratedRange, setIntegratedRange] = useState<IntegratedVocalRange | null>(null); // 直近N件をまとめた総合的な音域
   const [loadingIntegrated, setLoadingIntegrated] = useState(false);
-
-  /**
-   * ── 初回起動時: お気に入り情報を取得 ──
-   */
-  useEffect(() => {
-    const fetchFavs = async () => {
-      try {
-        const favs = await getFavoriteArtists();
-        setFavoriteIds(favs.map(f => f.artist_id));
-      } catch (e) {
-        console.error("Failed to sync favorites", e);
-      }
-    };
-    fetchFavs();
-  }, []);
+  const { toastMessage, showToast, hideToast } = useToast();
 
   /**
    * ── ログイン中のみ実行: 過去の履歴をまとめた「統合音域」を取得 ──
@@ -117,7 +85,7 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result }) => {
         const data = await getIntegratedVocalRange(20); // 直近20件をベースに計算
         setIntegratedRange(data);
       } catch (e) {
-        console.error("Failed to fetch integrated range", e);
+        showToast(toUserMessage(e, "統合音域の取得に失敗しました"));
         setIntegratedRange(null);
       } finally {
         setLoadingIntegrated(false);
@@ -125,23 +93,6 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result }) => {
     };
     fetchIntegratedRange();
   }, [isAuthenticated]);
-
-  /**
-   * ── お気に入り登録・解除の切り替え ──
-   */
-  const toggleFavorite = async (artistId: number, artistName: string) => {
-    try {
-      if (favoriteIds.includes(artistId)) {
-        await removeFavoriteArtist(artistId);
-        setFavoriteIds(prev => prev.filter(id => id !== artistId));
-      } else {
-        await addFavoriteArtist(artistId, artistName);
-        setFavoriteIds(prev => [...prev, artistId]);
-      }
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "お気に入り操作に失敗しました。");
-    }
-  };
 
   /**
    * ── ロード中の表示設定 ──
@@ -253,7 +204,7 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result }) => {
                         className="p-1.5 transition-transform hover:scale-125"
                         aria-label="お気に入り登録"
                       >
-                        {favoriteIds.includes(artist.id) ? (
+                        {isFavorite(artist.id) ? (
                           <StarSolid className="w-5 h-5 text-amber-400" />
                         ) : (
                           <StarOutline className="w-5 h-5 text-slate-500" />
@@ -304,6 +255,11 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result }) => {
 
         </div>
       </div>
+
+      {/* Toast通知 */}
+      {toastMessage && (
+        <Toast message={toastMessage} onClose={hideToast} />
+      )}
     </div>
   );
 };

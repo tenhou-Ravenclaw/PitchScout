@@ -6,11 +6,14 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 // API通信用の関数や型定義をインポート
-import { getFavorites, removeFavorite, FavoriteSong, UserRange } from './api';
+import { getFavorites, removeFavorite, FavoriteSong, UserRange, toUserMessage } from '../api';
 // ハートアイコン（塗りつぶし）を使用
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 // 認証状態（ログインしているか）を確認する道具
-import { useAuth } from './contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../hooks/useToast';
+import ErrorBanner from '../components/ErrorBanner';
+import Toast from '../components/Toast';
 
 /** 画面が受け取るプロパティ（設定）の定義 */
 interface FavoritesPageProps {
@@ -26,6 +29,8 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
     const [favorites, setFavorites] = useState<FavoriteSong[]>([]); // お気に入り曲のリスト
     const [loading, setLoading] = useState(true);                   // 読み込み中フラグ
     const [removingIds, setRemovingIds] = useState<Set<number>>(new Set()); // 削除処理中の曲IDを管理
+    const [error, setError] = useState<string | null>(null);        // エラーメッセージ（ErrorBanner用）
+    const { toastMessage, showToast, hideToast } = useToast();
 
     /**
      * ── データの取得 (Effect) ──
@@ -37,9 +42,10 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
             return;
         }
         setLoading(true);
+        setError(null);
         getFavorites(500)
             .then(setFavorites)
-            .catch(err => console.error("お気に入り取得失敗:", err))
+            .catch(err => setError(toUserMessage(err, "お気に入りを取得できませんでした")))
             .finally(() => setLoading(false));
     }, [isAuthenticated]);
 
@@ -62,7 +68,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
             // 3. サーバーへ削除リクエストを送る
             await removeFavorite(songId);
         } catch (err) {
-            console.error("お気に入り削除失敗:", err);
+            showToast(toUserMessage(err, "削除に失敗しました"));
             // 4. 失敗した場合はリストを元に戻す（ロールバック）
             if (removed) {
                 setFavorites(prev => [...prev, removed].sort((a, b) => a.title.localeCompare(b.title, "ja")));
@@ -103,6 +109,15 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
         return (
             <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
                 <p className="text-slate-500">読み込み中...</p>
+            </div>
+        );
+    }
+
+    /** ── 表示判定：エラー発生時 ── */
+    if (error) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
+                <ErrorBanner message={error} />
             </div>
         );
     }
@@ -165,6 +180,11 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
                     </tbody>
                 </table>
             </div>
+
+            {/* Toast通知 */}
+            {toastMessage && (
+                <Toast message={toastMessage} onClose={hideToast} />
+            )}
         </div>
     );
 };

@@ -7,7 +7,7 @@ import React from 'react';
 // アイコン素材をインポート
 import { MicrophoneIcon, MusicalNoteIcon, CloudArrowUpIcon, ClockIcon } from '@heroicons/react/24/solid';
 // 解析中の状態（isAnalyzing）を取得するためのフック
-import { useAnalysis } from './contexts/AnalysisContext';
+import { useAnalysis } from '../contexts/AnalysisContext';
 
 /** 画面が受け取るボタンクリック時の動作（Props） */
 interface Props {

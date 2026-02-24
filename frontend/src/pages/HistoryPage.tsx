@@ -10,9 +10,13 @@ import {
   getAnalysisHistory,
   AnalysisHistoryRecord,
   deleteAnalysisHistory,
-} from "./api";
+  toUserMessage,
+} from "../api";
 // ログイン状態を確認するためのフック
-import { useAuth } from "./contexts/AuthContext";
+import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../hooks/useToast";
+import ErrorBanner from "../components/ErrorBanner";
+import Toast from "../components/Toast";
 
 /** 画面のプロパティ（設定） */
 interface HistoryPageProps {
@@ -40,6 +44,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   const [swipedId, setSwipedId] = useState<string | null>(null);       // 現在スワイプ中のアイテムID
   const [deletingId, setDeletingId] = useState<string | null>(null);   // 現在削除アニメーション中のID
   const [swipeOffset, setSwipeOffset] = useState<number>(0);           // スワイプの移動距離
+  const { toastMessage, showToast, hideToast } = useToast();
   const swipeStates = useRef<Record<string, SwipeState>>({});         // 各アイテムのスワイプ状態を保持
 
   /**
@@ -91,8 +96,8 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
       // 画面上のリストからも消す
       setHistory((prev) => prev.filter((record) => record.id !== recordId));
     } catch (err) {
-      alert("削除に失敗しました。");
       console.error(err);
+      showToast(toUserMessage(err, "削除に失敗しました。"));
     } finally {
       setDeletingId(null);
     }
@@ -181,6 +186,8 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   /** ── メインの履歴リスト表示 ── */
   return (
     <div className="min-h-screen p-8 max-w-4xl mx-auto">
+      {toastMessage && <Toast message={toastMessage} onClose={hideToast} />}
+
       {/* タイトルエリア */}
       <div className="flex flex-col mb-8 pb-4 border-b border-cyan-500/30">
         <h2 className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-yellow-400 drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] tracking-wider">
@@ -192,7 +199,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
       {loading ? (
         <div className="text-center text-slate-400">読み込み中...</div>
       ) : error ? (
-        <div className="text-red-400 bg-red-900/20 p-4 rounded-lg">{error}</div>
+        <ErrorBanner message={error} />
       ) : history.length === 0 ? (
         <div className="text-center text-slate-400 bg-slate-800/50 p-8 rounded-2xl">履歴がありません。</div>
       ) : (
