@@ -15,6 +15,7 @@ import {
 import { useToast } from "../hooks/useToast";
 import ErrorBanner from "../components/ErrorBanner";
 import Toast from "../components/Toast";
+import AuthRequiredCard from "../components/AuthRequiredCard";
 
 /** 画面のプロパティ（設定） */
 interface HistoryPageProps {
@@ -166,19 +167,16 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   /** ── 未ログイン時の表示 ── */
   if (!isAuthenticated) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
-        <div className="w-full max-w-sm bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl border border-white/10 p-8 text-center">
-          {/* 履歴を象徴する時計アイコン（SVG） */}
-          <svg className="w-12 h-12 text-cyan-500/50 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <AuthRequiredCard
+        title="分析履歴"
+        message="ログインすると過去の分析履歴を確認できます"
+        icon={(
+          <svg className="w-12 h-12 text-cyan-500/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <h2 className="text-xl font-bold text-white mb-2">分析履歴</h2>
-          <p className="text-slate-400 text-sm mb-6">ログインすると過去の分析履歴を確認できます</p>
-          <button onClick={onLoginClick} className="btn-primary-cyan w-full rounded-xl px-6 py-3 text-sm">
-            ログインする
-          </button>
-        </div>
-      </div>
+        )}
+        onLoginClick={onLoginClick}
+      />
     );
   }
 

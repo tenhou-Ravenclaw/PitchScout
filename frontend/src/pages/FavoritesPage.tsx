@@ -10,6 +10,7 @@ import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useToast } from '../hooks/useToast';
 import ErrorBanner from '../components/ErrorBanner';
 import Toast from '../components/Toast';
+import AuthRequiredCard from '../components/AuthRequiredCard';
 
 /** FavoritesPage が受け取るプロパティ */
 interface FavoritesPageProps {
@@ -82,21 +83,12 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
     /** ── 表示判定：未ログインの場合 ── */
     if (!isAuthenticated) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
-                <div className="w-full max-w-sm bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl border border-white/10 p-8 text-center">
-                    <HeartIconSolid className="w-12 h-12 text-rose-500/50 mx-auto mb-4" />
-                    <h2 className="text-xl font-bold text-white mb-2">お気に入り</h2>
-                    <p className="text-slate-400 text-sm mb-6">
-                        ログインするとお気に入りの楽曲を保存できます
-                    </p>
-                    <button
-                        onClick={onLoginClick}
-                        className="btn-primary-cyan w-full rounded-xl px-6 py-3 text-sm"
-                    >
-                        ログインする
-                    </button>
-                </div>
-            </div>
+            <AuthRequiredCard
+                title="お気に入り"
+                message="ログインするとお気に入りの楽曲を保存できます"
+                icon={<HeartIconSolid className="w-12 h-12 text-rose-500/50" />}
+                onLoginClick={onLoginClick}
+            />
         );
     }
 

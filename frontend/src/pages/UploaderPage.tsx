@@ -4,6 +4,7 @@
  */
 import React from "react";
 import KaraokeUploader from "../components/KaraokeUploader";
+import AnalysisCardShell from "../components/AnalysisCardShell";
 import { AnalysisResult } from "../api";
 
 /** UploaderPage が受け取るプロパティ */
@@ -32,14 +33,10 @@ const UploaderPage: React.FC<UploaderPageProps> = ({ onBack, onComplete }) => {
       </button>
 
       {/* ── アップロードエリアのカード ── */}
-      <div className="max-w-3xl mx-auto bg-slate-900/80 backdrop-blur-xl p-8 sm:p-12 rounded-3xl shadow-[0_0_30px_rgba(0,0,0,0.8)] border border-slate-700/50 relative overflow-hidden">
-        {/* 背景装飾 */}
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-fuchsia-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
+      <AnalysisCardShell>
         {/* ── アップローダーコンポーネントの呼び出し ── */}
         <KaraokeUploader onResult={handleResult} />
-      </div>
+      </AnalysisCardShell>
     </div>
   );
 };

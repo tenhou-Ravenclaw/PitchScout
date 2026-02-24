@@ -49,6 +49,9 @@ src/
 │   ├── Recorder.tsx            # マイク録音 + 波形ビジュアライザー
 │   ├── KaraokeUploader.tsx     # カラオケ音源アップロード
 │   ├── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
+│   ├── AnalysisCardShell.tsx    # 録音/アップロード共通カード
+│   ├── AuthRequiredCard.tsx     # 未ログイン時の共通カード
+│   ├── CenteredCardShell.tsx    # 中央配置カードの共通枠
 │   ├── Pagination.tsx          # テーブルページネーション
 │   ├── SearchBar.tsx           # 楽曲検索バー
 │   ├── SyllableIndex.tsx       # 五十音インデックス
@@ -92,7 +95,7 @@ src/
 ├── react-app-env.d.ts          # CRA 型定義
 └── reportWebVitals.ts          # パフォーマンス計測
 
-**ファイル総数**: 28 ファイル（`src/routeWrappers/` 廃止により 37 → 28 に削減）
+**ファイル総数**: 31 ファイル（`src/routeWrappers/` 廃止により 37 → 28 に削減後、共通コンポーネント追加）
 ```
 
 ### 2.1 主要ディレクトリ説明
@@ -118,6 +121,10 @@ src/
   - `.table-container`: テーブルベースカード
   - `.table-header`: テーブルヘッダースタイル
   - `.table-row`: テーブル行スタイル (group対応)
+  - `.key-badge-*`: キーバッジの色分け（perfect/good/ok/hard/default）
+  - `.title-gradient-*`: タイトル用グラデーション（cyan-fuchsia / cyber）
+  - `.btn-primary-cyan`: ログインなどの主要ボタン
+  - `.btn-back-link`: 戻るリンクボタン
 - `LogoSplash.css`: ロゴシャドウアニメーション専用
 
 ---
@@ -129,45 +136,55 @@ src/
 ### 3.1 ルーティング方針
 
 - `App.tsx` は `BrowserRouter` + Provider 初期化を担当する
-- `routes.tsx` で URL と画面コンポーネントを定義し、**6 個のインラインルートラッパー関数** を含む
+- `routes.tsx` で URL と画面コンポーネントを定義し、**ページごとのインラインルートラッパー関数** を含む
 - `Layout.tsx` 配下に `Outlet` を配置し、`Header` / `BottomNav` を共通レイアウトとして扱う
 - **ルートラッパー関数** が AppContext / AuthContext を読み取り、ページコンポーネントに Props で渡す
 - ページコンポーネント（`src/pages/` 配下）は **Context に直接依存しない** — Props のみを受け取る設計
 
 #### インラインルートラッパーパターン
 
-`routes.tsx` 内に以下 6 個のラッパー関数が定義される：
+`routes.tsx` 内にルート専用のラッパー関数が定義される：
 
 ```typescript
-// UserContext とページコンポーネントを橋渡し
-function LandingRoute() {
-  const { isAuthenticated } = useAuth();
-  return <Landing isAuthenticated={isAuthenticated} />;
-}
-
-function HomeRoute() {
+// Context/遷移をラッパーで吸収し、ページへ Props を渡す
+const HomeRoute = () => {
   const navigate = useNavigate();
-  const { isAnalyzing } = useAnalysisContext();
-  const { setIsFromHistory } = useAppContext();
-  const handleSelectRecord = (type: "micro" | "karaoke") => {
-    setIsFromHistory(false);
-    navigate(`/${type === "micro" ? "record" : "karaoke"}`);
-  };
-  return <Home onSelectRecord={handleSelectRecord} isAnalyzing={isAnalyzing} />;
-}
+  const { isAnalyzing } = useAnalysis();
+  return (
+    <Home
+      onNormalClick={() => navigate("/record")}
+      onKaraokeClick={() => navigate("/karaoke")}
+      onUploadClick={() => navigate("/upload")}
+      onHistoryClick={() => navigate("/history")}
+      isAnalyzing={isAnalyzing}
+    />
+  );
+};
 
-function AnalysisRoute() {
+const AnalysisRoute = () => {
+  const { isAuthenticated } = useAuth();
   const { result } = useAppContext();
-  return <AnalysisResultPage result={result} />;
-}
+  return <AnalysisResultPage result={result} isAuthenticated={isAuthenticated} />;
+};
 
-// 他 SongListRoute, FavoritesRoute, HistoryRoute も同様
+const ResultRoute = () => {
+  const navigate = useNavigate();
+  const { result, isFromHistory } = useAppContext();
+  return (
+    <ResultPage
+      result={result}
+      isFromHistory={isFromHistory}
+      onBack={() => navigate(isFromHistory ? "/history" : "/menu")}
+    />
+  );
+};
 ```
 
 **メリット:**
 - `routeWrappers/` ディレクトリ不要 — routes.tsx で全て完結
 - ページコンポーネントが Context に依存しない — 再利用性・テスト性向上
 - ファイル総数削減（-6 ファイル）
+- ルート側で依存注入を一元化できる（認証・遷移・共有 state）
 
 ### 3.2 URL 一覧（現行）
 
@@ -244,9 +261,9 @@ function AnalysisRoute() {
 
 | コンポーネント | 受け取る入力 | 主な出力/副作用 | 責務 | 非責務 |
 |---------------|--------------|------------------|------|--------|
-| `ResultPage` | `AppContext.result`, `AppContext.isFromHistory` | 戻る遷移（`/menu` or `/history`） | 中間結果ページの導線制御 | 統合音域計算、詳細比較表示 |
+| `ResultPage` | `result`, `isFromHistory`, `onBack` | 戻る遷移（`/menu` or `/history`） | 中間結果ページの導線制御 | 統合音域計算、詳細比較表示 |
 | `ResultView` | `result: AnalysisResult` | なし（表示専用） | 単発結果の要約表示（音域・スコア・おすすめ） | ルーティング、履歴統合取得、認証依存ロジック |
-| `AnalysisRoute` | `AppContext.result` | `AnalysisResultPage` へ受け渡し | Context とページの橋渡し | 描画ロジック本体 |
+| `AnalysisRoute` | `AppContext.result`, `AuthContext.isAuthenticated` | `AnalysisResultPage` へ受け渡し | Context とページの橋渡し | 描画ロジック本体 |
 | `AnalysisResultPage` | `result: AnalysisResult \| null`, `isAuthenticated` | `getIntegratedVocalRange(20)` 取得、お気に入り操作 | 詳細分析表示と統合音域表示の切替 | 録音直後導線の戻り制御 |
 | `HistoryRoute` | `AnalysisHistoryRecord` 選択イベント | `setResult`, `setIsFromHistory(true)`, `navigate("/result")` | 履歴データを結果表示に接続 | 詳細分析ページ直接遷移の強制 |
 
@@ -261,16 +278,16 @@ function AnalysisRoute() {
 #### データ受け渡しフロー（Step3）
 
 ```
-RecorderPage/UploaderPage
+RecorderRoute/UploaderRoute
   └─ setResult(data), setIsFromHistory(false), navigate("/result")
-       └─ ResultPage
-           └─ ResultView(result)
+       └─ ResultRoute
+           └─ ResultPage(result, isFromHistory, onBack)
 
 HistoryRoute
   └─ setResult(record.result_json or fallback), setIsFromHistory(true), navigate("/result")
 
 AnalysisRoute
-  └─ AnalysisResultPage(result)
+  └─ AnalysisResultPage(result, isAuthenticated)
        └─ (isAuthenticated) getIntegratedVocalRange(20)
 ```
 
