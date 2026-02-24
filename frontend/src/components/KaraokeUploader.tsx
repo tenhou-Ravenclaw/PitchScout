@@ -1,13 +1,22 @@
+/**
+ * 【KaraokeUploader.tsx】
+ * 役割：手持ちのカラオケ音源ファイル（MP3/WAV等）をアップロードして解析するための部品です。
+ * 特徴：ドラッグ＆ドロップ対応、ファイル形式チェック、解析中の進捗表示機能を備えています。
+ */
+
 import React, { useState, useRef } from "react";
+// APIから解析関数と型をインポート
 import { analyzeKaraoke, AnalysisResult } from "../api";
 import { CloudArrowUpIcon, DocumentArrowUpIcon } from "@heroicons/react/24/solid";
+// 解析の状態（進捗やラベル）を管理するためのフック
 import { useAnalysis } from '../contexts/AnalysisContext';
 
 interface Props {
-  onResult: (data: AnalysisResult) => void;
+  onResult: (data: AnalysisResult) => void; // 解析完了時に実行される関数
 }
 
 const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
+  // ── 共有状態 (Context) ──
   const { 
     isAnalyzing: loading, setIsAnalyzing: setLoading, 
     progress, setProgress, 
@@ -15,16 +24,22 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
     startAnalysisTimer, stopAnalysisTimer 
   } = useAnalysis();
 
-  const [error, setError] = useState("");
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [isHovered, setIsHovered] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [noFalsetto, setNoFalsetto] = useState(false);
+  // ── ローカル状態 (State) ──
+  const [error, setError] = useState("");              // エラーメッセージ
+  const [fileName, setFileName] = useState<string | null>(null); // 選択されたファイル名
+  const [isHovered, setIsHovered] = useState(false);    // マウスホバー状態
+  const [isDragging, setIsDragging] = useState(false);  // ファイルドラッグ中状態
+  const [noFalsetto, setNoFalsetto] = useState(false);  // 裏声除外オプション
 
+  // ファイル入力要素への参照
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * ── ファイル処理のメインロジック ──
+   * 形式チェック、タイマー開始、API送信、結果受取までを行います。
+   */
   const processFile = async (file: File) => {
-    // 対応フォーマットチェック
+    // 対応フォーマットの定義
     const supportedExts = [".wav", ".mp3", ".m4a", ".aac", ".mp4", ".ogg", ".flac", ".wma", ".webm"];
     const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
     const isAudio =
@@ -32,6 +47,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
       file.type.startsWith("video/") ||
       supportedExts.includes(ext);
 
+    // 形式が合わない場合はエラーを表示して終了
     if (!isAudio) {
       setError(
         "対応していないファイル形式です。音声ファイル（MP3, M4A, AAC, WAV, FLAC等）をアップロードしてください。"
@@ -43,37 +59,35 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
     setError("");
     setFileName(file.name);
 
-    // Contextのタイマーを開始
+    // 進捗表示用の疑似タイマーを開始
     startAnalysisTimer('upload');
 
     try {
+      // サーバーへファイルを送信して解析を依頼
       const data = await analyzeKaraoke(file, file.name, noFalsetto);
-      stopAnalysisTimer();
-      setProgress(100);
+      
+      stopAnalysisTimer(); // タイマー停止
+      setProgress(100);    // プログレスバーを100%に
       setStepLabel("完了！");
+
       if (data.error) {
         setError(data.error);
       } else {
-        onResult(data);
+        onResult(data); // 成功したら親コンポーネントへ結果を渡す
       }
     } catch (err: unknown) {
+      // 通信エラーやタイムアウトの処理
       stopAnalysisTimer();
       const axiosErr = err as { code?: string; message?: string; response?: { data?: { error?: string } } };
       if (axiosErr?.message?.includes("timeout")) {
-        setError(
-          "⏱️ 処理時間が10分を超えたため、タイムアウトしました。音源が長すぎるか、サーバーの負荷が高い可能性があります。もう一度お試しください。"
-        );
+        setError("⏱️ 処理時間が10分を超えたため、タイムアウトしました。録音が長すぎるか、サーバーの負荷が高い可能性があります。もう一度お試しください。");
       } else if (axiosErr?.code === "ECONNABORTED" || axiosErr?.message?.includes("Network Error")) {
-        setError(
-          "ネットワークエラーが発生しました。サーバーに接続できないか、通信が途中で切断された可能性があります。もう一度お試しください。"
-        );
+        setError("ネットワークエラーが発生しました。サーバーに接続できないか、通信が途中で切断された可能性があります。もう一度お試しください。");
       } else {
-        setError(
-          axiosErr?.response?.data?.error ||
-          "解析に失敗しました。もう一度お試しください。"
-        );
+        setError(axiosErr?.response?.data?.error || "解析に失敗しました。もう一度お試しください。");
       }
     } finally {
+      // 少し待ってから解析中表示をリセットします
       setTimeout(() => {
         setLoading(false);
         setProgress(0);
@@ -83,6 +97,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
     }
   };
 
+  /** ── イベントハンドラー ── */
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) processFile(file);
@@ -96,9 +111,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
   const handleDragLeave = (e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
     const related = e.relatedTarget as Node | null;
-    if (related && e.currentTarget.contains(related)) {
-      return;
-    }
+    if (related && e.currentTarget.contains(related)) return;
     setIsDragging(false);
   };
 
@@ -113,7 +126,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-2xl mx-auto font-sans relative z-10 p-4 sm:p-8">
 
-      {/* Header Typography */}
+      {/* ヘッダー部分 */}
       <div className="text-center w-full">
         <h2 className="text-3xl sm:text-4xl font-black italic text-fuchsia-400 mb-4 drop-shadow-[0_0_10px_rgba(232,121,249,0.8)] tracking-wide">
           🎤 UPLOAD KARAOKE
@@ -138,7 +151,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
         裏声を使わない（地声のみで判定）
       </label>
 
-      {/* Cyberpunk Dropzone ("Data Transfer Gate") */}
+      {/* サイバーパンク風ドロップゾーン */}
       <div className="w-full relative group perspective-[1000px] mt-2">
         <label
           onDragOver={handleDragOver}
@@ -154,12 +167,12 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
             boxShadow: isDragging || isHovered ? '0 0 30px rgba(232,121,249,0.4)' : '0 0 15px rgba(0,0,0,0.5)'
           }}
         >
-          {/* Border (inner neon) */}
+          {/* ネオンの縁取り装飾 */}
           <div className={`absolute inset-0 border-2 transition-all duration-300 pointer-events-none z-10 ${isDragging || isHovered ? 'border-fuchsia-400 shadow-[inset_0_0_20px_rgba(232,121,249,0.6)] animate-pulse' : 'border-fuchsia-500/50'
             }`}
             style={{ clipPath: 'polygon(30px 0, 100% 0, 100% calc(100% - 30px), calc(100% - 30px) 100%, 0 100%, 0 30px)' }}></div>
 
-          {/* Digital Grid Pattern */}
+          {/* デジタルグリッド背景 */}
           <div className="absolute inset-0 z-0 opacity-10 pointer-events-none"
             style={{
               backgroundImage: 'linear-gradient(rgba(232, 121, 249, 0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(232, 121, 249, 0.5) 1px, transparent 1px)',
@@ -167,19 +180,19 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
             }}>
           </div>
 
-          {/* Interaction Particle Scanlines Overlay */}
+          {/* スキャンラインエフェクト */}
           <div className={`absolute inset-0 z-0 pointer-events-none transition-opacity duration-500 ${isDragging || (isHovered && !loading) ? 'opacity-100' : 'opacity-0'}`}>
             <div className="w-full h-full bg-[linear-gradient(to_bottom,transparent_0%,rgba(232,121,249,0.2)_50%,transparent_100%)] bg-[length:100%_4px] animate-scan"></div>
           </div>
 
-          {/* Giant Watermark */}
+          {/* 背面の透かし文字 */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full text-center z-0 pointer-events-none">
             <span className="text-4xl sm:text-6xl md:text-7xl font-black italic text-fuchsia-400 opacity-5 sm:opacity-[0.03] tracking-widest whitespace-nowrap">
               DROP FILE HERE
             </span>
           </div>
 
-          {/* Content */}
+          {/* メインコンテンツ（アイコン・ファイル名） */}
           <div className="relative z-20 flex flex-col items-center justify-center text-center transform transition-transform duration-300 group-hover:scale-105">
             {fileName && !loading ? (
               <div className="flex flex-col items-center gap-3">
@@ -211,7 +224,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
             )}
           </div>
 
-          {/* Hide original input */}
+          {/* 実際のファイル選択ボタン（隠し要素） */}
           <input
             ref={fileInputRef}
             type="file"
@@ -222,12 +235,12 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
           />
         </label>
 
-        {/* Decorative Corner Accents */}
+        {/* 装飾用の角アクセント */}
         <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-fuchsia-400 z-20 opacity-50 pointer-events-none shadow-[0_0_5px_rgba(232,121,249,1)]"></div>
         <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-fuchsia-400 z-20 opacity-50 pointer-events-none shadow-[0_0_5px_rgba(232,121,249,1)]"></div>
       </div>
 
-      {/* Progress Bar (Loading State) */}
+      {/* 解析中のプログレスバー */}
       {loading && (
         <div className="w-full max-w-lg mt-4 bg-slate-900/80 backdrop-blur-md p-6 rounded-2xl border border-fuchsia-500/30 shadow-[0_0_20px_rgba(232,121,249,0.2)]">
           <div className="w-full h-3 bg-slate-800 rounded-full overflow-hidden mb-4 shadow-inner border border-slate-700">
@@ -243,7 +256,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
         </div>
       )}
 
-      {/* Error Message */}
+      {/* エラー表示エリア */}
       {error && (
         <div className="w-full max-w-lg bg-red-950/80 backdrop-blur-md border border-red-500/50 rounded-xl p-4 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
           <p className="text-sm font-bold text-red-400 tracking-wide text-center">

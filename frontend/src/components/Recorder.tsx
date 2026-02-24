@@ -1,16 +1,25 @@
+/**
+ * 【Recorder.tsx】
+ * 役割：ブラウザのマイク機能を使用して音声を録音し、波形をリアルタイムで表示します。
+ * 特徴：Web Audio API による周波数解析、Canvas での描画、および解析サーバーへの送信を行います。
+ */
+
 import React, { useState, useRef, useEffect, useCallback } from "react";
+// ── api.ts から解析用の関数と型をインポート ──
 import { analyzeVoice, analyzeKaraoke, AnalysisResult } from "../api";
 import { MicrophoneIcon, StopIcon } from "@heroicons/react/24/solid";
 import "./Recorder.css";
+// 解析の進捗管理（タイマーやラベル）を行う Context
 import { useAnalysis } from '../contexts/AnalysisContext';
 
 interface Props {
-  onResult: (data: AnalysisResult) => void;
-  initialUseDemucs?: boolean;
+  onResult: (data: AnalysisResult) => void; // 解析結果を受け取る関数
+  initialUseDemucs?: boolean;                // カラオケモードかどうか
 }
 
 const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
   const [recording, setRecording] = useState(false);
+  // 解析中の状態をアプリ全体で共有するためのツール
   const {
     isAnalyzing: loading, setIsAnalyzing: setLoading,
     progress, setProgress,
@@ -20,10 +29,11 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
 
   const [noFalsetto, setNoFalsetto] = useState(false);
 
+  // ── 録音およびビジュアライザー用の参照 (Ref) ──
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
 
-  // Visualizer refs
+  // Visualizer 用の各参照
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -33,7 +43,9 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
   const streamRef = useRef<MediaStream | null>(null);
   const gradientRef = useRef<CanvasGradient | null>(null);
 
-  // クリーンアップ処理
+  /** ── クリーンアップ処理 ──
+   * コンポーネントが消える際、マイクやアニメーションを確実に止めます。
+   */
   useEffect(() => {
     return () => {
       if (animationIdRef.current) {
@@ -57,7 +69,9 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
     };
   }, []);
 
-  // ビジュアライザー描画関数
+  /** ── ビジュアライザー描画関数 ──
+   * 音声をリアルタイムで解析し、Canvas 上にグラデーションの棒グラフを描画します。
+   */
   const drawVisualizer = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !analyserRef.current || !dataArrayRef.current) {
@@ -70,10 +84,12 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
     const WIDTH = canvas.width;
     const HEIGHT = canvas.height;
 
+    // 現在の周波数データを取得
     analyserRef.current.getByteFrequencyData(dataArrayRef.current as any);
 
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
+    // グラデーションの作成
     if (!gradientRef.current) {
       const gradient = ctx.createLinearGradient(0, HEIGHT, 0, 0);
       gradient.addColorStop(0, "#38bdf8");
@@ -82,6 +98,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
     }
     ctx.fillStyle = gradientRef.current;
 
+    // 低音から中音域を強調して表示するための計算ロジック
     const totalBins = dataArrayRef.current.length;
     const maxBinIndex = Math.floor(totalBins * 0.4);
     const barCount = 80;
@@ -91,7 +108,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
 
     for (let i = 0; i < barCount; i++) {
       const percent = i / barCount;
-      const indexMapping = Math.pow(percent, 2.0);
+      const indexMapping = Math.pow(percent, 2.0); // 指数関数で感覚的な周波数を再現
       const rawIndex = Math.floor(indexMapping * maxBinIndex);
       const valueIndex = Math.min(rawIndex, totalBins - 1);
       const v = dataArrayRef.current[valueIndex];
@@ -103,7 +120,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
     animationIdRef.current = requestAnimationFrame(drawVisualizer);
   }, []);
 
-  // 録音開始
+  /** ── 録音開始ロジック ── */
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -116,10 +133,12 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
         chunks.current.push(e.data);
       };
 
+      /** ── 録音停止時の解析処理 ── */
       mediaRecorder.current.onstop = async () => {
         if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
         const blob = new Blob(chunks.current, { type: "audio/webm" });
 
+        // モードに合わせて解析タイマーを始動
         if (initialUseDemucs) {
           startAnalysisTimer('karaoke_record');
         } else {
@@ -127,6 +146,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
         }
 
         try {
+          // サーバーへの送信（カラオケモードか通常マイクかで分岐）
           const data = initialUseDemucs
             ? await analyzeKaraoke(blob, "recording.webm", noFalsetto)
             : await analyzeVoice(blob, noFalsetto);
@@ -139,19 +159,13 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
           stopAnalysisTimer();
           const axiosErr = err as { code?: string; message?: string; response?: { data?: { error?: string } } };
           let errorMsg: string;
-          if (
-            axiosErr?.message?.includes("timeout")
-          ) {
-            errorMsg =
-              "⏱️ 処理時間が10分を超えたため、タイムアウトしました。録音が長すぎるか、サーバーの負荷が高い可能性があります。もう一度お試しください。";
+          // タイムアウトやネットワークエラーの判別
+          if (axiosErr?.message?.includes("timeout")) {
+            errorMsg = "⏱️ 処理時間が10分を超えたため、タイムアウトしました。録音が長すぎるか、サーバーの負荷が高い可能性があります。もう一度お試しください。";
           } else if (axiosErr?.code === "ECONNABORTED" || axiosErr?.message?.includes("Network Error")) {
-            errorMsg =
-              "ネットワークエラーが発生しました。サーバーに接続できないか、通信が途中で切断された可能性があります。もう一度お試しください。";
+            errorMsg = "ネットワークエラーが発生しました。サーバーに接続できないか、通信が途中で切断された可能性があります。もう一度お試しください。";
           } else {
-            errorMsg =
-              axiosErr?.response?.data?.error ||
-              axiosErr?.message ||
-              "解析に失敗しました。もう一度お試しください。";
+            errorMsg = axiosErr?.response?.data?.error || axiosErr?.message || "解析に失敗しました。もう一度お試しください。";
           }
           onResult({ error: errorMsg } as AnalysisResult);
         } finally {
@@ -163,6 +177,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
         }
       };
 
+      // ビジュアライザー用の Web Audio 設定
       if (!audioContextRef.current) {
         audioContextRef.current = new (
           window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!
@@ -192,6 +207,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
     }
   };
 
+  /** ── 録音停止ロジック ── */
   const stopRecording = () => {
     if (mediaRecorder.current && mediaRecorder.current.state !== "inactive") {
       mediaRecorder.current.stop();
@@ -213,7 +229,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
 
   return (
     <div className="flex flex-col items-center w-full gap-4 font-sans">
-      {/* 裏声なしオプション */}
+      {/* ── 裏声除外オプション ── */}
       <label className="flex items-center gap-3 text-sm cursor-pointer select-none group transition-all duration-300 text-cyan-400 [text-shadow:0_0_8px_rgba(34,211,238,0.6)] hover:text-cyan-300 hover:[text-shadow:0_0_15px_rgba(34,211,238,1)] z-10 relative">
         <div className="relative flex items-center justify-center">
           <input
@@ -236,8 +252,10 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
         <span className="font-semibold tracking-wide">裏声を使わない（地声のみで判定）</span>
       </label>
 
+      {/* ── メイン録音エリア ── */}
       <div className="relative w-full max-w-4xl h-[500px] bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col items-center justify-center group">
-        {/* Visualizer Canvas during recording */}
+        
+        {/* 録音中の波形描画 */}
         {recording && (
           <div className="absolute inset-0 w-full h-full z-10">
             <canvas
@@ -249,7 +267,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
           </div>
         )}
 
-        {/* Ambient background glow (idle) */}
+        {/* 待機中の装飾光 */}
         {!loading && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-cyan-500/20 rounded-full blur-[80px] pointer-events-none"></div>
         )}
@@ -259,7 +277,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
           </div>
         )}
 
-        {/* Loading State */}
+        {/* ── 解析中（読み込み）画面 ── */}
         {loading && (
           <div className="absolute inset-0 bg-slate-900/90 backdrop-blur-md z-20 flex flex-col items-center justify-center p-8">
             <div className="w-24 h-24 border-t-4 border-b-4 border-cyan-400 rounded-full animate-spin mb-8 shadow-[0_0_15px_rgba(34,211,238,0.5)]"></div>
@@ -274,11 +292,11 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
           </div>
         )}
 
-        {/* Recording Controls */}
+        {/* ── ボタン：開始・停止 ── */}
         {!loading && (
           <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
             {!recording ? (
-              // --- Idle State Button ---
+              // 録音開始ボタン
               <button
                 onClick={startRecording}
                 className="pointer-events-auto relative w-28 h-28 bg-slate-800 hover:bg-slate-700 flex flex-col items-center justify-center rounded-full transition-all duration-300 transform hover:scale-110 shadow-[0_0_30px_rgba(34,211,238,0.3)] hover:shadow-[0_0_50px_rgba(34,211,238,0.6)] border-2 border-cyan-500/50 hover:border-cyan-400 group z-10"
@@ -287,9 +305,8 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
                 <span className="text-xs mt-1 font-black italic text-cyan-400 tracking-wider">START</span>
               </button>
             ) : (
-              // --- Recording State Button ---
+              // 録音停止ボタン（進捗リング付き）
               <div className="relative flex items-center justify-center group pointer-events-auto recorder-fade-in">
-                {/* 15s Progress Ring SVG */}
                 <svg className="absolute w-[180px] h-[180px] -rotate-90 pointer-events-none drop-shadow-[0_0_10px_rgba(232,121,249,0.8)]">
                   <circle
                     cx="90"

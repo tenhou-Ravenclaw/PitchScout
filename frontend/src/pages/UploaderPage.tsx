@@ -1,5 +1,10 @@
+/**
+ * 【UploaderPage.tsx】
+ * 役割：手持ちのカラオケ音源ファイル（mp3など）をアップロードして解析するためのページです。
+ */
 import React from "react";
 import { useNavigate } from "react-router-dom";
+// ファイルアップロードと解析リクエストを担当するコンポーネント
 import KaraokeUploader from "../components/KaraokeUploader";
 import { useAppContext } from "../contexts/AppContext";
 import { AnalysisResult } from "../api";
@@ -8,14 +13,16 @@ const UploaderPage: React.FC = () => {
   const navigate = useNavigate();
   const { setResult, setIsFromHistory } = useAppContext();
 
+  /** ── アップロード完了時の処理 ── */
   const handleResult = (data: AnalysisResult) => {
     setResult(data);
     setIsFromHistory(false);
-    navigate("/result");
+    navigate("/result"); // 解析が終わったら簡易結果画面へ飛ばします
   };
 
   return (
     <div className="min-h-screen bg-transparent p-8">
+      {/* ── 戻るボタン ── */}
       <button
         onClick={() => navigate("/menu")}
         className="mb-6 text-slate-500 hover:text-cyan-400 font-bold flex items-center gap-2 transition-colors"
@@ -23,10 +30,13 @@ const UploaderPage: React.FC = () => {
         &larr; メニューに戻る
       </button>
 
+      {/* ── アップロードエリアのカード ── */}
       <div className="max-w-3xl mx-auto bg-slate-900/80 backdrop-blur-xl p-8 sm:p-12 rounded-3xl shadow-[0_0_30px_rgba(0,0,0,0.8)] border border-slate-700/50 relative overflow-hidden">
+        {/* 背景装飾 */}
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-fuchsia-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
+        {/* ── アップローダーコンポーネントの呼び出し ── */}
         <KaraokeUploader onResult={handleResult} />
       </div>
     </div>

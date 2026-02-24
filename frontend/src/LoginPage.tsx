@@ -28,7 +28,7 @@ const LoginPage: React.FC = () => {
         
         {/* アプリ名と説明 */}
         <h1 className="text-2xl font-bold text-white mb-2">
-          PitchScout
+          
         </h1>
         <p className="text-slate-400 text-sm mb-8">
           ログインして声域分析の履歴やお気に入りを保存しよう
