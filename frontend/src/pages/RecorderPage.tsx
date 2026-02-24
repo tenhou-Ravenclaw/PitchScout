@@ -4,8 +4,8 @@
  * 特徴：現在のURL（/record または /karaoke）を判断して、モードを自動で切り替えます。
  */
 import React from "react";
-import Recorder from "../components/Recorder";
-import AnalysisCardShell from "../components/AnalysisCardShell";
+import Recorder from "../components/features/Recorder";
+import AnalysisCardShell from "../components/ui/cards/AnalysisCardShell";
 import { AnalysisResult } from "../api";
 
 /** RecorderPage が受け取るプロパティ */

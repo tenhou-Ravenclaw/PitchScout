@@ -6,12 +6,12 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 // ── api.ts から解析用の関数と型をインポート ──
-import { analyzeVoice, analyzeKaraoke, AnalysisResult, toUserMessage } from "../api";
+import { analyzeVoice, analyzeKaraoke, AnalysisResult, toUserMessage } from "../../api";
 import { MicrophoneIcon, StopIcon } from "@heroicons/react/24/solid";
 import "./Recorder.css";
 // 解析の進捗管理（タイマーやラベル）を行う Context
-import { useAnalysis } from '../contexts/AnalysisContext';
-import ErrorBanner from "./ErrorBanner";
+import { useAnalysis } from '../../contexts/AnalysisContext';
+import ErrorBanner from "../ui/ErrorBanner";
 
 interface Props {
   onResult: (data: AnalysisResult) => void; // 解析結果を受け取る関数

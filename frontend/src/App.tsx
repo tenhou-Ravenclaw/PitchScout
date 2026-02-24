@@ -10,7 +10,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { AnalysisProvider } from "./contexts/AnalysisContext";
 import { AppProvider } from "./contexts/AppContext";
 import { routes } from "./routes"; // 画面遷移のルールを読み込み
-import { LogoSplash } from "./components/LogoSplash";
+import { LogoSplash } from "./components/ui/LogoSplash";
 
 /** ── ルーティング（画面の切り替え）の実行 ── */
 function AppRoutes() {

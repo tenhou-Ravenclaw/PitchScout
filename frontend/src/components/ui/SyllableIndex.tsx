@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { INDEX_KANA } from '../constants/songListConstants';
+import { INDEX_KANA } from '../../constants/songListConstants';
 
 interface SyllableIndexProps {
   /**
@@ -38,7 +38,7 @@ const SyllableIndex: React.FC<SyllableIndexProps> = ({ onIndexClick, visible }) 
         <span>五十音インデックス</span>
       </div>
       <div className="grid grid-cols-10 gap-2">
-        {INDEX_KANA.map(char => (
+        {INDEX_KANA.map((char: string) => (
           <button
             key={char}
             onClick={() => onIndexClick(char)}

@@ -13,9 +13,9 @@ import {
   toUserMessage,
 } from "../api";
 import { useToast } from "../hooks/useToast";
-import ErrorBanner from "../components/ErrorBanner";
-import Toast from "../components/Toast";
-import AuthRequiredCard from "../components/AuthRequiredCard";
+import ErrorBanner from "../components/ui/ErrorBanner";
+import Toast from "../components/ui/Toast";
+import AuthRequiredCard from "../components/ui/cards/AuthRequiredCard";
 
 /** 画面のプロパティ（設定） */
 interface HistoryPageProps {

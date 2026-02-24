@@ -5,7 +5,7 @@
  */
 
 import React from "react";
-import { AnalysisResult } from "../api";
+import { AnalysisResult } from "../../api";
 
 interface Props {
   result: AnalysisResult; // 表示する解析データ
@@ -235,7 +235,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
         <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
           <h3 className="text-sm font-bold text-slate-200 mb-3">声が似ているアーティスト</h3>
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
-            {artists.map((a, i) => (
+            {artists.map((a: any, i: number) => (
               <div
                 key={a.id}
                 className="flex-shrink-0 w-28 flex flex-col items-center text-center"
@@ -273,7 +273,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
           <p className="text-xs text-slate-500 mb-4">あなたの音域に合った楽曲</p>
 
           <div className="space-y-1">
-            {songs.map((song, i) => {
+            {songs.map((song: any, i: number) => {
               const matchColor =
                 song.match_score >= 95 ? "bg-emerald-900/50 text-emerald-400 border border-emerald-500/30" :
                   song.match_score >= 80 ? "bg-sky-900/50 text-sky-400 border border-sky-500/30" :

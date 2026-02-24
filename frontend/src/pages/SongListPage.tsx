@@ -17,11 +17,11 @@ import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useToast } from '../hooks/useToast';
 import { useFavoriteArtists } from '../hooks/useFavoriteArtists';
 import { useFavoriteSongs } from '../hooks/useFavoriteSongs';
-import ErrorBanner from '../components/ErrorBanner';
-import Toast from '../components/Toast';
-import Pagination from '../components/Pagination';
-import SearchBar from '../components/SearchBar';
-import SyllableIndex from '../components/SyllableIndex';
+import ErrorBanner from '../components/ui/ErrorBanner';
+import Toast from '../components/ui/Toast';
+import Pagination from '../components/ui/Pagination';
+import SearchBar from '../components/ui/SearchBar';
+import SyllableIndex from '../components/ui/SyllableIndex';
 import { keyBadge } from '../utils/keyBadge';
 import { INDEX_KANA, getConsonantRow, SEARCH_ALIASES, ARTISTS_PER_PAGE, SONGS_PER_PAGE } from '../constants/songListConstants';
 

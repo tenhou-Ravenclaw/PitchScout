@@ -8,9 +8,9 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { getFavorites, removeFavorite, FavoriteSong, toUserMessage } from '../api';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useToast } from '../hooks/useToast';
-import ErrorBanner from '../components/ErrorBanner';
-import Toast from '../components/Toast';
-import AuthRequiredCard from '../components/AuthRequiredCard';
+import ErrorBanner from '../components/ui/ErrorBanner';
+import Toast from '../components/ui/Toast';
+import AuthRequiredCard from '../components/ui/cards/AuthRequiredCard';
 
 /** FavoritesPage が受け取るプロパティ */
 interface FavoritesPageProps {

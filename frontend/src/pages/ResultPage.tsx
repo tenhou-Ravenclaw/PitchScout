@@ -3,7 +3,7 @@
  * 役割：録音直後、または履歴から選んだ際に、真っ先に表示される「簡易結果」ページです。
  */
 import React from "react";
-import ResultView from "../components/ResultView";
+import ResultView from "../components/features/ResultView";
 import { AnalysisResult } from "../api";
 
 /** ResultPage が受け取るプロパティ */

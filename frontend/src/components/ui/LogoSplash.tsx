@@ -7,9 +7,9 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 // ロゴに使用する画像アセットと専用のCSSを読み込みます
-import histogramImg from "../assets/new-logo-histogram.png";
-import waveImg from "../assets/new-logo-wave.png";
-import "../styles/LogoSplash.css";
+import histogramImg from "../../assets/new-logo-histogram.png";
+import waveImg from "../../assets/new-logo-wave.png";
+import "../../styles/LogoSplash.css";
 
 interface LogoSplashProps {
   onAnimationEnd: () => void; // アニメーション終了時に親（App.tsx）へ知らせる関数

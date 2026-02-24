@@ -43,21 +43,28 @@ src/
 │   └── AnalysisContext.tsx     # 解析進捗（progress / stepLabel）管理
 │
 ├── components/
-│   ├── Header.tsx              # デスクトップヘッダー (md+ 表示)
-│   ├── BottomNav.tsx           # モバイルボトムナビ (<md 表示)
-│   ├── Layout.tsx              # 共通レイアウト（Header/BottomNav/Outlet）
-│   ├── Recorder.tsx            # マイク録音 + 波形ビジュアライザー
-│   ├── KaraokeUploader.tsx     # カラオケ音源アップロード
-│   ├── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
-│   ├── AnalysisCardShell.tsx    # 録音/アップロード共通カード
-│   ├── AuthRequiredCard.tsx     # 未ログイン時の共通カード
-│   ├── CenteredCardShell.tsx    # 中央配置カードの共通枠
-│   ├── Pagination.tsx          # テーブルページネーション
-│   ├── SearchBar.tsx           # 楽曲検索バー
-│   ├── SyllableIndex.tsx       # 五十音インデックス
-│   ├── ErrorBanner.tsx         # エラー表示バナー
-│   ├── Toast.tsx               # トースト通知
-│   └── LogoSplash.tsx          # ロゴシャドウアニメーション
+│   ├── layout/
+│   │   ├── Header.tsx              # デスクトップヘッダー (md+ 表示)
+│   │   ├── BottomNav.tsx           # モバイルボトムナビ (<md 表示)
+│   │   └── Layout.tsx              # 共通レイアウト（Header/BottomNav/Outlet）
+│   │
+│   ├── ui/
+│   │   ├── cards/
+│   │   │   ├── AnalysisCardShell.tsx    # 録音/アップロード共通カード
+│   │   │   ├── AuthRequiredCard.tsx     # 未ログイン時の共通カード
+│   │   │   └── CenteredCardShell.tsx    # 中央配置カードの共通枠
+│   │   ├── Pagination.tsx          # テーブルページネーション
+│   │   ├── SearchBar.tsx           # 楽曲検索バー
+│   │   ├── SyllableIndex.tsx       # 五十音インデックス
+│   │   ├── ErrorBanner.tsx         # エラー表示バナー
+│   │   ├── Toast.tsx               # トースト通知
+│   │   └── LogoSplash.tsx          # ロゴシャドウアニメーション
+│   │
+│   └── features/
+│       ├── Recorder.tsx            # マイク録音 + 波形ビジュアライザー
+│       ├── Recorder.css            # Recorder 専用スタイル
+│       ├── KaraokeUploader.tsx     # カラオケ音源アップロード
+│       └── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
 │
 ├── hooks/
 │   ├── useToast.ts             # トースト通知管理
@@ -444,6 +451,39 @@ bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl border border-white/10
 ---
 
 ## 5. コンポーネント一覧
+
+### Components ディレクトリ構造
+
+`components/` は機能と責務別に3つのサブディレクトリに整理されている:
+
+#### `layout/` — レイアウト・ナビゲーション (3 ファイル)
+- `Header.tsx`: デスクトップヘッダー（検索バー + ナビゲーション + ログイン/ログアウト）
+- `BottomNav.tsx`: モバイルボトムナビゲーション
+- `Layout.tsx`: 全ページ共通レイアウト（Header/BottomNav + Outlet）
+
+#### `ui/` — 再利用可能な UI 部品 (9 ファイル)
+- **`cards/`**: 汎用カードコンポーネント (3)
+  - `AnalysisCardShell.tsx`: 録音/アップロード画面の共通カード枠
+  - `AuthRequiredCard.tsx`: 未ログイン時の案内カード
+  - `CenteredCardShell.tsx`: 中央配置カードの共通ベース
+- `ErrorBanner.tsx`: エラー表示バナー
+- `LogoSplash.tsx`: ロゴシャドウアニメーション
+- `Pagination.tsx`: ページネーション UI
+- `SearchBar.tsx`: 楽曲検索バー
+- `SyllableIndex.tsx`: 五十音インデックスナビゲーション
+- `Toast.tsx`: トースト通知
+
+#### `features/` — 機能固有コンポーネント (4 ファイル)
+- `Recorder.tsx`: マイク録音 + 波形ビジュアライザー
+- `Recorder.css`: Recorder 専用スタイル
+- `KaraokeUploader.tsx`: カラオケ音源アップロード UI
+- `ResultView.tsx`: 分析結果の詳細表示
+
+この構造により、コンポーネントの役割が明確になり、再利用性・保守性が向上している。
+
+---
+
+### Props 仕様
 
 ### Header
 

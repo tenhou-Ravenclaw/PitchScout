@@ -7,8 +7,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 // 認証情報の管理やログアウト処理を取得
-import { useAuth } from '../contexts/AuthContext';
-import logo from '../assets/logo.png';
+import { useAuth } from '../../contexts/AuthContext';
+import logo from '../../assets/logo.png';
 
 /** ヘッダーが受け取るプロパティの定義 */
 interface HeaderProps {

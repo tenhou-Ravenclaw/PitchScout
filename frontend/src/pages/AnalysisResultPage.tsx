@@ -15,7 +15,7 @@ import { StarIcon as StarSolid } from "@heroicons/react/24/solid";
 import { StarIcon as StarOutline } from "@heroicons/react/24/outline";
 import { useToast } from "../hooks/useToast";
 import { useFavoriteArtists } from "../hooks/useFavoriteArtists";
-import Toast from "../components/Toast";
+import Toast from "../components/ui/Toast";
 import { keyBadge } from "../utils/keyBadge";
 
 /** ページが外部（AnalysisRouteなど）から受け取るプロパティの定義 */

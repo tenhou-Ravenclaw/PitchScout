@@ -3,8 +3,8 @@
  * 役割：手持ちのカラオケ音源ファイル（mp3など）をアップロードして解析するためのページです。
  */
 import React from "react";
-import KaraokeUploader from "../components/KaraokeUploader";
-import AnalysisCardShell from "../components/AnalysisCardShell";
+import KaraokeUploader from "../components/features/KaraokeUploader";
+import AnalysisCardShell from "../components/ui/cards/AnalysisCardShell";
 import { AnalysisResult } from "../api";
 
 /** UploaderPage が受け取るプロパティ */

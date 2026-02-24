@@ -1,7 +1,7 @@
 import React, { lazy, useCallback } from "react";
 import { RouteObject } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
-import Layout from "./components/Layout";
+import Layout from "./components/layout/Layout";
 import { useAppContext } from "./contexts/AppContext";
 import { useAuth } from "./contexts/AuthContext";
 import { useAnalysis } from "./contexts/AnalysisContext";

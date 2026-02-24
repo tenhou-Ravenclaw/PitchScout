@@ -6,11 +6,11 @@
 
 import React, { useState, useRef } from "react";
 // APIから解析関数と型をインポート
-import { analyzeKaraoke, AnalysisResult, toUserMessage } from "../api";
+import { analyzeKaraoke, AnalysisResult, toUserMessage } from "../../api";
 import { CloudArrowUpIcon, DocumentArrowUpIcon } from "@heroicons/react/24/solid";
 // 解析の状態（進捗やラベル）を管理するためのフック
-import { useAnalysis } from '../contexts/AnalysisContext';
-import ErrorBanner from "./ErrorBanner";
+import { useAnalysis } from '../../contexts/AnalysisContext';
+import ErrorBanner from "../ui/ErrorBanner";
 
 interface Props {
   onResult: (data: AnalysisResult) => void; // 解析完了時に実行される関数

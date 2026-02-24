@@ -6,7 +6,7 @@
  */
 
 import React from "react";
-import CenteredCardShell from "../components/CenteredCardShell";
+import CenteredCardShell from "../components/ui/cards/CenteredCardShell";
 
 /** LoginPage が受け取るプロパティ */
 interface LoginPageProps {

@@ -10,8 +10,8 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 // 各種共通部品を読み込み
 import Header from "./Header";
 import BottomNav from "./BottomNav";
-import { useAppContext } from "../contexts/AppContext";
-import { useAuth } from "../contexts/AuthContext";
+import { useAppContext } from "../../contexts/AppContext";
+import { useAuth } from "../../contexts/AuthContext";
 
 /** ── ロード待ちの表示 (Fallback) ──
  * lazy で読み込んでいるページが表示されるまでの間、画面中央に出るアニメーションです。
