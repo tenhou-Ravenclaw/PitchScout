@@ -82,7 +82,7 @@ const GuidePage: React.FC = () => {
         
         {/* ── ヘッダー部分 ── */}
         <div className="mb-12 text-center">
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-yellow-400 mb-4 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] tracking-wide">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-black italic title-gradient-cyber mb-4 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] tracking-wide">
             HOW TO USE
           </h1>
           <p className="text-slate-400 text-sm sm:text-base tracking-widest uppercase">

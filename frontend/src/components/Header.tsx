@@ -131,7 +131,7 @@ const Header: React.FC<HeaderProps> = ({
                     <button
                         type="button"
                         onClick={() => navigate("/login")}
-                        className="text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-500 rounded-full px-5 py-2 transition-colors border-0 cursor-pointer shadow-lg shadow-cyan-500/20"
+                        className="btn-primary-cyan rounded-full px-5 py-2 text-sm"
                     >
                         ログイン
                     </button>

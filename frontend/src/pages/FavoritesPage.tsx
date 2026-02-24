@@ -5,25 +5,21 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
-// API通信用の関数や型定義をインポート
-import { getFavorites, removeFavorite, FavoriteSong, UserRange, toUserMessage } from '../api';
-// ハートアイコン（塗りつぶし）を使用
+import { getFavorites, removeFavorite, FavoriteSong, toUserMessage } from '../api';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
-// 認証状態（ログインしているか）を確認する道具
-import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import ErrorBanner from '../components/ErrorBanner';
 import Toast from '../components/Toast';
 
-/** 画面が受け取るプロパティ（設定）の定義 */
+/** FavoritesPage が受け取るプロパティ */
 interface FavoritesPageProps {
-    userRange?: UserRange | null; // ユーザーの音域（将来的な拡張用）
-    onLoginClick?: () => void;    // ログインボタンが押された時の動き
+    /** ログイン中かどうか */
+    isAuthenticated: boolean;
+    /** ログインボタンが押された時の動き */
+    onLoginClick: () => void;
 }
 
-const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
-    // 認証状態を取得
-    const { isAuthenticated } = useAuth();
+const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginClick }) => {
     
     // ── 状態管理 (State) ──
     const [favorites, setFavorites] = useState<FavoriteSong[]>([]); // お気に入り曲のリスト
@@ -95,7 +91,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ onLoginClick }) => {
                     </p>
                     <button
                         onClick={onLoginClick}
-                        className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-xl px-6 py-3 text-sm transition-colors shadow-lg shadow-cyan-500/20"
+                        className="btn-primary-cyan w-full rounded-xl px-6 py-3 text-sm"
                     >
                         ログインする
                     </button>

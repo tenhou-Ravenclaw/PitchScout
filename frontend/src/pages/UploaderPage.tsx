@@ -3,29 +3,30 @@
  * 役割：手持ちのカラオケ音源ファイル（mp3など）をアップロードして解析するためのページです。
  */
 import React from "react";
-import { useNavigate } from "react-router-dom";
-// ファイルアップロードと解析リクエストを担当するコンポーネント
 import KaraokeUploader from "../components/KaraokeUploader";
-import { useAppContext } from "../contexts/AppContext";
 import { AnalysisResult } from "../api";
 
-const UploaderPage: React.FC = () => {
-  const navigate = useNavigate();
-  const { setResult, setIsFromHistory } = useAppContext();
+/** UploaderPage が受け取るプロパティ */
+interface UploaderPageProps {
+  /** 戻るボタン押下時の処理 */
+  onBack: () => void;
+  /** 解析完了時の処理 */
+  onComplete: (data: AnalysisResult) => void;
+}
+
+const UploaderPage: React.FC<UploaderPageProps> = ({ onBack, onComplete }) => {
 
   /** ── アップロード完了時の処理 ── */
   const handleResult = (data: AnalysisResult) => {
-    setResult(data);
-    setIsFromHistory(false);
-    navigate("/result"); // 解析が終わったら簡易結果画面へ飛ばします
+    onComplete(data);
   };
 
   return (
     <div className="min-h-screen bg-transparent p-8">
       {/* ── 戻るボタン ── */}
       <button
-        onClick={() => navigate("/menu")}
-        className="mb-6 text-slate-500 hover:text-cyan-400 font-bold flex items-center gap-2 transition-colors"
+        onClick={onBack}
+        className="btn-back-link mb-6"
       >
         &larr; メニューに戻る
       </button>

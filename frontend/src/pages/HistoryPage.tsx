@@ -12,14 +12,14 @@ import {
   deleteAnalysisHistory,
   toUserMessage,
 } from "../api";
-// ログイン状態を確認するためのフック
-import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../hooks/useToast";
 import ErrorBanner from "../components/ErrorBanner";
 import Toast from "../components/Toast";
 
 /** 画面のプロパティ（設定） */
 interface HistoryPageProps {
+  /** ログイン中かどうか */
+  isAuthenticated: boolean;
   onLoginClick: () => void; // ログインボタンが押された時の処理
   onSelectRecord: (record: AnalysisHistoryRecord) => void; // 履歴がクリックされた時の処理
 }
@@ -32,11 +32,10 @@ interface SwipeState {
 }
 
 const HistoryPage: React.FC<HistoryPageProps> = ({
+  isAuthenticated,
   onLoginClick,
   onSelectRecord,
 }) => {
-  const { isAuthenticated } = useAuth(); // 認証状態を取得
-  
   // ── 状態管理 (State) ──
   const [history, setHistory] = useState<AnalysisHistoryRecord[]>([]); // 履歴データ
   const [loading, setLoading] = useState(true);                        // 読み込み中フラグ
@@ -175,7 +174,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
           </svg>
           <h2 className="text-xl font-bold text-white mb-2">分析履歴</h2>
           <p className="text-slate-400 text-sm mb-6">ログインすると過去の分析履歴を確認できます</p>
-          <button onClick={onLoginClick} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-xl px-6 py-3 text-sm transition-colors shadow-lg shadow-cyan-500/20">
+          <button onClick={onLoginClick} className="btn-primary-cyan w-full rounded-xl px-6 py-3 text-sm">
             ログインする
           </button>
         </div>
@@ -190,7 +189,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
       {/* タイトルエリア */}
       <div className="flex flex-col mb-8 pb-4 border-b border-cyan-500/30">
-        <h2 className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-yellow-400 drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] tracking-wider">
+        <h2 className="text-3xl sm:text-4xl font-black italic title-gradient-cyber drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] tracking-wider">
           HISTORY
         </h2>
         <p className="sm:hidden mt-2 text-xs font-bold text-cyan-400/80 tracking-widest drop-shadow-sm">スワイプで削除</p>

@@ -13,7 +13,6 @@ import {
 } from "../api"; // API通信用の型定義と関数をインポート
 import { StarIcon as StarSolid } from "@heroicons/react/24/solid";
 import { StarIcon as StarOutline } from "@heroicons/react/24/outline";
-import { useAuth } from "../contexts/AuthContext"; // 認証状態を取得するためのカスタムフック
 import { useToast } from "../hooks/useToast";
 import { useFavoriteArtists } from "../hooks/useFavoriteArtists";
 import Toast from "../components/Toast";
@@ -21,7 +20,10 @@ import { keyBadge } from "../utils/keyBadge";
 
 /** ページが外部（AnalysisRouteなど）から受け取るプロパティの定義 */
 interface AnalysisResultPageProps {
+  /** 解析結果データ */
   result: AnalysisResult | null;
+  /** ログイン中かどうか */
+  isAuthenticated: boolean;
 }
 
 /* ───── 歌唱力レーダーチャート (SVG) ───── 
@@ -66,8 +68,7 @@ const RadarChart: React.FC<{ data: { label: string; value: number }[] }> = ({ da
 /* ════════════════════════════════════════════════
    メインコンポーネント本体
    ════════════════════════════════════════════════ */
-const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result }) => {
-  const { isAuthenticated } = useAuth(); // ログイン中かどうかを判定
+const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthenticated }) => {
   const { favoriteIds, toggleFavorite, isFavorite } = useFavoriteArtists(); // お気に入りアーティスト管理
   const [integratedRange, setIntegratedRange] = useState<IntegratedVocalRange | null>(null); // 直近N件をまとめた総合的な音域
   const [loadingIntegrated, setLoadingIntegrated] = useState(false);

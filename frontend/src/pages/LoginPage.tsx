@@ -6,15 +6,14 @@
  */
 
 import React from "react";
-// 認証機能（ログイン処理など）を管理するカスタムフックを読み込みます
-import { useAuth } from "../contexts/AuthContext";
 
-const LoginPage: React.FC = () => {
-  /**
-   * ── 認証機能の取り出し ──
-   * useAuth() を通じて、Googleログインを実行するための関数（loginWithGoogle）を借ります。
-   */
-  const { loginWithGoogle } = useAuth();
+/** LoginPage が受け取るプロパティ */
+interface LoginPageProps {
+  /** Google ログイン実行処理 */
+  onLogin: () => void;
+}
+
+const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
 
   return (
     /**
@@ -38,7 +37,7 @@ const LoginPage: React.FC = () => {
            💡 ボタンをクリックすると、AuthContext 内の loginWithGoogle が実行されます。
         */}
         <button
-          onClick={loginWithGoogle}
+          onClick={onLogin}
           className="w-full flex items-center justify-center gap-3 bg-slate-800 border-2 border-slate-700 rounded-xl px-6 py-3 text-sm font-medium text-slate-200 hover:bg-slate-700 hover:border-slate-600 transition-all"
         >
           {/* Googleのロゴ（SVG形式） */}

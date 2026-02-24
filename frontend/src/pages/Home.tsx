@@ -4,22 +4,23 @@
  * 特徴：サイバーパンク風のグリッド背景、ネオン輝くタイル型ボタン、解析中のステータスバナーを備えています。
  */
 import React from 'react';
-// アイコン素材をインポート
 import { MicrophoneIcon, MusicalNoteIcon, CloudArrowUpIcon, ClockIcon } from '@heroicons/react/24/solid';
-// 解析中の状態（isAnalyzing）を取得するためのフック
-import { useAnalysis } from '../contexts/AnalysisContext';
 
-/** 画面が受け取るボタンクリック時の動作（Props） */
-interface Props {
-    onNormalClick: () => void;  // 通常録音
-    onKaraokeClick: () => void; // カラオケ録音
-    onUploadClick: () => void;  // ファイルアップロード
-    onHistoryClick?: () => void; // 履歴
+/** Home が受け取るプロパティ */
+interface HomeProps {
+    /** 通常録音ボタンのクリック処理 */
+    onNormalClick: () => void;
+    /** カラオケ録音ボタンのクリック処理 */
+    onKaraokeClick: () => void;
+    /** ファイルアップロードボタンのクリック処理 */
+    onUploadClick: () => void;
+    /** 履歴ボタンのクリック処理 */
+    onHistoryClick?: () => void;
+    /** 解析中かどうか */
+    isAnalyzing: boolean;
 }
 
-const Home: React.FC<Props> = ({ onNormalClick, onKaraokeClick, onUploadClick, onHistoryClick }) => {
-    // 現在バックグラウンドで解析が走っているかどうかを確認
-    const { isAnalyzing } = useAnalysis();
+const Home: React.FC<HomeProps> = ({ onNormalClick, onKaraokeClick, onUploadClick, onHistoryClick, isAnalyzing }) => {
 
     return (
         <div className="min-h-[100dvh] relative bg-transparent overflow-hidden">
@@ -34,7 +35,7 @@ const Home: React.FC<Props> = ({ onNormalClick, onKaraokeClick, onUploadClick, o
 
                 {/* ── ヘッダータイトル ── */}
                 <div className="mb-12 text-center md:text-left md:ml-12">
-                    <h1 className="text-6xl md:text-8xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-yellow-400 mb-4 drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] tracking-wide">
+                    <h1 className="text-6xl md:text-8xl font-black italic title-gradient-cyber mb-4 drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] tracking-wide">
                         RECORD
                     </h1>
                 </div>

@@ -9,13 +9,11 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
-// ── api.ts から通信用の型と関数を全て読み込みます ──
 import { getArtists, getArtistSongs, Artist, UserRange, Song, getSongs, toUserMessage } from '../api';
 import { StarIcon as StarSolid } from '@heroicons/react/24/solid';
 import { StarIcon as StarOutline } from '@heroicons/react/24/outline';
 import { HeartIcon } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
-import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../hooks/useToast';
 import { useFavoriteArtists } from '../hooks/useFavoriteArtists';
 import { useFavoriteSongs } from '../hooks/useFavoriteSongs';
@@ -31,13 +29,19 @@ import { INDEX_KANA, getConsonantRow, SEARCH_ALIASES, ARTISTS_PER_PAGE, SONGS_PE
  * ── 以下、定数とヘルパーは constants/songListConstants.ts に移動しました ──
  */
 
-const SongListPage: React.FC<{
+/** SongListPage が受け取るプロパティ */
+interface SongListPageProps {
+  /** 検索クエリ */
   searchQuery?: string;
+  /** ユーザー音域 */
   userRange?: UserRange | null;
+  /** ログイン誘導時の処理 */
   onLoginClick?: () => void;
+  /** 検索クエリ変更時の処理 */
   onSearchChange?: (query: string) => void;
-}> = ({ searchQuery = "", userRange, onLoginClick, onSearchChange }) => {
-  const { isAuthenticated } = useAuth();
+}
+
+const SongListPage: React.FC<SongListPageProps> = ({ searchQuery = "", userRange, onLoginClick, onSearchChange }) => {
 
   // ── 検索クエリの状態 ──
   const [activeQuery, setActiveQuery] = useState(searchQuery);
@@ -261,7 +265,7 @@ const SongListPage: React.FC<{
         <div className="w-full max-w-5xl mb-6">
           <button
             onClick={() => setSelectedArtist(null)}
-            className="text-slate-500 hover:text-cyan-400 font-bold flex items-center gap-2 transition-all duration-300 mb-6 drop-shadow-[0_0_5px_rgba(34,211,238,0)] hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]"
+            className="btn-back-link transition-all duration-300 mb-6 drop-shadow-[0_0_5px_rgba(34,211,238,0)] hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]"
           >
             &larr; アーティスト一覧に戻る
           </button>
@@ -270,7 +274,7 @@ const SongListPage: React.FC<{
               {selectedArtist.name.charAt(0)}
             </div>
             <div>
-              <h1 className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
+              <h1 className="text-3xl sm:text-4xl font-black italic title-gradient-cyan-fuchsia drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
                 {selectedArtist.name}
               </h1>
               <p className="text-sm text-cyan-400 mt-1 font-bold tracking-widest">{artistSongs.length}{'\u66f2'}</p>
@@ -362,7 +366,7 @@ const SongListPage: React.FC<{
         />
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl sm:text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-400 mb-2 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
+            <h1 className="text-3xl sm:text-4xl font-black italic title-gradient-cyan-fuchsia mb-2 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
               {activeQuery ? '楽曲検索結果' : 'ARTISTS'}
             </h1>
             <p className="text-xs text-slate-400 font-bold tracking-wide">
