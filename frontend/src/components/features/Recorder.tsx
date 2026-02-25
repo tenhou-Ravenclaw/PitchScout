@@ -6,26 +6,39 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 // ── api.ts から解析用の関数と型をインポート ──
-import { analyzeVoice, analyzeKaraoke, AnalysisResult, toUserMessage } from "../../api";
+import {
+  analyzeVoice,
+  analyzeKaraoke,
+  AnalysisResult,
+  toUserMessage,
+} from "../../api";
 import { MicrophoneIcon, StopIcon } from "@heroicons/react/24/solid";
 import "./Recorder.css";
 // 解析の進捗管理（タイマーやラベル）を行う Context
-import { useAnalysis } from '../../contexts/AnalysisContext';
+import { useAnalysis } from "../../contexts/AnalysisContext";
 import ErrorBanner from "../ui/ErrorBanner";
 
 interface Props {
   onResult: (data: AnalysisResult) => void; // 解析結果を受け取る関数
-  initialUseDemucs?: boolean;                // カラオケモードかどうか
+  initialUseDemucs?: boolean; // カラオケモードかどうか
 }
+
+type AnalyzerFrequencyData = Parameters<
+  AnalyserNode["getByteFrequencyData"]
+>[0];
 
 const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
   const [recording, setRecording] = useState(false);
   // 解析中の状態をアプリ全体で共有するためのツール
   const {
-    isAnalyzing: loading, setIsAnalyzing: setLoading,
-    progress, setProgress,
-    stepLabel, setStepLabel,
-    startAnalysisTimer, stopAnalysisTimer
+    isAnalyzing: loading,
+    setIsAnalyzing: setLoading,
+    progress,
+    setProgress,
+    stepLabel,
+    setStepLabel,
+    startAnalysisTimer,
+    stopAnalysisTimer,
   } = useAnalysis();
 
   const [noFalsetto, setNoFalsetto] = useState(false);
@@ -39,7 +52,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const dataArrayRef = useRef<AnalyzerFrequencyData | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const animationIdRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -87,7 +100,7 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
     const HEIGHT = canvas.height;
 
     // 現在の周波数データを取得
-    analyserRef.current.getByteFrequencyData(dataArrayRef.current as any);
+    analyserRef.current.getByteFrequencyData(dataArrayRef.current);
 
     ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
@@ -138,14 +151,15 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
 
       /** ── 録音停止時の解析処理 ── */
       mediaRecorder.current.onstop = async () => {
-        if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
+        if (animationIdRef.current)
+          cancelAnimationFrame(animationIdRef.current);
         const blob = new Blob(chunks.current, { type: "audio/webm" });
 
         // モードに合わせて解析タイマーを始動
         if (initialUseDemucs) {
-          startAnalysisTimer('karaoke_record');
+          startAnalysisTimer("karaoke_record");
         } else {
-          startAnalysisTimer('mic_record');
+          startAnalysisTimer("mic_record");
         }
 
         try {
@@ -160,7 +174,10 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
           onResult(data);
         } catch (err: unknown) {
           stopAnalysisTimer();
-          const errorMsg = toUserMessage(err, "解析に失敗しました。もう一度お試しください。");
+          const errorMsg = toUserMessage(
+            err,
+            "解析に失敗しました。もう一度お試しください。",
+          );
           onResult({ error: errorMsg } as AnalysisResult);
         } finally {
           setTimeout(() => {
@@ -174,7 +191,9 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
       // ビジュアライザー用の Web Audio 設定
       if (!audioContextRef.current) {
         audioContextRef.current = new (
-          window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext!
+          window.AudioContext ||
+          (window as Window & { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext!
         )();
       }
 
@@ -185,7 +204,9 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
       if (sourceRef.current) sourceRef.current.disconnect();
       sourceRef.current = audioCtx.createMediaStreamSource(stream);
       sourceRef.current.connect(analyserRef.current);
-      dataArrayRef.current = new Uint8Array(analyserRef.current.frequencyBinCount);
+      dataArrayRef.current = new Uint8Array(
+        new ArrayBuffer(analyserRef.current.frequencyBinCount),
+      ) as AnalyzerFrequencyData;
 
       mediaRecorder.current.start();
       setRecording(true);
@@ -197,7 +218,12 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
       }, 100);
     } catch (e) {
       console.error("録音開始エラー:", e);
-      setError(toUserMessage(e, "マイクの使用が許可されていないか、録音開始に失敗しました。"));
+      setError(
+        toUserMessage(
+          e,
+          "マイクの使用が許可されていないか、録音開始に失敗しました。",
+        ),
+      );
     }
   };
 
@@ -242,15 +268,20 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
             stroke="currentColor"
             strokeWidth={4}
           >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M5 13l4 4L19 7"
+            />
           </svg>
         </div>
-        <span className="font-semibold tracking-wide">裏声を使わない（地声のみで判定）</span>
+        <span className="font-semibold tracking-wide">
+          裏声を使わない（地声のみで判定）
+        </span>
       </label>
 
       {/* ── メイン録音エリア ── */}
       <div className="relative w-full max-w-4xl h-[500px] bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] flex flex-col items-center justify-center group">
-        
         {/* 録音中の波形描画 */}
         {recording && (
           <div className="absolute inset-0 w-full h-full z-10">
@@ -279,12 +310,15 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
             <div className="w-24 h-24 border-t-4 border-b-4 border-cyan-400 rounded-full animate-spin mb-8 shadow-[0_0_15px_rgba(34,211,238,0.5)]"></div>
             <div className="w-full max-w-md h-2 bg-slate-800 rounded-full overflow-hidden mb-4 shadow-inner border border-slate-700">
               <div
-                className={`h-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(34,211,238,0.8)] ${progress >= 100 ? "bg-emerald-400" : "bg-cyan-400"
-                  }`}
+                className={`h-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(34,211,238,0.8)] ${
+                  progress >= 100 ? "bg-emerald-400" : "bg-cyan-400"
+                }`}
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <p className="text-cyan-300 font-bold italic tracking-wide animate-pulse drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]">{stepLabel}</p>
+            <p className="text-cyan-300 font-bold italic tracking-wide animate-pulse drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]">
+              {stepLabel}
+            </p>
           </div>
         )}
 
@@ -298,7 +332,9 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
                 className="pointer-events-auto relative w-28 h-28 bg-slate-800 hover:bg-slate-700 flex flex-col items-center justify-center rounded-full transition-all duration-300 transform hover:scale-110 shadow-[0_0_30px_rgba(34,211,238,0.3)] hover:shadow-[0_0_50px_rgba(34,211,238,0.6)] border-2 border-cyan-500/50 hover:border-cyan-400 group z-10"
               >
                 <MicrophoneIcon className="w-12 h-12 text-slate-300 group-hover:text-cyan-300 transition-colors drop-shadow-[0_0_8px_rgba(34,211,238,0)] group-hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                <span className="text-xs mt-1 font-black italic text-cyan-400 tracking-wider">START</span>
+                <span className="text-xs mt-1 font-black italic text-cyan-400 tracking-wider">
+                  START
+                </span>
               </button>
             ) : (
               // 録音停止ボタン（進捗リング付き）

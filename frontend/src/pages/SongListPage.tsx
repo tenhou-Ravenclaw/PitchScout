@@ -88,7 +88,7 @@ const SongListPage: React.FC<SongListPageProps> = ({ searchQuery = "", userRange
       setArtists(data.artists);
       setTotalArtists(data.total);
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError("\u697d\u66f2\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f");
     } finally {
       setLoading(false);
@@ -110,7 +110,7 @@ const SongListPage: React.FC<SongListPageProps> = ({ searchQuery = "", userRange
       setSearchSongs(data.songs);
       setTotalSearchSongs(data.total);
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError("\u697d\u66f2\u691c\u7d22\u306b\u5931\u6557\u3057\u307e\u3057\u305f");
       setSearchSongs([]);
       setTotalSearchSongs(0);
@@ -356,7 +356,7 @@ const SongListPage: React.FC<SongListPageProps> = ({ searchQuery = "", userRange
         <SearchBar
           value={searchInput}
           onChange={setSearchInput}
-          onSubmit={(query) => {
+          onSubmit={(query: string) => {
             setActiveQuery(query);
             if (onSearchChange) {
               onSearchChange(query);

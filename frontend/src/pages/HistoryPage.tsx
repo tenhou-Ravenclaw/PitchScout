@@ -61,7 +61,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
       try {
         const data = await getAnalysisHistory();
         setHistory(data);
-      } catch (err: any) {
+      } catch (err: unknown) {
         setError("履歴の取得に失敗しました。");
         console.error(err);
       } finally {

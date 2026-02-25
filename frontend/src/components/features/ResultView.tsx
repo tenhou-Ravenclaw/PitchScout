@@ -5,7 +5,7 @@
  */
 
 import React from "react";
-import { AnalysisResult } from "../../api";
+import { AnalysisResult, RecommendedSong, SimilarArtist } from "../../api";
 
 interface Props {
   result: AnalysisResult; // 表示する解析データ
@@ -58,8 +58,8 @@ const ResultView: React.FC<Props> = ({ result }) => {
   const hasChest = result.chest_min != null;
   const hasFalsetto = result.falsetto_min != null;
   const analysis = result.singing_analysis;
-  const songs = result.recommended_songs ?? [];
-  const artists = result.similar_artists ?? [];
+  const songs: RecommendedSong[] = result.recommended_songs ?? [];
+  const artists: SimilarArtist[] = result.similar_artists ?? [];
   const voiceType = result.voice_type ?? {};
 
   return (
@@ -235,30 +235,30 @@ const ResultView: React.FC<Props> = ({ result }) => {
         <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
           <h3 className="text-sm font-bold text-slate-200 mb-3">声が似ているアーティスト</h3>
           <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
-            {artists.map((a: any, i: number) => (
+            {artists.map((artist: SimilarArtist, index: number) => (
               <div
-                key={a.id}
+                key={artist.id}
                 className="flex-shrink-0 w-28 flex flex-col items-center text-center"
               >
                 <div
                   className={`w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-md ring-2 ring-white/10 ${
-                    i === 0
+                    index === 0
                       ? "bg-gradient-to-br from-amber-400 to-orange-500"
-                      : i === 1
+                      : index === 1
                       ? "bg-gradient-to-br from-slate-500 to-slate-600"
                       : "bg-gradient-to-br from-blue-500 to-indigo-600"
                   }`}
                 >
-                  {a.name.charAt(0)}
+                  {artist.name.charAt(0)}
                 </div>
                 <span className="text-xs font-bold text-slate-300 mt-2 leading-tight line-clamp-2">
-                  {a.name}
+                  {artist.name}
                 </span>
                 <span className="text-[10px] text-slate-500 mt-0.5">
-                  {a.typical_lowest}〜{a.typical_highest}
+                  {artist.typical_lowest}〜{artist.typical_highest}
                 </span>
                 <span className="text-[10px] text-indigo-400 font-semibold drop-shadow-sm">
-                  {a.similarity_score}%一致
+                  {artist.similarity_score}%一致
                 </span>
               </div>
             ))}
@@ -273,7 +273,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
           <p className="text-xs text-slate-500 mb-4">あなたの音域に合った楽曲</p>
 
           <div className="space-y-1">
-            {songs.map((song: any, i: number) => {
+            {songs.map((song: RecommendedSong, index: number) => {
               const matchColor =
                 song.match_score >= 95 ? "bg-emerald-900/50 text-emerald-400 border border-emerald-500/30" :
                   song.match_score >= 80 ? "bg-sky-900/50 text-sky-400 border border-sky-500/30" :
@@ -286,7 +286,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
                   className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/5 transition-colors group"
                 >
                   <span className="w-6 text-center text-sm font-bold text-slate-500 group-hover:text-cyan-400 transition-colors">
-                    {i + 1}
+                    {index + 1}
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold text-slate-200 truncate">

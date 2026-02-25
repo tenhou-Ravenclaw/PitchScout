@@ -1,13 +1,22 @@
 import { API } from "./client";
 import type { SongsResponse, Song, UserRange, ArtistsResponse } from "./types";
 
+type SongQueryParams = {
+  limit?: number;
+  offset?: number;
+  q?: string;
+  chest_min_hz?: number;
+  chest_max_hz?: number;
+  falsetto_max_hz?: number;
+};
+
 export const getSongs = async (
   limit: number = 20,
   offset: number = 0,
   query: string = "",
   userRange?: UserRange | null,
 ): Promise<SongsResponse> => {
-  const params: Record<string, any> = { limit, offset };
+  const params: SongQueryParams = { limit, offset };
   if (query) params.q = query;
   if (userRange) {
     params.chest_min_hz = userRange.chest_min_hz;
@@ -25,7 +34,7 @@ export const getArtists = async (
   offset: number = 0,
   query: string = "",
 ): Promise<ArtistsResponse> => {
-  const params: Record<string, any> = { limit, offset };
+  const params: SongQueryParams = { limit, offset };
   if (query) params.q = query;
   const res = await API.get<ArtistsResponse>("/artists", { params });
   return res.data;
@@ -35,7 +44,7 @@ export const getArtistSongs = async (
   artistId: number,
   userRange?: UserRange | null,
 ): Promise<Song[]> => {
-  const params: Record<string, any> = {};
+  const params: SongQueryParams = {};
   if (userRange) {
     params.chest_min_hz = userRange.chest_min_hz;
     params.chest_max_hz = userRange.chest_max_hz;

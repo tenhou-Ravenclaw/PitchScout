@@ -26,6 +26,17 @@ interface AnalysisResultPageProps {
   isAuthenticated: boolean;
 }
 
+/**
+ * AnalysisResult にエラーが含まれるかを判定します。
+ * @param data - 判定対象のデータ
+ * @returns エラーが含まれる場合は true
+ */
+const hasAnalysisError = (
+  data: AnalysisResult | IntegratedVocalRange | null,
+): data is AnalysisResult & { error: string } => {
+  return !!data && "error" in data && typeof data.error === "string" && data.error.length > 0;
+};
+
 /* ───── 歌唱力レーダーチャート (SVG) ───── 
  * 音域、安定性、表現力などのスコアを多角形で視覚化します。
  */
@@ -115,7 +126,7 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthe
   const displayData = useIntegrated ? integratedRange : result;
 
   // データがどこにも存在しない場合のエラー表示
-  if (!displayData || (displayData as any).error) {
+  if (!displayData || hasAnalysisError(displayData)) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-400 p-8">
         <div className="text-6xl mb-4">🎤</div>
