@@ -16,7 +16,7 @@ import { useAuthenticatedDataLoader } from "../hooks/useAuthenticatedDataLoader"
 import { useHistoryDelete } from "../hooks/useHistoryDelete";
 import { useHistorySwipe } from "../hooks/useHistorySwipe";
 import { HISTORY_AUTH_REQUIRED_CONTENT } from "../constants/authRequiredCardContent";
-import { HISTORY_FETCH_ERROR_MESSAGE } from "../constants/historyMessages";
+import { HISTORY_FETCH_ERROR_MESSAGE } from "../constants/historyConstants";
 import EmptyState from "../components/ui/EmptyState";
 import DataStateSwitch from "../components/ui/DataStateSwitch";
 import HistoryRecordCard from "../components/features/HistoryRecordCard";

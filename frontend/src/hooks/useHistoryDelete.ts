@@ -1,7 +1,6 @@
 import React, { Dispatch, SetStateAction, useCallback, useState } from "react";
 import { AnalysisHistoryRecord, deleteAnalysisHistory } from "../api";
-import { HISTORY_DELETE_MESSAGES } from "../constants/historyMessages";
-import { HISTORY_DELETE_ANIMATION_WAIT_MS } from "../constants/historyUiConstants";
+import { HISTORY_DELETE_MESSAGES, HISTORY_DELETE_ANIMATION_WAIT_MS } from "../constants/historyConstants";
 import { ErrorNotifier } from "./useErrorNotifier";
 import { executeDeleteAction } from "../utils/deleteAction";
 

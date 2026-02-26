@@ -1,8 +1,7 @@
 import { Dispatch, SetStateAction, useCallback } from "react";
 import { ErrorNotifier } from "./useErrorNotifier";
-import { useSyncedFavoriteSet } from "./useSyncedFavoriteSet";
+import { useAuthSyncedEffect } from "./useAuthSyncedEffect";
 import { createFavoriteSyncErrorHandler } from "../utils/favoriteMutation";
-import { fetchFavoriteIds } from "../utils/favoriteIds";
 
 /** お気に入り同期フックの設定です。 */
 interface UseSyncedFavoriteIdsParams<T> {
@@ -36,9 +35,14 @@ export const useSyncedFavoriteIds = <T>({
   syncErrorLabel,
   syncErrorUserMessage,
 }: UseSyncedFavoriteIdsParams<T>): void => {
+  const mapFavoriteIds = useCallback((items: T[]): number[] => {
+    return items.map((item) => selectId(item));
+  }, [selectId]);
+
   const fetchIds = useCallback(async (): Promise<number[]> => {
-    return fetchFavoriteIds(fetchItems, selectId);
-  }, [fetchItems, selectId]);
+    const items = await fetchItems();
+    return mapFavoriteIds(items);
+  }, [fetchItems, mapFavoriteIds]);
 
   const handleSyncError = useCallback(
     createFavoriteSyncErrorHandler(notifyError, {
@@ -48,10 +52,22 @@ export const useSyncedFavoriteIds = <T>({
     [notifyError, syncErrorLabel, syncErrorUserMessage],
   );
 
-  useSyncedFavoriteSet({
+  const reset = useCallback((): void => {
+    setIdSet(new Set());
+  }, [setIdSet]);
+
+  const sync = useCallback(async (): Promise<void> => {
+    try {
+      const ids = await fetchIds();
+      setIdSet(new Set(ids));
+    } catch (error) {
+      handleSyncError(error);
+    }
+  }, [fetchIds, handleSyncError, setIdSet]);
+
+  useAuthSyncedEffect({
     isAuthenticated,
-    setIdSet,
-    fetchIds,
-    onSyncError: handleSyncError,
+    reset,
+    sync,
   });
 };

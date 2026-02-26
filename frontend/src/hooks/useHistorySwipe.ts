@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from "react";
-import { HISTORY_SWIPE_THRESHOLDS } from "../constants/historyUiConstants";
+import { HISTORY_SWIPE_THRESHOLDS } from "../constants/historyConstants";
 
 /** スワイプ操作中の座標情報 */
 interface SwipeState {
