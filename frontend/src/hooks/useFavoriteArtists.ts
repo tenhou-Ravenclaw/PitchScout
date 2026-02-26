@@ -9,7 +9,10 @@ import {
   createFavoriteMutationErrorConfig,
   executeFavoriteMutation,
 } from "../utils/favoriteMutation";
-import { FAVORITE_ARTIST_MESSAGES, FAVORITE_LOGIN_REQUIRED_MESSAGE } from "../constants/favoriteMessages";
+import {
+  FAVORITE_ARTIST_MESSAGES,
+  FAVORITE_LOGIN_REQUIRED_MESSAGE,
+} from "../constants/userFeatureConstants";
 
 /** useFavoriteArtists の返り値型です。 */
 interface UseFavoriteArtistsResult {

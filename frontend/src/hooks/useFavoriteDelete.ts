@@ -1,8 +1,8 @@
 import { Dispatch, SetStateAction, useCallback } from "react";
 import { FavoriteSong, removeFavorite } from "../api";
-import { FAVORITE_SONG_MESSAGES } from "../constants/favoriteMessages";
-import { ErrorNotifier } from "./useErrorNotifier";
-import { executeDeleteAction } from "../utils/deleteAction";
+import { FAVORITE_SONG_MESSAGES } from "../constants/userFeatureConstants";
+import { ErrorNotifier } from "./useErrorToastNotifier";
+import { executeDeleteActionWithNotification } from "../utils/deleteAction";
 import { addToSet, removeFromSet } from "../utils/setUtils";
 
 /** お気に入り削除フックの設定 */
@@ -39,36 +39,44 @@ export const useFavoriteDelete = ({
    *
    * @param songId - 削除対象の楽曲ID
    */
-  const handleRemove = useCallback(async (songId: number): Promise<void> => {
-    if (removingIds.has(songId)) {
-      return;
-    }
+  const handleRemove = useCallback(
+    async (songId: number): Promise<void> => {
+      if (removingIds.has(songId)) {
+        return;
+      }
 
-    const removed = favorites.find((favorite) => favorite.song_id === songId);
+      const removed = favorites.find((favorite) => favorite.song_id === songId);
 
-    await executeDeleteAction<number>({
-      targetId: songId,
-      runDelete: removeFavorite,
-      onBefore: () => {
-        setFavorites((prev) => prev.filter((favorite) => favorite.song_id !== songId));
-        setRemovingIds((prev) => addToSet(prev, songId));
-      },
-      onError: (error: unknown) => {
-        notifyError(
-          FAVORITE_SONG_MESSAGES.deleteErrorLabel,
-          error,
-          FAVORITE_SONG_MESSAGES.deleteErrorUserMessage,
-        );
-
-        if (removed) {
-          setFavorites((prev) => [...prev, removed].sort((left, right) => left.title.localeCompare(right.title, "ja")));
-        }
-      },
-      onFinally: () => {
-        setRemovingIds((prev) => removeFromSet(prev, songId));
-      },
-    });
-  }, [favorites, notifyError, removingIds, setFavorites, setRemovingIds]);
+      await executeDeleteActionWithNotification<number>({
+        targetId: songId,
+        runDelete: removeFavorite,
+        errorConfig: {
+          notifyError,
+          errorLabel: FAVORITE_SONG_MESSAGES.deleteErrorLabel,
+          errorUserMessage: FAVORITE_SONG_MESSAGES.deleteErrorUserMessage,
+        },
+        onBefore: () => {
+          setFavorites((prev) =>
+            prev.filter((favorite) => favorite.song_id !== songId),
+          );
+          setRemovingIds((prev) => addToSet(prev, songId));
+        },
+        onError: () => {
+          if (removed) {
+            setFavorites((prev) =>
+              [...prev, removed].sort((left, right) =>
+                left.title.localeCompare(right.title, "ja"),
+              ),
+            );
+          }
+        },
+        onFinally: () => {
+          setRemovingIds((prev) => removeFromSet(prev, songId));
+        },
+      });
+    },
+    [favorites, notifyError, removingIds, setFavorites, setRemovingIds],
+  );
 
   return {
     handleRemove,

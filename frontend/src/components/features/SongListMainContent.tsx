@@ -9,9 +9,10 @@ import { Artist, Song, UserRange } from "../../api";
 import ErrorBanner from "../ui/ErrorBanner";
 import LoadingState from "../ui/LoadingState";
 import Pagination from "../ui/Pagination";
+import SearchBar from "../ui/SearchBar";
+import SyllableIndex from "../ui/SyllableIndex";
 import ArtistListPanel from "./ArtistListPanel";
-import SongListHeaderPanel from "./SongListHeaderPanel";
-import SongTable from "./SongTable";
+import { SongTableWithLoading } from "./SongTable";
 import { ARTISTS_PER_PAGE, SONGS_PER_PAGE } from "../../constants/songListConstants";
 import { PaginationAction } from "../../hooks/useSongListData";
 
@@ -78,6 +79,22 @@ interface SongListMainContentProps {
   isTogglingSong: (songId: number) => boolean;
 }
 
+/** SongListHeaderPanel が受け取るプロパティ */
+interface SongListHeaderPanelProps {
+  /** 検索入力の現在値 */
+  searchInput: string;
+  /** 検索入力変更時の処理 */
+  onSearchInputChange: (value: string) => void;
+  /** 検索確定時の処理 */
+  onSearchSubmit: (query: string) => void;
+  /** アクティブな検索クエリ */
+  activeQuery: string;
+  /** ユーザー音域 */
+  userRange?: UserRange | null;
+  /** 五十音インデックス押下時の処理 */
+  onIndexClick: (char: string) => void;
+}
+
 /**
  * PaginationSection が受け取るプロパティ
  */
@@ -118,6 +135,45 @@ const PaginationSection: React.FC<PaginationSectionProps> = ({
       onNext={() => onPaginate("next")}
       onPageJump={() => onPaginate("jump")}
     />
+  );
+};
+
+/**
+ * 楽曲一覧ページのヘッダー領域を表示します。
+ */
+const SongListHeaderPanel: React.FC<SongListHeaderPanelProps> = ({
+  searchInput,
+  onSearchInputChange,
+  onSearchSubmit,
+  activeQuery,
+  userRange,
+  onIndexClick,
+}) => {
+  return (
+    <div className="w-full max-w-3xl flex flex-col mb-4 gap-6">
+      <SearchBar
+        value={searchInput}
+        onChange={onSearchInputChange}
+        onSubmit={onSearchSubmit}
+        placeholder="楽曲名・アーティスト名で検索..."
+      />
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-black italic title-gradient-cyan-fuchsia mb-2 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
+            {activeQuery ? "楽曲検索結果" : "ARTISTS"}
+          </h1>
+          <p className="text-xs text-slate-400 font-bold tracking-wide">
+            {activeQuery
+              ? `"${activeQuery}" の検索結果`
+              : (userRange ? "音域に合わせたキーおすすめを表示中" : "録音すると、キーおすすめが表示されます")}
+          </p>
+        </div>
+        <SyllableIndex
+          onIndexClick={onIndexClick}
+          visible={!activeQuery}
+        />
+      </div>
+    </div>
   );
 };
 
@@ -167,22 +223,18 @@ const SongListMainContent: React.FC<SongListMainContentProps> = ({
 
       {activeQuery ? (
         <>
-          {searchLoading ? (
-            <LoadingState />
-          ) : searchSongs.length === 0 ? (
-            <p className="mt-6 text-slate-400 text-center">該当する楽曲が見つかりません</p>
-          ) : (
-            <SongTable
-              songs={searchSongs}
-              userRange={userRange}
-              rowStartIndex={searchPage * SONGS_PER_PAGE}
-              showArtistColumn={true}
-              titleHeaderLabel="楽曲"
-              onToggleFavoriteSong={onToggleFavoriteSong}
-              isFavoriteSong={isFavoriteSong}
-              isToggling={isTogglingSong}
-            />
-          )}
+          <SongTableWithLoading
+            loading={searchLoading}
+            songs={searchSongs}
+            userRange={userRange}
+            rowStartIndex={searchPage * SONGS_PER_PAGE}
+            showArtistColumn={true}
+            titleHeaderLabel="楽曲"
+            onToggleFavoriteSong={onToggleFavoriteSong}
+            isFavoriteSong={isFavoriteSong}
+            isToggling={isTogglingSong}
+            emptyMessage="該当する楽曲が見つかりません"
+          />
 
           {!searchLoading && (
             <PaginationSection

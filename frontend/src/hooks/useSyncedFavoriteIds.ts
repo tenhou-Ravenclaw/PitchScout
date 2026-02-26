@@ -1,6 +1,5 @@
-import { Dispatch, SetStateAction, useCallback } from "react";
-import { ErrorNotifier } from "./useErrorNotifier";
-import { useAuthSyncedEffect } from "./useAuthSyncedEffect";
+import { Dispatch, SetStateAction, useCallback, useEffect } from "react";
+import { ErrorNotifier } from "./useErrorToastNotifier";
 import { createFavoriteSyncErrorHandler } from "../utils/favoriteMutation";
 
 /** お気に入り同期フックの設定です。 */
@@ -35,9 +34,12 @@ export const useSyncedFavoriteIds = <T>({
   syncErrorLabel,
   syncErrorUserMessage,
 }: UseSyncedFavoriteIdsParams<T>): void => {
-  const mapFavoriteIds = useCallback((items: T[]): number[] => {
-    return items.map((item) => selectId(item));
-  }, [selectId]);
+  const mapFavoriteIds = useCallback(
+    (items: T[]): number[] => {
+      return items.map((item) => selectId(item));
+    },
+    [selectId],
+  );
 
   const fetchIds = useCallback(async (): Promise<number[]> => {
     const items = await fetchItems();
@@ -65,9 +67,11 @@ export const useSyncedFavoriteIds = <T>({
     }
   }, [fetchIds, handleSyncError, setIdSet]);
 
-  useAuthSyncedEffect({
-    isAuthenticated,
-    reset,
-    sync,
-  });
+  useEffect(() => {
+    if (!isAuthenticated) {
+      reset();
+      return;
+    }
+    void sync();
+  }, [isAuthenticated, reset, sync]);
 };

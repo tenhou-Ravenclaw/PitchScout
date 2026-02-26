@@ -1,8 +1,11 @@
 import React, { Dispatch, SetStateAction, useCallback, useState } from "react";
 import { AnalysisHistoryRecord, deleteAnalysisHistory } from "../api";
-import { HISTORY_DELETE_MESSAGES, HISTORY_DELETE_ANIMATION_WAIT_MS } from "../constants/historyConstants";
-import { ErrorNotifier } from "./useErrorNotifier";
-import { executeDeleteAction } from "../utils/deleteAction";
+import {
+  HISTORY_DELETE_MESSAGES,
+  HISTORY_DELETE_ANIMATION_WAIT_MS,
+} from "../constants/historyConstants";
+import { ErrorNotifier } from "./useErrorToastNotifier";
+import { executeDeleteActionWithNotification } from "../utils/deleteAction";
 
 /** 履歴削除フックの設定 */
 interface UseHistoryDeleteParams {
@@ -33,25 +36,32 @@ export const useHistoryDelete = ({
    *
    * @param recordId - 削除対象の履歴ID
    */
-  const performDelete = useCallback(async (recordId: string): Promise<void> => {
-    await executeDeleteAction<string>({
-      targetId: recordId,
-      runDelete: deleteAnalysisHistory,
-      onBefore: async () => {
-        setDeletingId(recordId);
-        await new Promise((resolve) => setTimeout(resolve, HISTORY_DELETE_ANIMATION_WAIT_MS));
-      },
-      onSuccess: () => {
-        setHistory((prev) => prev.filter((record) => record.id !== recordId));
-      },
-      onError: (error: unknown) => {
-        notifyError(HISTORY_DELETE_MESSAGES.errorLabel, error, HISTORY_DELETE_MESSAGES.errorUserMessage);
-      },
-      onFinally: () => {
-        setDeletingId(null);
-      },
-    });
-  }, [notifyError, setHistory]);
+  const performDelete = useCallback(
+    async (recordId: string): Promise<void> => {
+      await executeDeleteActionWithNotification<string>({
+        targetId: recordId,
+        runDelete: deleteAnalysisHistory,
+        errorConfig: {
+          notifyError,
+          errorLabel: HISTORY_DELETE_MESSAGES.errorLabel,
+          errorUserMessage: HISTORY_DELETE_MESSAGES.errorUserMessage,
+        },
+        onBefore: async () => {
+          setDeletingId(recordId);
+          await new Promise((resolve) =>
+            setTimeout(resolve, HISTORY_DELETE_ANIMATION_WAIT_MS),
+          );
+        },
+        onSuccess: () => {
+          setHistory((prev) => prev.filter((record) => record.id !== recordId));
+        },
+        onFinally: () => {
+          setDeletingId(null);
+        },
+      });
+    },
+    [notifyError, setHistory],
+  );
 
   /**
    * ボタンクリック時の削除処理（確認ダイアログ付き）です。
@@ -59,13 +69,16 @@ export const useHistoryDelete = ({
    * @param event - クリックイベント
    * @param recordId - 削除対象の履歴ID
    */
-  const handleDelete = useCallback(async (event: React.MouseEvent, recordId: string): Promise<void> => {
-    event.stopPropagation();
-    if (!window.confirm(HISTORY_DELETE_MESSAGES.confirmMessage)) {
-      return;
-    }
-    await performDelete(recordId);
-  }, [performDelete]);
+  const handleDelete = useCallback(
+    async (event: React.MouseEvent, recordId: string): Promise<void> => {
+      event.stopPropagation();
+      if (!window.confirm(HISTORY_DELETE_MESSAGES.confirmMessage)) {
+        return;
+      }
+      await performDelete(recordId);
+    },
+    [performDelete],
+  );
 
   return {
     deletingId,

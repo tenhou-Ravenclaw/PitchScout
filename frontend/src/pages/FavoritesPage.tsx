@@ -10,7 +10,7 @@ import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useErrorToastNotifier } from '../hooks/useErrorToastNotifier';
 import { useFavoriteDelete } from '../hooks/useFavoriteDelete';
 import { useAuthenticatedDataLoader } from '../hooks/useAuthenticatedDataLoader';
-import { FAVORITES_AUTH_REQUIRED_CONTENT } from '../constants/authRequiredCardContent';
+import { FAVORITES_AUTH_REQUIRED_CONTENT } from '../constants/userFeatureConstants';
 import FavoriteSongsTable from '../components/features/FavoriteSongsTable';
 import EmptyState from '../components/ui/EmptyState';
 import DataStateSwitch from '../components/ui/DataStateSwitch';

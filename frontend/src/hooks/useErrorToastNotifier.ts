@@ -1,5 +1,12 @@
-import { useErrorNotifier, ErrorNotifier } from "./useErrorNotifier";
+import { useCallback } from "react";
 import { useToast } from "./useToast";
+
+/** 共通エラー通知関数の型 */
+export type ErrorNotifier = (
+  label: string,
+  error: unknown,
+  message: string,
+) => void;
 
 /** Toast連携エラー通知フックの返り値です。 */
 interface UseErrorToastNotifierResult {
@@ -23,7 +30,13 @@ interface UseErrorToastNotifierResult {
  */
 export const useErrorToastNotifier = (): UseErrorToastNotifierResult => {
   const { toastMessage, showToast, showApiErrorToast, hideToast } = useToast();
-  const { notifyError } = useErrorNotifier({ showApiErrorToast });
+  const notifyError = useCallback<ErrorNotifier>(
+    (logLabel: string, error: unknown, fallbackMessage: string) => {
+      console.error(logLabel, error);
+      showApiErrorToast(error, fallbackMessage);
+    },
+    [showApiErrorToast],
+  );
 
   return {
     toastMessage,

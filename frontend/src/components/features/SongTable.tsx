@@ -9,6 +9,7 @@ import { HeartIcon } from "@heroicons/react/24/outline";
 import { HeartIcon as HeartIconSolid } from "@heroicons/react/24/solid";
 import { Song, UserRange } from "../../api";
 import { keyBadge } from "../../utils/keyBadge";
+import LoadingState from "../ui/LoadingState";
 
 /**
  * SongTable が受け取るプロパティ
@@ -32,6 +33,14 @@ interface SongTableProps {
   isFavoriteSong: (songId: number) => boolean;
   /** 楽曲がお気に入り処理中か判定 */
   isToggling: (songId: number) => boolean;
+}
+
+/** SongTableWithLoading が受け取るプロパティ */
+interface SongTableWithLoadingProps extends SongTableProps {
+  /** ローディング中かどうか */
+  loading: boolean;
+  /** 空データ時に表示する文言（指定時のみ表示） */
+  emptyMessage?: string;
 }
 
 /**
@@ -117,6 +126,25 @@ const SongTable: React.FC<SongTableProps> = ({
       </table>
     </div>
   );
+};
+
+/**
+ * 楽曲テーブルのローディング・空状態を含めて表示するコンポーネントです。
+ */
+export const SongTableWithLoading: React.FC<SongTableWithLoadingProps> = ({
+  loading,
+  emptyMessage,
+  ...tableProps
+}) => {
+  if (loading) {
+    return <LoadingState />;
+  }
+
+  if (emptyMessage && tableProps.songs.length === 0) {
+    return <p className="mt-6 text-slate-400 text-center">{emptyMessage}</p>;
+  }
+
+  return <SongTable {...tableProps} />;
 };
 
 export default SongTable;
