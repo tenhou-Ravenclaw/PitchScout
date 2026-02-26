@@ -14,6 +14,8 @@ import {
 } from "../api";
 import { useToast } from "../hooks/useToast";
 import ErrorBanner from "../components/ui/ErrorBanner";
+import LoadingState from "../components/ui/LoadingState";
+import PageStateContainer from "../components/ui/PageStateContainer";
 import Toast from "../components/ui/Toast";
 import AuthRequiredCard from "../components/ui/cards/AuthRequiredCard";
 
@@ -194,11 +196,17 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
       </div>
 
       {loading ? (
-        <div className="text-center text-slate-400">読み込み中...</div>
+        <PageStateContainer className="min-h-0 p-0">
+          <LoadingState className="text-slate-400" />
+        </PageStateContainer>
       ) : error ? (
-        <ErrorBanner message={error} />
+        <PageStateContainer className="min-h-0 p-0">
+          <ErrorBanner message={error} />
+        </PageStateContainer>
       ) : history.length === 0 ? (
-        <div className="text-center text-slate-400 bg-slate-800/50 p-8 rounded-2xl">履歴がありません。</div>
+        <PageStateContainer className="min-h-0 p-0">
+          <div className="text-center text-slate-400 bg-slate-800/50 p-8 rounded-2xl">履歴がありません。</div>
+        </PageStateContainer>
       ) : (
         <div className="space-y-3">
           {history.map((record) => (

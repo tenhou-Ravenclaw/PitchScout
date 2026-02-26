@@ -57,12 +57,19 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
   const animationIdRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const gradientRef = useRef<CanvasGradient | null>(null);
+  const isMountedRef = useRef(true);
+  const resetStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** ── クリーンアップ処理 ──
    * コンポーネントが消える際、マイクやアニメーションを確実に止めます。
    */
   useEffect(() => {
     return () => {
+      isMountedRef.current = false;
+      if (resetStateTimerRef.current) {
+        clearTimeout(resetStateTimerRef.current);
+        resetStateTimerRef.current = null;
+      }
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
       }
@@ -180,7 +187,10 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
           );
           onResult({ error: errorMsg } as AnalysisResult);
         } finally {
-          setTimeout(() => {
+          resetStateTimerRef.current = setTimeout(() => {
+            if (!isMountedRef.current) {
+              return;
+            }
             setLoading(false);
             setProgress(0);
             setStepLabel("");

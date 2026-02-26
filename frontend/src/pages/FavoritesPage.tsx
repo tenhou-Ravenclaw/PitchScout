@@ -9,6 +9,8 @@ import { getFavorites, removeFavorite, FavoriteSong, toUserMessage } from '../ap
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useToast } from '../hooks/useToast';
 import ErrorBanner from '../components/ui/ErrorBanner';
+import LoadingState from '../components/ui/LoadingState';
+import PageStateContainer from '../components/ui/PageStateContainer';
 import Toast from '../components/ui/Toast';
 import AuthRequiredCard from '../components/ui/cards/AuthRequiredCard';
 
@@ -95,25 +97,25 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
     /** ── 表示判定：読み込み中の場合 ── */
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
-                <p className="text-slate-500">読み込み中...</p>
-            </div>
+            <PageStateContainer>
+                <LoadingState className="text-slate-500" />
+            </PageStateContainer>
         );
     }
 
     /** ── 表示判定：エラー発生時 ── */
     if (error) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
+            <PageStateContainer>
                 <ErrorBanner message={error} />
-            </div>
+            </PageStateContainer>
         );
     }
 
     /** ── 表示判定：0件の場合 ── */
     if (favorites.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[calc(100vh-80px)] bg-transparent p-8">
+            <PageStateContainer>
                 <div className="text-center">
                     <HeartIconSolid className="w-12 h-12 text-slate-700 mx-auto mb-4" />
                     <h2 className="text-xl font-bold text-white mb-2">お気に入りはまだありません</h2>
@@ -121,7 +123,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
                         楽曲一覧でハートをタップして追加しましょう
                     </p>
                 </div>
-            </div>
+            </PageStateContainer>
         );
     }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { getFavoriteArtists, addFavoriteArtist, removeFavoriteArtist, toUserMessage } from "../api";
 import { useToast } from "./useToast";
+import { useAuth } from "../contexts/AuthContext";
 
 /**
  * **useFavoriteArtists カスタムフック**
@@ -32,6 +33,7 @@ import { useToast } from "./useToast";
 export const useFavoriteArtists = () => {
   const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
   const { showToast } = useToast();
+  const { isAuthenticated } = useAuth();
 
   /**
    * ── 初回マウント時: サーバーからお気に入り情報を同期 ──
@@ -39,6 +41,11 @@ export const useFavoriteArtists = () => {
    * ユーザーのお気に入りアーティスト情報を取得します。
    */
   useEffect(() => {
+    if (!isAuthenticated) {
+      setFavoriteIds([]);
+      return;
+    }
+
     const syncFavorites = async () => {
       try {
         const favs = await getFavoriteArtists();
@@ -49,7 +56,7 @@ export const useFavoriteArtists = () => {
       }
     };
     syncFavorites();
-  }, [showToast]);
+  }, [isAuthenticated, showToast]);
 
   /**
    * ── お気に入りの追加/削除を切り替え ──
@@ -62,6 +69,11 @@ export const useFavoriteArtists = () => {
    * @throws API通信エラー時にはToastでエラーメッセージを表示し、例外を再スローします
    */
   const toggleFavorite = useCallback(async (artistId: number, artistName: string) => {
+    if (!isAuthenticated) {
+      showToast("ログインするとお気に入り機能を利用できます。");
+      return;
+    }
+
     try {
       if (favoriteIds.includes(artistId)) {
         // 削除処理
@@ -74,9 +86,8 @@ export const useFavoriteArtists = () => {
       }
     } catch (err) {
       showToast(toUserMessage(err, "お気に入り操作に失敗しました"));
-      throw err; // 呼び出し側で追加のエラーハンドリングが必要な場合のため再スロー
     }
-  }, [favoriteIds, showToast]);
+  }, [favoriteIds, isAuthenticated, showToast]);
 
   /**
    * ── 指定アーティストがお気に入りか判定 ──

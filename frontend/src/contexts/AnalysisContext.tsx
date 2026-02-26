@@ -93,6 +93,15 @@ export const AnalysisProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
+  React.useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
+
   return (
     <AnalysisContext.Provider value={{ 
       isAnalyzing, setIsAnalyzing, 

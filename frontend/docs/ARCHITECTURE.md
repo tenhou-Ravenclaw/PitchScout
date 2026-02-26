@@ -100,7 +100,6 @@ src/
 │   └── ResultPage.tsx          # 録音/アップロード直後の中間結果
 │
 ├── styles/
-│   ├── index.css               # グローバル CSS (Tailwind + @layer components)
 │   └── LogoSplash.css          # ロゴシャドウアニメーション専用
 │
 ├── assets/
@@ -111,7 +110,7 @@ src/
 ├── react-app-env.d.ts          # CRA 型定義
 └── reportWebVitals.ts          # パフォーマンス計測
 
-**ファイル総数**: 31 ファイル（`src/routeWrappers/` 廃止により 37 → 28 に削減後、共通コンポーネント追加）
+**ファイル総数**: 61 ファイル（2026-02-26 時点、`find src -type f` 実測）
 ```
 
 ### 2.1 主要ディレクトリ説明
@@ -138,7 +137,7 @@ src/
 
 #### `styles/` — グローバルスタイル
 
-- `index.css`: Tailwind @layer components で共有 CSS クラス定義
+- `src/index.css`: Tailwind @layer components で共有 CSS クラス定義
   - `.table-container`: テーブルベースカード
   - `.table-header`: テーブルヘッダースタイル
   - `.table-row`: テーブル行スタイル (group対応)
@@ -295,7 +294,7 @@ AuthProvider (App.tsx でラップ)
 | State         | 型                       | 用途             |
 | ------------- | ------------------------ | ---------------- |
 | `isAnalyzing` | `boolean`                | 解析中フラグ     |
-| `progress`    | `number解析進捗（0-100） |
+| `progress`    | `number`                 | 解析進捗（0-100） |
 | `stepLabel`   | `string`                 | 進捗ステップ文言 |
 
 ### localStorage キー
@@ -323,6 +322,7 @@ AuthProvider (App.tsx でラップ)
 | `api/favorites.ts`       | お気に入り操作                             |
 | `api/history.ts`         | 履歴取得/削除                              |
 | `api/integratedRange.ts` | 統合音域取得                               |
+| `api/error.ts`           | API エラーのユーザー向けメッセージ変換     |
 | `api/index.ts`           | バレル再エクスポート                       |
 
 ### フロントエンド API 関数（公開API）
@@ -334,9 +334,13 @@ AuthProvider (App.tsx でラップ)
 | `getSongs(limit, offset, query, userRange)` | GET      | `/songs`                        | 楽曲検索 + キーおすすめ         |
 | `getArtists(limit, offset, query)`          | GET      | `/artists`                      | アーティスト一覧                |
 | `getArtistSongs(artistId, userRange)`       | GET      | `/artists/{id}/songs`           | 指定アーティストの楽曲          |
+| `getFavoriteArtists()`                      | GET      | `/favorite-artists`             | お気に入りアーティスト一覧      |
+| `addFavoriteArtist(artistId, artistName)`   | POST     | `/favorite-artists`             | お気に入りアーティスト追加      |
+| `removeFavoriteArtist(artistId)`            | DELETE   | `/favorite-artists/{artist_id}` | お気に入りアーティスト削除      |
 | `getFavorites(limit)`                       | GET      | `/favorites`                    | お気に入り曲一覧                |
 | `addFavorite(songId)`                       | POST     | `/favorites`                    | お気に入り曲追加                |
 | `removeFavorite(songId)`                    | DELETE   | `/favorites/{song_id}`          | お気に入り曲削除                |
+| `checkFavorite(songId)`                     | GET      | `/favorites/check/{song_id}`    | 楽曲のお気に入り状態確認        |
 | `getAnalysisHistory(limit)`                 | GET      | `/analysis/history`             | 分析履歴取得                    |
 | `deleteAnalysisHistory(recordId)`           | DELETE   | `/analysis/history/{record_id}` | 分析履歴削除                    |
 | `getIntegratedVocalRange(limit)`            | GET      | `/analysis/integrated-range`    | 統合音域取得                    |
@@ -540,7 +544,7 @@ interface AnalysisResult {
 ```bash
 cd frontend
 npm install
-cp .env.example .env   # Supabase の URL と Anon Key を設定
+# .env を手動作成して Supabase の URL と Anon Key を設定
 npm start              # http://localhost:3000
 ```
 
@@ -558,7 +562,7 @@ REACT_APP_SUPABASE_ANON_KEY=eyJ...
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # Supabase サービスキー等を設定
+# .env を手動作成して Supabase サービスキー等を設定
 uvicorn main:app --reload  # http://127.0.0.1:8000
 ```
 
