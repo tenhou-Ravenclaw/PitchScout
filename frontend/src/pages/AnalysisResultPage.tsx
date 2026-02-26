@@ -9,7 +9,6 @@ import {
   AnalysisResult,
   IntegratedVocalRange,
   getIntegratedVocalRange,
-  toUserMessage,
 } from "../api"; // API通信用の型定義と関数をインポート
 import { StarIcon as StarSolid } from "@heroicons/react/24/solid";
 import { StarIcon as StarOutline } from "@heroicons/react/24/outline";
@@ -80,10 +79,10 @@ const RadarChart: React.FC<{ data: { label: string; value: number }[] }> = ({ da
    メインコンポーネント本体
    ════════════════════════════════════════════════ */
 const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthenticated }) => {
-  const { favoriteIds, toggleFavorite, isFavorite } = useFavoriteArtists(); // お気に入りアーティスト管理
+  const { toggleFavorite, isFavorite } = useFavoriteArtists(); // お気に入りアーティスト管理
   const [integratedRange, setIntegratedRange] = useState<IntegratedVocalRange | null>(null); // 直近N件をまとめた総合的な音域
   const [loadingIntegrated, setLoadingIntegrated] = useState(false);
-  const { toastMessage, showToast, hideToast } = useToast();
+  const { toastMessage, showApiErrorToast, hideToast } = useToast();
 
   /**
    * ── ログイン中のみ実行: 過去の履歴をまとめた「統合音域」を取得 ──
@@ -97,14 +96,14 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthe
         const data = await getIntegratedVocalRange(20); // 直近20件をベースに計算
         setIntegratedRange(data);
       } catch (e) {
-        showToast(toUserMessage(e, "統合音域の取得に失敗しました"));
+        showApiErrorToast(e, "統合音域の取得に失敗しました");
         setIntegratedRange(null);
       } finally {
         setLoadingIntegrated(false);
       }
     };
     fetchIntegratedRange();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, showApiErrorToast]);
 
   /**
    * ── ロード中の表示設定 ──

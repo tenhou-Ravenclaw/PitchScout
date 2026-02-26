@@ -10,9 +10,9 @@ import {
   getAnalysisHistory,
   AnalysisHistoryRecord,
   deleteAnalysisHistory,
-  toUserMessage,
 } from "../api";
 import { useToast } from "../hooks/useToast";
+import { useErrorNotifier } from "../hooks/useErrorNotifier";
 import ErrorBanner from "../components/ui/ErrorBanner";
 import LoadingState from "../components/ui/LoadingState";
 import PageStateContainer from "../components/ui/PageStateContainer";
@@ -46,7 +46,8 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   const [swipedId, setSwipedId] = useState<string | null>(null);       // 現在スワイプ中のアイテムID
   const [deletingId, setDeletingId] = useState<string | null>(null);   // 現在削除アニメーション中のID
   const [swipeOffset, setSwipeOffset] = useState<number>(0);           // スワイプの移動距離
-  const { toastMessage, showToast, hideToast } = useToast();
+  const { toastMessage, showApiErrorToast, hideToast } = useToast();
+  const { notifyError } = useErrorNotifier({ showApiErrorToast });
   const swipeStates = useRef<Record<string, SwipeState>>({});         // 各アイテムのスワイプ状態を保持
 
   /**
@@ -98,8 +99,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
       // 画面上のリストからも消す
       setHistory((prev) => prev.filter((record) => record.id !== recordId));
     } catch (err) {
-      console.error(err);
-      showToast(toUserMessage(err, "削除に失敗しました。"));
+      notifyError("履歴削除失敗", err, "削除に失敗しました。");
     } finally {
       setDeletingId(null);
     }

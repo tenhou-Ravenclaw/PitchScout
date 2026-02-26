@@ -8,6 +8,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { getFavorites, removeFavorite, FavoriteSong, toUserMessage } from '../api';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useToast } from '../hooks/useToast';
+import { useErrorNotifier } from '../hooks/useErrorNotifier';
+import { FAVORITE_SONG_MESSAGES } from '../constants/favoriteMessages';
 import ErrorBanner from '../components/ui/ErrorBanner';
 import LoadingState from '../components/ui/LoadingState';
 import PageStateContainer from '../components/ui/PageStateContainer';
@@ -29,7 +31,8 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
     const [loading, setLoading] = useState(true);                   // 読み込み中フラグ
     const [removingIds, setRemovingIds] = useState<Set<number>>(new Set()); // 削除処理中の曲IDを管理
     const [error, setError] = useState<string | null>(null);        // エラーメッセージ（ErrorBanner用）
-    const { toastMessage, showToast, hideToast } = useToast();
+    const { toastMessage, showApiErrorToast, hideToast } = useToast();
+    const { notifyError } = useErrorNotifier({ showApiErrorToast });
 
     /**
      * ── データの取得 (Effect) ──
@@ -67,7 +70,11 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
             // 3. サーバーへ削除リクエストを送る
             await removeFavorite(songId);
         } catch (err) {
-            showToast(toUserMessage(err, "削除に失敗しました"));
+            notifyError(
+                FAVORITE_SONG_MESSAGES.deleteErrorLabel,
+                err,
+                FAVORITE_SONG_MESSAGES.deleteErrorUserMessage
+            );
             // 4. 失敗した場合はリストを元に戻す（ロールバック）
             if (removed) {
                 setFavorites(prev => [...prev, removed].sort((a, b) => a.title.localeCompare(b.title, "ja")));
@@ -80,7 +87,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
                 return next;
             });
         }
-    }, [favorites, removingIds]);
+    }, [favorites, notifyError, removingIds]);
 
     /** ── 表示判定：未ログインの場合 ── */
     if (!isAuthenticated) {

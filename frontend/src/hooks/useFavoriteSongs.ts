@@ -1,7 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
-import { getFavorites, addFavorite, removeFavorite, toUserMessage } from "../api";
+import { useState, useCallback } from "react";
+import { getFavorites, addFavorite, removeFavorite } from "../api";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "./useToast";
+import { useErrorNotifier } from "./useErrorNotifier";
+import { useAuthActionGuard } from "./useAuthActionGuard";
+import { useSyncedFavoriteSet } from "./useSyncedFavoriteSet";
+import { addToSet, removeFromSet, toggleInSet } from "../utils/setUtils";
+import { runFavoriteMutation } from "../utils/favoriteMutation";
+import { FAVORITE_SONG_MESSAGES } from "../constants/favoriteMessages";
 
 /**
  * **useFavoriteSongs カスタムフック**
@@ -11,7 +17,6 @@ import { useToast } from "./useToast";
  * 
  * @param onLoginRequired - 未ログイン時に呼ばれるコールバック（ログイン画面への遷移など）
  * @returns {{
- *   favoriteSongIds: Set<number>,  // お気に入り登録済みの曲IDセット
  *   toggleFavoriteSong: (songId: number) => Promise<void>,  // お気に入り追加/削除の切り替え
  *   isFavoriteSong: (songId: number) => boolean,  // 指定曲がお気に入りか判定
  *   isToggling: (songId: number) => boolean  // 指定曲が処理中か判定
@@ -19,7 +24,7 @@ import { useToast } from "./useToast";
  * 
  * @example
  * ```tsx
- * const { favoriteSongIds, toggleFavoriteSong, isFavoriteSong, isToggling } = useFavoriteSongs(onLoginClick);
+ * const { toggleFavoriteSong, isFavoriteSong, isToggling } = useFavoriteSongs(onLoginClick);
  * 
  * // お気に入り状態の確認
  * const isFavorite = isFavoriteSong(123);
@@ -38,30 +43,34 @@ export const useFavoriteSongs = (onLoginRequired?: () => void) => {
   const { isAuthenticated } = useAuth();
   const [favoriteSongIds, setFavoriteSongIds] = useState<Set<number>>(new Set());
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
-  const { showToast } = useToast();
+  const { showApiErrorToast } = useToast();
+  const { notifyError } = useErrorNotifier({ showApiErrorToast });
+  const { ensureAuthenticated } = useAuthActionGuard({
+    isAuthenticated,
+    onUnauthorized: () => {
+      onLoginRequired?.();
+    },
+  });
 
-  /**
-   * ── 初回マウント時: サーバーからお気に入り曲情報を同期 ──
-   * ログイン状態に応じて、ユーザーのお気に入り曲IDを取得します。
-   * 未ログイン時は空のSetにリセットされます。
-   */
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setFavoriteSongIds(new Set());
-      return;
-    }
+  const fetchFavoriteSongIds = useCallback(async (): Promise<number[]> => {
+    const favorites = await getFavorites(500); // 最大500件取得
+    return favorites.map(favorite => favorite.song_id);
+  }, []);
 
-    const syncFavorites = async () => {
-      try {
-        const favs = await getFavorites(500); // 最大500件取得
-        setFavoriteSongIds(new Set(favs.map(f => f.song_id)));
-      } catch (err) {
-        console.error("お気に入り曲取得失敗:", err);
-        showToast(toUserMessage(err, "お気に入り曲の取得に失敗しました。"));
-      }
-    };
-    syncFavorites();
-  }, [isAuthenticated, showToast]);
+  const handleSyncError = useCallback((error: unknown) => {
+    notifyError(
+      FAVORITE_SONG_MESSAGES.syncErrorLabel,
+      error,
+      FAVORITE_SONG_MESSAGES.syncErrorUserMessage,
+    );
+  }, [notifyError]);
+
+  useSyncedFavoriteSet({
+    isAuthenticated,
+    setIdSet: setFavoriteSongIds,
+    fetchIds: fetchFavoriteSongIds,
+    onSyncError: handleSyncError,
+  });
 
   /**
    * ── お気に入り曲の追加/削除を切り替え ──
@@ -70,12 +79,10 @@ export const useFavoriteSongs = (onLoginRequired?: () => void) => {
    * API通信に失敗した場合は、自動的に元の状態にロールバックします。
    * 
    * @param songId - 楽曲ID
-   * @throws 未ログイン時は onLoginRequired コールバックを実行し、処理を中断
+  * @note 未ログイン時は onLoginRequired コールバックを実行し、処理を中断します
    */
   const toggleFavoriteSong = useCallback(async (songId: number) => {
-    // 未認証の場合はログイン画面へ誘導
-    if (!isAuthenticated) {
-      onLoginRequired?.();
+    if (!ensureAuthenticated()) {
       return;
     }
 
@@ -83,40 +90,34 @@ export const useFavoriteSongs = (onLoginRequired?: () => void) => {
     let wasFavorite = false;
     setFavoriteSongIds(prev => {
       wasFavorite = prev.has(songId);
-      const next = new Set(prev);
-      wasFavorite ? next.delete(songId) : next.add(songId);
-      return next;
+      return toggleInSet(prev, songId);
     });
 
     // 処理中フラグをON（連打防止）
-    setTogglingIds(prev => new Set(prev).add(songId));
+    setTogglingIds(prev => addToSet(prev, songId));
 
     try {
-      // サーバーへのAPI通信
-      if (wasFavorite) {
-        await removeFavorite(songId);
-      } else {
-        await addFavorite(songId);
-      }
+      await runFavoriteMutation(
+        wasFavorite,
+        () => addFavorite(songId),
+        () => removeFavorite(songId),
+      );
     } catch (err) {
-      console.error("お気に入り曲更新失敗:", err);
-      showToast(toUserMessage(err, "お気に入り曲の更新に失敗しました。"));
+      notifyError(
+        FAVORITE_SONG_MESSAGES.toggleErrorLabel,
+        err,
+        FAVORITE_SONG_MESSAGES.toggleErrorUserMessage,
+      );
       
       // ロールバック: 失敗時は元の状態に戻す
       setFavoriteSongIds(prev => {
-        const next = new Set(prev);
-        wasFavorite ? next.add(songId) : next.delete(songId);
-        return next;
+        return wasFavorite ? addToSet(prev, songId) : removeFromSet(prev, songId);
       });
     } finally {
       // 処理中フラグをOFF
-      setTogglingIds(prev => {
-        const next = new Set(prev);
-        next.delete(songId);
-        return next;
-      });
+      setTogglingIds(prev => removeFromSet(prev, songId));
     }
-  }, [isAuthenticated, onLoginRequired, showToast]);
+  }, [ensureAuthenticated, notifyError]);
 
   /**
    * ── 指定曲がお気に入りか判定 ──
@@ -141,7 +142,6 @@ export const useFavoriteSongs = (onLoginRequired?: () => void) => {
   }, [togglingIds]);
 
   return {
-    favoriteSongIds,
     toggleFavoriteSong,
     isFavoriteSong,
     isToggling
