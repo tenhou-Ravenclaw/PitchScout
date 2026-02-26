@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useCallback, useEffect } from "react";
+import { Dispatch, SetStateAction, useCallback, useEffect, useMemo } from "react";
 import { ErrorNotifier } from "./useErrorToastNotifier";
 import { createFavoriteSyncErrorHandler } from "../utils/favoriteMutation";
 
@@ -46,11 +46,12 @@ export const useSyncedFavoriteIds = <T>({
     return mapFavoriteIds(items);
   }, [fetchItems, mapFavoriteIds]);
 
-  const handleSyncError = useCallback(
-    createFavoriteSyncErrorHandler(notifyError, {
-      errorLabel: syncErrorLabel,
-      errorUserMessage: syncErrorUserMessage,
-    }),
+  const handleSyncError = useMemo(
+    () =>
+      createFavoriteSyncErrorHandler(notifyError, {
+        errorLabel: syncErrorLabel,
+        errorUserMessage: syncErrorUserMessage,
+      }),
     [notifyError, syncErrorLabel, syncErrorUserMessage],
   );
 

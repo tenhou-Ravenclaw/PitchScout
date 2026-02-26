@@ -13,7 +13,6 @@ import SearchBar from "../ui/SearchBar";
 import SyllableIndex from "../ui/SyllableIndex";
 import { SongTableWithLoading } from "./SongTable";
 import {
-  ARTISTS_PER_PAGE,
   SONGS_PER_PAGE,
 } from "../../constants/songListConstants";
 import { PaginationAction } from "../../hooks/useSongListData";

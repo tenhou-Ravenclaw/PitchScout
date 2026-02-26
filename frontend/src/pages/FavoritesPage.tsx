@@ -4,18 +4,18 @@
  * 特徴：ログイン状態のチェック、データの読み込み待ち、0件時の表示などを細かく管理しています。
  */
 
-import React, { useState } from 'react';
-import { getFavorites, FavoriteSong, toUserMessage } from '../api';
-import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
-import { useErrorToastNotifier } from '../hooks/useErrorToastNotifier';
-import { useFavoriteDelete } from '../hooks/useFavoriteDelete';
-import { useAuthenticatedDataLoader } from '../hooks/useAuthenticatedDataLoader';
-import { FAVORITES_AUTH_REQUIRED_CONTENT } from '../constants/userFeatureConstants';
-import FavoriteSongsTable from '../components/features/FavoriteSongsTable';
-import EmptyState from '../components/ui/EmptyState';
-import DataStateSwitch from '../components/ui/DataStateSwitch';
-import Toast from '../components/ui/Toast';
-import AuthRequiredCard from '../components/ui/cards/AuthRequiredCard';
+import React, { useMemo, useState } from "react";
+import { getFavorites, FavoriteSong, Song, toUserMessage } from "../api";
+import { HeartIcon as HeartIconSolid } from "@heroicons/react/24/solid";
+import { useErrorToastNotifier } from "../hooks/useErrorToastNotifier";
+import { useFavoriteDelete } from "../hooks/useFavoriteDelete";
+import { useAuthenticatedDataLoader } from "../hooks/useAuthenticatedDataLoader";
+import { FAVORITES_AUTH_REQUIRED_CONTENT } from "../constants/userFeatureConstants";
+import SongTable from "../components/features/SongTable";
+import EmptyState from "../components/ui/EmptyState";
+import DataStateSwitch from "../components/ui/DataStateSwitch";
+import Toast from "../components/ui/Toast";
+import AuthRequiredCard from "../components/ui/cards/AuthRequiredCard";
 
 /** FavoritesPage が受け取るプロパティ */
 interface FavoritesPageProps {
@@ -26,12 +26,11 @@ interface FavoritesPageProps {
 }
 
 const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginClick }) => {
-    
     // ── 状態管理 (State) ──
     const [favorites, setFavorites] = useState<FavoriteSong[]>([]); // お気に入り曲のリスト
-    const [loading, setLoading] = useState(true);                   // 読み込み中フラグ
+    const [loading, setLoading] = useState(true); // 読み込み中フラグ
     const [removingIds, setRemovingIds] = useState<Set<number>>(new Set()); // 削除処理中の曲IDを管理
-    const [error, setError] = useState<string | null>(null);        // エラーメッセージ（ErrorBanner用）
+    const [error, setError] = useState<string | null>(null); // エラーメッセージ（ErrorBanner用）
     const { toastMessage, hideToast, notifyError } = useErrorToastNotifier();
     const { handleRemove } = useFavoriteDelete({
         favorites,
@@ -40,6 +39,23 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
         setRemovingIds,
         notifyError,
     });
+
+    /** SongTableに渡すためにFavoriteSongをSong互換へ変換します。 */
+    const favoriteSongs: Song[] = useMemo(
+        () =>
+            favorites.map((favorite) => ({
+                id: favorite.song_id,
+                artist_id: 0,
+                title: favorite.title,
+                artist: favorite.artist ?? "-",
+                lowest_note: favorite.lowest_note,
+                highest_note: favorite.highest_note,
+                falsetto_note: favorite.falsetto_note,
+                note: null,
+                source: "favorite",
+            })),
+        [favorites],
+    );
 
     useAuthenticatedDataLoader<FavoriteSong[]>({
         isAuthenticated,
@@ -84,16 +100,17 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
                 <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2 drop-shadow-md">お気に入り</h1>
                 <p className="text-sm text-slate-400 mb-6">{favorites.length}曲</p>
 
-                <FavoriteSongsTable
-                    favorites={favorites}
-                    removingIds={removingIds}
-                    onRemove={handleRemove}
+                <SongTable
+                    songs={favoriteSongs}
+                    showArtistColumn={true}
+                    enableTitleExternalLink={false}
+                    showNoteColumnsOnMobile={false}
+                    onToggleFavoriteSong={handleRemove}
+                    isFavoriteSong={() => true}
+                    isToggling={(songId: number) => removingIds.has(songId)}
                 />
 
-                {/* Toast通知 */}
-                {toastMessage && (
-                    <Toast message={toastMessage} onClose={hideToast} />
-                )}
+                {toastMessage && <Toast message={toastMessage} onClose={hideToast} />}
             </div>
         </DataStateSwitch>
     );

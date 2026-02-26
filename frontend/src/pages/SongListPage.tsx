@@ -8,15 +8,15 @@
  * 4. ユーザーの音域に合わせた推奨キー（±0～±7）の表示
  */
 
-import React from 'react';
-import { UserRange } from '../api';
-import { useToast } from '../hooks/useToast';
-import { useFavoriteArtists } from '../hooks/useFavoriteArtists';
-import { useFavoriteSongs } from '../hooks/useFavoriteSongs';
-import { useSongListData } from '../hooks/useSongListData';
-import Toast from '../components/ui/Toast';
-import SongListArtistSongsView from '../components/features/SongListArtistSongsView';
-import SongListMainContent from '../components/features/SongListMainContent';
+import React from "react";
+import { UserRange } from "../api";
+import { useToast } from "../hooks/useToast";
+import { useFavoriteArtists } from "../hooks/useFavoriteArtists";
+import { useFavoriteSongs } from "../hooks/useFavoriteSongs";
+import { useSongListData } from "../hooks/useSongListData";
+import Toast from "../components/ui/Toast";
+import SongListArtistSongsView from "../components/features/SongListArtistSongsView";
+import SongListMainContent from "../components/features/SongListMainContent";
 
 /**
  * ── 以下、定数とヘルパーは constants/songListConstants.ts に移動しました ──

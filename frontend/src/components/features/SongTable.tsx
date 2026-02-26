@@ -33,6 +33,10 @@ interface SongTableProps {
   isFavoriteSong: (songId: number) => boolean;
   /** 楽曲がお気に入り処理中か判定 */
   isToggling: (songId: number) => boolean;
+  /** タイトルを外部検索リンクとして表示するか */
+  enableTitleExternalLink?: boolean;
+  /** Key列以外でも最低音/最高音/裏声列をモバイル表示するか */
+  showNoteColumnsOnMobile?: boolean;
 }
 
 /** SongTableWithLoading が受け取るプロパティ */
@@ -56,6 +60,8 @@ const SongTable: React.FC<SongTableProps> = ({
   onToggleFavoriteSong,
   isFavoriteSong,
   isToggling,
+  enableTitleExternalLink = true,
+  showNoteColumnsOnMobile = false,
 }) => {
   return (
     <div className="table-container">
@@ -65,9 +71,15 @@ const SongTable: React.FC<SongTableProps> = ({
             <th className="py-3 px-5 font-medium">#</th>
             <th className="py-3 px-4 font-medium">{titleHeaderLabel}</th>
             {showArtistColumn && <th className="py-3 px-4 font-medium">アーティスト</th>}
-            <th className="py-3 px-4 font-medium">Lowest</th>
-            <th className="py-3 px-4 font-medium">Highest</th>
-            <th className="py-3 px-4 font-medium hidden sm:table-cell">Falsetto</th>
+            <th className={`py-3 px-4 font-medium ${showNoteColumnsOnMobile ? "table-cell" : "hidden sm:table-cell"}`}>
+              Lowest
+            </th>
+            <th className={`py-3 px-4 font-medium ${showNoteColumnsOnMobile ? "table-cell" : "hidden sm:table-cell"}`}>
+              Highest
+            </th>
+            <th className={`py-3 px-4 font-medium ${showNoteColumnsOnMobile ? "table-cell" : "hidden sm:table-cell"}`}>
+              Falsetto
+            </th>
             {userRange && <th className="py-3 px-4 font-medium text-center">Key</th>}
             <th className="py-3 px-2 font-medium w-10"></th>
           </tr>
@@ -79,25 +91,37 @@ const SongTable: React.FC<SongTableProps> = ({
               <tr key={song.id} className="table-row group">
                 <td className="py-3 px-5 text-slate-500 text-xs">{rowStartIndex + i + 1}</td>
                 <td className="py-3 px-4 font-medium">
-                  <a
-                    href={`https://www.google.com/search?q=${encodeURIComponent(`${artistForSearch} ${song.title} 歌詞`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-slate-200 hover:text-cyan-400 transition-colors inline-flex items-center gap-1 group/link"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {song.title}
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3 text-slate-500 group-hover/link:text-cyan-400 transition-colors">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                    </svg>
-                  </a>
+                  {enableTitleExternalLink ? (
+                    <a
+                      href={`https://www.google.com/search?q=${encodeURIComponent(`${artistForSearch} ${song.title} 歌詞`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-200 hover:text-cyan-400 transition-colors inline-flex items-center gap-1 group/link"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {song.title}
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3 text-slate-500 group-hover/link:text-cyan-400 transition-colors">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                      </svg>
+                    </a>
+                  ) : (
+                    <span className="text-slate-200 group-hover:text-white transition-colors">
+                      {song.title}
+                    </span>
+                  )}
                 </td>
                 {showArtistColumn && (
                   <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{song.artist}</td>
                 )}
-                <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{song.lowest_note || "-"}</td>
-                <td className="py-3 px-4 text-slate-400 whitespace-nowrap">{song.highest_note || "-"}</td>
-                <td className="py-3 px-4 text-slate-400 whitespace-nowrap hidden sm:table-cell">{song.falsetto_note || "-"}</td>
+                <td className={`py-3 px-4 text-slate-400 whitespace-nowrap ${showNoteColumnsOnMobile ? "table-cell" : "hidden sm:table-cell"}`}>
+                  {song.lowest_note || "-"}
+                </td>
+                <td className={`py-3 px-4 text-slate-400 whitespace-nowrap ${showNoteColumnsOnMobile ? "table-cell" : "hidden sm:table-cell"}`}>
+                  {song.highest_note || "-"}
+                </td>
+                <td className={`py-3 px-4 text-slate-400 whitespace-nowrap ${showNoteColumnsOnMobile ? "table-cell" : "hidden sm:table-cell"}`}>
+                  {song.falsetto_note || "-"}
+                </td>
                 {userRange && (
                   <td className="py-3 px-4 text-center">
                     {song.recommended_key !== undefined

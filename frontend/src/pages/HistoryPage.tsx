@@ -4,7 +4,7 @@
  * 役割：過去の音声解析結果を一覧で表示し、管理（閲覧・削除）するためのページです。
  * 特徴：スマホでの「スワイプ削除」と、PCでの「削除ボタン」の両方に対応した高度なUIを備えています。
  */
-import React, { useCallback, useRef, useState } from "react";
+import React, { useState } from "react";
 // API通信用の関数と型定義をインポート
 import {
   getAnalysisHistory,
@@ -15,133 +15,11 @@ import { useErrorToastNotifier } from "../hooks/useErrorToastNotifier";
 import { useAuthenticatedDataLoader } from "../hooks/useAuthenticatedDataLoader";
 import { useHistoryDelete } from "../hooks/useHistoryDelete";
 import { HISTORY_AUTH_REQUIRED_CONTENT } from "../constants/userFeatureConstants";
-import {
-  HISTORY_FETCH_ERROR_MESSAGE,
-  HISTORY_SWIPE_THRESHOLDS,
-} from "../constants/historyConstants";
+import { HISTORY_FETCH_ERROR_MESSAGE } from "../constants/historyConstants";
 import EmptyState from "../components/ui/EmptyState";
 import DataStateSwitch from "../components/ui/DataStateSwitch";
 import Toast from "../components/ui/Toast";
 import AuthRequiredCard from "../components/ui/cards/AuthRequiredCard";
-
-/** スワイプ操作中の座標情報 */
-interface SwipeState {
-  /** 開始時のX座標 */
-  startX: number;
-  /** 最新のX座標 */
-  currentX: number;
-}
-
-/** 履歴スワイプフックの設定 */
-interface UseHistorySwipeParams {
-  /** スワイプ削除確定時に実行する処理 */
-  onDelete: (recordId: string) => Promise<void>;
-}
-
-/**
- * 履歴カードのスワイプ操作（開始・移動・終了）を管理するフックです。
- *
- * @param params - スワイプ処理の設定
- * @returns スワイプ状態とイベントハンドラ群
- */
-const useHistorySwipe = ({ onDelete }: UseHistorySwipeParams): {
-  swipedId: string | null;
-  swipeOffset: number;
-  handleTouchStart: (event: React.TouchEvent, recordId: string) => void;
-  handleTouchMove: (event: React.TouchEvent, recordId: string) => void;
-  handleTouchEnd: (recordId: string) => Promise<void>;
-  cancelSwipe: () => void;
-  isSwiping: (recordId: string) => boolean;
-} => {
-  const [swipedId, setSwipedId] = useState<string | null>(null);
-  const [swipeOffset, setSwipeOffset] = useState<number>(0);
-  const swipeStates = useRef<Record<string, SwipeState>>({});
-
-  const handleTouchStart = useCallback(
-    (event: React.TouchEvent, recordId: string): void => {
-      const touch = event.touches[0];
-      swipeStates.current[recordId] = {
-        startX: touch.clientX,
-        currentX: touch.clientX,
-      };
-    },
-    [],
-  );
-
-  const handleTouchMove = useCallback(
-    (event: React.TouchEvent, recordId: string): void => {
-      const touch = event.touches[0];
-      const state = swipeStates.current[recordId];
-      if (!state) {
-        return;
-      }
-
-      state.currentX = touch.clientX;
-      const diff = state.startX - touch.clientX;
-
-      if (diff > 0) {
-        const offset = Math.min(diff, HISTORY_SWIPE_THRESHOLDS.maxOffset);
-        setSwipeOffset(offset);
-        setSwipedId(recordId);
-        return;
-      }
-
-      setSwipeOffset(0);
-      setSwipedId(null);
-    },
-    [],
-  );
-
-  const handleTouchEnd = useCallback(
-    async (recordId: string): Promise<void> => {
-      const state = swipeStates.current[recordId];
-      if (!state) {
-        return;
-      }
-
-      const diff = state.startX - state.currentX;
-
-      if (diff > HISTORY_SWIPE_THRESHOLDS.deleteExecute) {
-        delete swipeStates.current[recordId];
-        setSwipedId(null);
-        setSwipeOffset(0);
-        await onDelete(recordId);
-        return;
-      }
-
-      if (diff > HISTORY_SWIPE_THRESHOLDS.revealDeleteButton) {
-        setSwipedId(recordId);
-        setSwipeOffset(HISTORY_SWIPE_THRESHOLDS.revealOffset);
-        delete swipeStates.current[recordId];
-        return;
-      }
-
-      setSwipedId(null);
-      setSwipeOffset(0);
-      delete swipeStates.current[recordId];
-    },
-    [onDelete],
-  );
-
-  const cancelSwipe = useCallback((): void => {
-    setSwipedId(null);
-    setSwipeOffset(0);
-  }, []);
-
-  const isSwiping = useCallback((recordId: string): boolean => {
-    return !!swipeStates.current[recordId];
-  }, []);
-
-  return {
-    swipedId,
-    swipeOffset,
-    handleTouchStart,
-    handleTouchMove,
-    handleTouchEnd,
-    cancelSwipe,
-    isSwiping,
-  };
-};
 
 /** 履歴カードコンポーネントのプロパティ */
 interface HistoryRecordCardProps {
@@ -264,8 +142,14 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
   const {
     deletingId,
-    performDelete,
     handleDelete,
+    swipedId,
+    swipeOffset,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+    cancelSwipe,
+    isSwiping,
   } = useHistoryDelete({
     setHistory,
     notifyError,
@@ -279,18 +163,6 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
       setError(toUserMessage(err, HISTORY_FETCH_ERROR_MESSAGE));
     },
     setLoading,
-  });
-
-  const {
-    swipedId,
-    swipeOffset,
-    handleTouchStart,
-    handleTouchMove,
-    handleTouchEnd,
-    cancelSwipe,
-    isSwiping,
-  } = useHistorySwipe({
-    onDelete: performDelete,
   });
 
   /** ── 未ログイン時の表示 ── */

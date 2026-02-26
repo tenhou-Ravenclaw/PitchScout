@@ -24,8 +24,18 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => { },
 });
 
+/**
+ * 認証コンテキストを参照するフックです。
+ *
+ * @returns 認証状態と認証操作関数
+ */
 export const useAuth = () => useContext(AuthContext);
 
+/**
+ * 認証状態を子孫コンポーネントへ提供するProviderです。
+ *
+ * @param children - 配下の描画要素
+ */
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {

@@ -46,33 +46,51 @@ const useAnalysisCompletion = () => {
   return { handleComplete, goMenu };
 };
 
-/** Landing ページリッパー */
-const LandingRoute: React.FC = () => {
+/**
+ * 指定パスへ遷移するコールバックを返します。
+ * 目的: routes ラッパー内の `() => navigate("...")` 重複を削減する。
+ */
+const useNavigateTo = (path: string): (() => void) => {
   const navigate = useNavigate();
+
+  return useCallback(() => {
+    navigate(path);
+  }, [navigate, path]);
+};
+
+/** Landing ページラッパー */
+const LandingRoute: React.FC = () => {
+  const goMenu = useNavigateTo("/menu");
+  const goHistory = useNavigateTo("/history");
+
   return (
     <Landing
-      onRecordClick={() => navigate("/menu")}
-      onHistoryClick={() => navigate("/history")}
+      onRecordClick={goMenu}
+      onHistoryClick={goHistory}
     />
   );
 };
 
-/** Home メニューリッパー */
+/** Home メニューラッパー */
 const HomeRoute: React.FC = () => {
-  const navigate = useNavigate();
+  const goRecord = useNavigateTo("/record");
+  const goKaraoke = useNavigateTo("/karaoke");
+  const goUpload = useNavigateTo("/upload");
+  const goHistory = useNavigateTo("/history");
   const { isAnalyzing } = useAnalysis();
+
   return (
     <Home
-      onNormalClick={() => navigate("/record")}
-      onKaraokeClick={() => navigate("/karaoke")}
-      onUploadClick={() => navigate("/upload")}
-      onHistoryClick={() => navigate("/history")}
+      onNormalClick={goRecord}
+      onKaraokeClick={goKaraoke}
+      onUploadClick={goUpload}
+      onHistoryClick={goHistory}
       isAnalyzing={isAnalyzing}
     />
   );
 };
 
-/** AnalysisResultPage リッパー */
+/** AnalysisResultPage ラッパー */
 const AnalysisRoute: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const { result } = useAppContext();
@@ -83,35 +101,38 @@ const AnalysisRoute: React.FC = () => {
   );
 };
 
-/** SongListPage リッパー */
+/** SongListPage ラッパー */
 const SongListRoute: React.FC = () => {
-  const navigate = useNavigate();
+  const goLogin = useNavigateTo("/login");
   const { searchQuery, setSearchQuery, userRange } = useAppContext();
+
   return (
     <SongListPage
       searchQuery={searchQuery}
       userRange={userRange}
-      onLoginClick={() => navigate("/login")}
+      onLoginClick={goLogin}
       onSearchChange={setSearchQuery}
     />
   );
 };
 
-/** FavoritesPage リッパー */
+/** FavoritesPage ラッパー */
 const FavoritesRoute: React.FC = () => {
-  const navigate = useNavigate();
+  const goLogin = useNavigateTo("/login");
   const { isAuthenticated } = useAuth();
+
   return (
     <FavoritesPage
       isAuthenticated={isAuthenticated}
-      onLoginClick={() => navigate("/login")}
+      onLoginClick={goLogin}
     />
   );
 };
 
-/** HistoryPage リッパー */
+/** HistoryPage ラッパー */
 const HistoryRoute: React.FC = () => {
   const navigate = useNavigate();
+  const goLogin = useNavigateTo("/login");
   const { isAuthenticated } = useAuth();
   const { setResult, setIsFromHistory } = useAppContext();
 
@@ -137,13 +158,13 @@ const HistoryRoute: React.FC = () => {
   return (
     <HistoryPage
       isAuthenticated={isAuthenticated}
-      onLoginClick={() => navigate("/login")}
+      onLoginClick={goLogin}
       onSelectRecord={handleSelectRecord}
     />
   );
 };
 
-/** RecorderPage リッパー（マイク録音） */
+/** RecorderPage ラッパー（マイク録音） */
 const RecorderRoute: React.FC = () => {
   const { handleComplete, goMenu } = useAnalysisCompletion();
   return (
@@ -155,7 +176,7 @@ const RecorderRoute: React.FC = () => {
   );
 };
 
-/** RecorderPage リッパー（カラオケ録音） */
+/** RecorderPage ラッパー（カラオケ録音） */
 const KaraokeRoute: React.FC = () => {
   const { handleComplete, goMenu } = useAnalysisCompletion();
   return (
@@ -167,7 +188,7 @@ const KaraokeRoute: React.FC = () => {
   );
 };
 
-/** UploaderPage リッパー */
+/** UploaderPage ラッパー */
 const UploaderRoute: React.FC = () => {
   const { handleComplete, goMenu } = useAnalysisCompletion();
   return (
@@ -178,7 +199,7 @@ const UploaderRoute: React.FC = () => {
   );
 };
 
-/** ResultPage リッパー */
+/** ResultPage ラッパー */
 const ResultRoute: React.FC = () => {
   const navigate = useNavigate();
   const { result, isFromHistory } = useAppContext();
@@ -191,7 +212,7 @@ const ResultRoute: React.FC = () => {
   );
 };
 
-/** LoginPage リッパー */
+/** LoginPage ラッパー */
 const LoginRoute: React.FC = () => {
   const { loginWithGoogle } = useAuth();
   return <LoginPage onLogin={loginWithGoogle} />;

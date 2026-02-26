@@ -3,7 +3,14 @@
  * 役割：アプリ全体の「記憶（グローバルステート）」を管理します。
  * 解析結果、ユーザーの音域、検索ワードなど、ページをまたいで保持したいデータを扱います。
  */
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
 // APIから型定義を読み込みます
 import { AnalysisResult, UserRange } from "../api";
 
@@ -15,7 +22,9 @@ function loadSavedRange(): UserRange | null {
   try {
     const saved = localStorage.getItem(RANGE_STORAGE_KEY);
     if (saved) return JSON.parse(saved) as UserRange;
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return null;
 }
 
@@ -28,20 +37,32 @@ function saveRange(range: UserRange) {
 interface AppContextType {
   result: AnalysisResult | null; // 最新の解析結果
   setResult: React.Dispatch<React.SetStateAction<AnalysisResult | null>>;
-  userRange: UserRange | null;    // ユーザーの音域（楽曲とのマッチングに使用）
+  userRange: UserRange | null; // ユーザーの音域（楽曲とのマッチングに使用）
   setUserRange: React.Dispatch<React.SetStateAction<UserRange | null>>;
-  searchQuery: string;           // 楽曲検索の入力ワード
+  searchQuery: string; // 楽曲検索の入力ワード
   setSearchQuery: React.Dispatch<React.SetStateAction<string>>;
-  isFromHistory: boolean;        // 履歴画面から来たかどうか
+  isFromHistory: boolean; // 履歴画面から来たかどうか
   setIsFromHistory: React.Dispatch<React.SetStateAction<boolean>>;
-  clearRange: () => void;        // 保存された音域を消去
+  clearRange: () => void; // 保存された音域を消去
 }
 
 const AppContext = createContext<AppContextType>(null!);
 
+/**
+ * アプリ共通状態コンテキストを参照するフックです。
+ *
+ * @returns AppContextで共有される状態と更新関数
+ */
 export const useAppContext = () => useContext(AppContext);
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+/**
+ * アプリ共通状態を提供するProviderです。
+ *
+ * @param children - 配下の描画要素
+ */
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   // ── 状態の初期化 ──
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [userRange, setUserRange] = useState<UserRange | null>(loadSavedRange); // 初期値としてブラウザから読み込む
@@ -76,8 +97,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
    * 共有するデータ一式をまとめ、必要な時だけ再作成します。
    */
   const value = useMemo(
-    () => ({ result, setResult, userRange, setUserRange, searchQuery, setSearchQuery, isFromHistory, setIsFromHistory, clearRange }),
-    [result, userRange, searchQuery, isFromHistory, clearRange]
+    () => ({
+      result,
+      setResult,
+      userRange,
+      setUserRange,
+      searchQuery,
+      setSearchQuery,
+      isFromHistory,
+      setIsFromHistory,
+      clearRange,
+    }),
+    [result, userRange, searchQuery, isFromHistory, clearRange],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

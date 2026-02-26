@@ -110,7 +110,7 @@ src/
 ├── react-app-env.d.ts          # CRA 型定義
 └── reportWebVitals.ts          # パフォーマンス計測
 
-**ファイル総数**: 61 ファイル（2026-02-26 時点、`find src -type f` 実測）
+**ファイル総数**: 構成変更で変動するため、必要時に `find src -type f | wc -l` で実測する
 ```
 
 ### 2.1 主要ディレクトリ説明

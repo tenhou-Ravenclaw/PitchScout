@@ -11,8 +11,10 @@ import histogramImg from "../../assets/new-logo-histogram.png";
 import waveImg from "../../assets/new-logo-wave.png";
 import "../../styles/LogoSplash.css";
 
+/** LogoSplash のプロパティです。 */
 interface LogoSplashProps {
-  onAnimationEnd: () => void; // アニメーション終了時に親（App.tsx）へ知らせる関数
+  /** アニメーション終了時に親（App.tsx）へ通知する関数 */
+  onAnimationEnd: () => void;
 }
 
 export const LogoSplash: React.FC<LogoSplashProps> = ({ onAnimationEnd }) => {
