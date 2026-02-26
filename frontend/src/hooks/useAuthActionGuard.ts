@@ -14,12 +14,15 @@ interface UseAuthActionGuardParams {
  * 認証が必要な処理の実行前ガードを提供します。
  *
  * @param params - ガードの設定
- * @returns {{ ensureAuthenticated: () => boolean }}
+ * @returns {{ ensureAuthenticated: () => boolean, guardAction: <T>(action: () => T) => T | undefined }}
  */
 export const useAuthActionGuard = ({
   isAuthenticated,
   onUnauthorized,
-}: UseAuthActionGuardParams): { ensureAuthenticated: () => boolean } => {
+}: UseAuthActionGuardParams): {
+  ensureAuthenticated: () => boolean;
+  guardAction: <T>(action: () => T) => T | undefined;
+} => {
   /**
    * 認証状態を確認し、未認証時はハンドラを実行します。
    *
@@ -33,7 +36,21 @@ export const useAuthActionGuard = ({
     return true;
   }, [isAuthenticated, onUnauthorized]);
 
+  /**
+   * 認証済みの場合のみ指定アクションを実行します。
+   *
+   * @param action - 実行対象の処理
+   * @returns 実行結果。未認証時は undefined
+   */
+  const guardAction = useCallback(<T,>(action: () => T): T | undefined => {
+    if (!ensureAuthenticated()) {
+      return undefined;
+    }
+    return action();
+  }, [ensureAuthenticated]);
+
   return {
     ensureAuthenticated,
+    guardAction,
   };
 };

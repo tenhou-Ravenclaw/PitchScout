@@ -1,12 +1,14 @@
 import { useState, useCallback } from "react";
 import { getFavorites, addFavorite, removeFavorite } from "../api";
 import { useAuth } from "../contexts/AuthContext";
-import { useToast } from "./useToast";
-import { useErrorNotifier } from "./useErrorNotifier";
+import { useErrorToastNotifier } from "./useErrorToastNotifier";
 import { useAuthActionGuard } from "./useAuthActionGuard";
-import { useSyncedFavoriteSet } from "./useSyncedFavoriteSet";
+import { useSyncedFavoriteIds } from "./useSyncedFavoriteIds";
 import { addToSet, removeFromSet, toggleInSet } from "../utils/setUtils";
-import { runFavoriteMutation } from "../utils/favoriteMutation";
+import {
+  createFavoriteMutationErrorConfig,
+  executeFavoriteMutation,
+} from "../utils/favoriteMutation";
 import { FAVORITE_SONG_MESSAGES } from "../constants/favoriteMessages";
 
 /**
@@ -43,33 +45,22 @@ export const useFavoriteSongs = (onLoginRequired?: () => void) => {
   const { isAuthenticated } = useAuth();
   const [favoriteSongIds, setFavoriteSongIds] = useState<Set<number>>(new Set());
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
-  const { showApiErrorToast } = useToast();
-  const { notifyError } = useErrorNotifier({ showApiErrorToast });
-  const { ensureAuthenticated } = useAuthActionGuard({
+  const { notifyError } = useErrorToastNotifier();
+  const { guardAction } = useAuthActionGuard({
     isAuthenticated,
     onUnauthorized: () => {
       onLoginRequired?.();
     },
   });
 
-  const fetchFavoriteSongIds = useCallback(async (): Promise<number[]> => {
-    const favorites = await getFavorites(500); // 最大500件取得
-    return favorites.map(favorite => favorite.song_id);
-  }, []);
-
-  const handleSyncError = useCallback((error: unknown) => {
-    notifyError(
-      FAVORITE_SONG_MESSAGES.syncErrorLabel,
-      error,
-      FAVORITE_SONG_MESSAGES.syncErrorUserMessage,
-    );
-  }, [notifyError]);
-
-  useSyncedFavoriteSet({
+  useSyncedFavoriteIds({
     isAuthenticated,
     setIdSet: setFavoriteSongIds,
-    fetchIds: fetchFavoriteSongIds,
-    onSyncError: handleSyncError,
+    fetchItems: () => getFavorites(500),
+    selectId: (favorite) => favorite.song_id,
+    notifyError,
+    syncErrorLabel: FAVORITE_SONG_MESSAGES.syncErrorLabel,
+    syncErrorUserMessage: FAVORITE_SONG_MESSAGES.syncErrorUserMessage,
   });
 
   /**
@@ -82,42 +73,34 @@ export const useFavoriteSongs = (onLoginRequired?: () => void) => {
   * @note 未ログイン時は onLoginRequired コールバックを実行し、処理を中断します
    */
   const toggleFavoriteSong = useCallback(async (songId: number) => {
-    if (!ensureAuthenticated()) {
-      return;
-    }
-
-    // オプティミスティック更新: サーバー通信前に先に状態を変更
-    let wasFavorite = false;
-    setFavoriteSongIds(prev => {
-      wasFavorite = prev.has(songId);
-      return toggleInSet(prev, songId);
-    });
-
-    // 処理中フラグをON（連打防止）
-    setTogglingIds(prev => addToSet(prev, songId));
-
-    try {
-      await runFavoriteMutation(
-        wasFavorite,
-        () => addFavorite(songId),
-        () => removeFavorite(songId),
-      );
-    } catch (err) {
-      notifyError(
-        FAVORITE_SONG_MESSAGES.toggleErrorLabel,
-        err,
-        FAVORITE_SONG_MESSAGES.toggleErrorUserMessage,
-      );
-      
-      // ロールバック: 失敗時は元の状態に戻す
+    await guardAction(async () => {
+      let wasFavorite = false;
       setFavoriteSongIds(prev => {
-        return wasFavorite ? addToSet(prev, songId) : removeFromSet(prev, songId);
+        wasFavorite = prev.has(songId);
+        return toggleInSet(prev, songId);
       });
-    } finally {
-      // 処理中フラグをOFF
-      setTogglingIds(prev => removeFromSet(prev, songId));
-    }
-  }, [ensureAuthenticated, notifyError]);
+
+      setTogglingIds(prev => addToSet(prev, songId));
+
+      await executeFavoriteMutation({
+        isFavorite: wasFavorite,
+        onAdd: () => addFavorite(songId),
+        onRemove: () => removeFavorite(songId),
+        errorConfig: createFavoriteMutationErrorConfig(notifyError, {
+          errorLabel: FAVORITE_SONG_MESSAGES.toggleErrorLabel,
+          errorUserMessage: FAVORITE_SONG_MESSAGES.toggleErrorUserMessage,
+        }),
+        onError: () => {
+          setFavoriteSongIds((prev) => {
+            return wasFavorite ? addToSet(prev, songId) : removeFromSet(prev, songId);
+          });
+        },
+        onFinally: () => {
+          setTogglingIds((prev) => removeFromSet(prev, songId));
+        },
+      });
+    });
+  }, [guardAction, notifyError]);
 
   /**
    * ── 指定曲がお気に入りか判定 ──

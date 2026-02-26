@@ -1,5 +1,8 @@
 import { useCallback } from "react";
 
+/** 共通エラー通知関数の型 */
+export type ErrorNotifier = (label: string, error: unknown, message: string) => void;
+
 /** エラー通知関数の型定義 */
 interface UseErrorNotifierParams {
   /** API例外をToast表示する関数 */
@@ -35,7 +38,7 @@ export const useErrorNotifier = ({ showApiErrorToast }: UseErrorNotifierParams) 
    * @param error - 捕捉した例外オブジェクト
    * @param fallbackMessage - ユーザー向けフォールバックメッセージ
    */
-  const notifyError = useCallback((logLabel: string, error: unknown, fallbackMessage: string) => {
+  const notifyError = useCallback<ErrorNotifier>((logLabel: string, error: unknown, fallbackMessage: string) => {
     console.error(logLabel, error);
     showApiErrorToast(error, fallbackMessage);
   }, [showApiErrorToast]);

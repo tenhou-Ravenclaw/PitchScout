@@ -12,7 +12,7 @@ import {
 } from "../api"; // API通信用の型定義と関数をインポート
 import { StarIcon as StarSolid } from "@heroicons/react/24/solid";
 import { StarIcon as StarOutline } from "@heroicons/react/24/outline";
-import { useToast } from "../hooks/useToast";
+import { useErrorToastNotifier } from "../hooks/useErrorToastNotifier";
 import { useFavoriteArtists } from "../hooks/useFavoriteArtists";
 import Toast from "../components/ui/Toast";
 import { keyBadge } from "../utils/keyBadge";
@@ -82,7 +82,7 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthe
   const { toggleFavorite, isFavorite } = useFavoriteArtists(); // お気に入りアーティスト管理
   const [integratedRange, setIntegratedRange] = useState<IntegratedVocalRange | null>(null); // 直近N件をまとめた総合的な音域
   const [loadingIntegrated, setLoadingIntegrated] = useState(false);
-  const { toastMessage, showApiErrorToast, hideToast } = useToast();
+  const { toastMessage, showApiErrorToast, hideToast } = useErrorToastNotifier();
 
   /**
    * ── ログイン中のみ実行: 過去の履歴をまとめた「統合音域」を取得 ──

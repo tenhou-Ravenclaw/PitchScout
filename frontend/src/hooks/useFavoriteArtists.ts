@@ -1,12 +1,14 @@
 import { useState, useCallback } from "react";
 import { getFavoriteArtists, addFavoriteArtist, removeFavoriteArtist } from "../api";
-import { useToast } from "./useToast";
 import { useAuth } from "../contexts/AuthContext";
-import { useErrorNotifier } from "./useErrorNotifier";
+import { useErrorToastNotifier } from "./useErrorToastNotifier";
 import { useAuthActionGuard } from "./useAuthActionGuard";
-import { useSyncedFavoriteSet } from "./useSyncedFavoriteSet";
+import { useSyncedFavoriteIds } from "./useSyncedFavoriteIds";
 import { toggleInSet } from "../utils/setUtils";
-import { runFavoriteMutation } from "../utils/favoriteMutation";
+import {
+  createFavoriteMutationErrorConfig,
+  executeFavoriteMutation,
+} from "../utils/favoriteMutation";
 import { FAVORITE_ARTIST_MESSAGES, FAVORITE_LOGIN_REQUIRED_MESSAGE } from "../constants/favoriteMessages";
 
 /**
@@ -37,34 +39,23 @@ import { FAVORITE_ARTIST_MESSAGES, FAVORITE_LOGIN_REQUIRED_MESSAGE } from "../co
  */
 export const useFavoriteArtists = () => {
   const [favoriteIdSet, setFavoriteIdSet] = useState<Set<number>>(new Set());
-  const { showToast, showApiErrorToast } = useToast();
-  const { notifyError } = useErrorNotifier({ showApiErrorToast });
+  const { showToast, notifyError } = useErrorToastNotifier();
   const { isAuthenticated } = useAuth();
-  const { ensureAuthenticated } = useAuthActionGuard({
+  const { guardAction } = useAuthActionGuard({
     isAuthenticated,
     onUnauthorized: () => {
       showToast(FAVORITE_LOGIN_REQUIRED_MESSAGE);
     },
   });
 
-  const fetchFavoriteArtistIds = useCallback(async (): Promise<number[]> => {
-    const favorites = await getFavoriteArtists();
-    return favorites.map(favorite => favorite.artist_id);
-  }, []);
-
-  const handleSyncError = useCallback((error: unknown) => {
-    notifyError(
-      FAVORITE_ARTIST_MESSAGES.syncErrorLabel,
-      error,
-      FAVORITE_ARTIST_MESSAGES.syncErrorUserMessage,
-    );
-  }, [notifyError]);
-
-  useSyncedFavoriteSet({
+  useSyncedFavoriteIds({
     isAuthenticated,
     setIdSet: setFavoriteIdSet,
-    fetchIds: fetchFavoriteArtistIds,
-    onSyncError: handleSyncError,
+    fetchItems: getFavoriteArtists,
+    selectId: (favorite) => favorite.artist_id,
+    notifyError,
+    syncErrorLabel: FAVORITE_ARTIST_MESSAGES.syncErrorLabel,
+    syncErrorUserMessage: FAVORITE_ARTIST_MESSAGES.syncErrorUserMessage,
   });
 
   /**
@@ -78,26 +69,22 @@ export const useFavoriteArtists = () => {
   * @note API通信エラー時はToastでエラーメッセージを表示し、処理を終了します
    */
   const toggleFavorite = useCallback(async (artistId: number, artistName: string) => {
-    if (!ensureAuthenticated()) {
-      return;
-    }
-
-    try {
+    await guardAction(async () => {
       const wasFavorite = favoriteIdSet.has(artistId);
-      await runFavoriteMutation(
-        wasFavorite,
-        () => addFavoriteArtist(artistId, artistName),
-        () => removeFavoriteArtist(artistId),
-      );
-      setFavoriteIdSet(prev => toggleInSet(prev, artistId));
-    } catch (err) {
-      notifyError(
-        FAVORITE_ARTIST_MESSAGES.toggleErrorLabel,
-        err,
-        FAVORITE_ARTIST_MESSAGES.toggleErrorUserMessage,
-      );
-    }
-  }, [ensureAuthenticated, favoriteIdSet, notifyError]);
+      await executeFavoriteMutation({
+        isFavorite: wasFavorite,
+        onAdd: () => addFavoriteArtist(artistId, artistName),
+        onRemove: () => removeFavoriteArtist(artistId),
+        onSuccess: () => {
+          setFavoriteIdSet((prev) => toggleInSet(prev, artistId));
+        },
+        errorConfig: createFavoriteMutationErrorConfig(notifyError, {
+          errorLabel: FAVORITE_ARTIST_MESSAGES.toggleErrorLabel,
+          errorUserMessage: FAVORITE_ARTIST_MESSAGES.toggleErrorUserMessage,
+        }),
+      });
+    });
+  }, [favoriteIdSet, guardAction, notifyError]);
 
   /**
    * ── 指定アーティストがお気に入りか判定 ──
