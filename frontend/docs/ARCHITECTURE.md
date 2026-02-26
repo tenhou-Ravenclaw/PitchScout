@@ -2,6 +2,11 @@
 
 > システム構造、状態管理、API連携、ワークフロー
 
+この文書は「構造と依存関係」の単一ソースです。
+
+- 実装運用ルール・検証観点は [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)
+- デザイン/コーディング規約は [GUIDELINES.md](./GUIDELINES.md)
+
 **関連ドキュメント:**
 
 - [GUIDELINES.md](./GUIDELINES.md) - デザイン・コーディング規約
@@ -73,18 +78,31 @@ src/
 │       ├── Recorder.tsx            # マイク録音 + 波形ビジュアライザー
 │       ├── Recorder.css            # Recorder 専用スタイル
 │       ├── KaraokeUploader.tsx     # カラオケ音源アップロード
-│       └── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
+│       ├── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
+│       ├── SongTable.tsx           # 楽曲テーブル共通表示
+│       ├── SongListMainContent.tsx # 楽曲一覧メイン表示
+│       └── SongListArtistSongsView.tsx # アーティスト別楽曲表示
 │
 ├── hooks/
-│   ├── useToast.ts             # トースト通知管理
-│   ├── useFavoriteArtists.ts   # お気に入りアーティスト取得
-│   └── useFavoriteSongs.ts     # お気に入り曲取得デバウンス
+│   ├── useToast.ts                 # トースト通知管理
+│   ├── useFavoriteArtists.ts       # お気に入りアーティスト取得
+│   ├── useFavoriteSongs.ts         # お気に入り曲取得/更新
+│   ├── useSongListData.ts          # 楽曲一覧データ取得・ページング
+│   ├── useHistoryDelete.ts         # 履歴削除・スワイプ管理
+│   ├── useFavoriteDelete.ts        # お気に入り削除管理
+│   ├── useAuthenticatedDataLoader.ts # 認証付き初期ロード
+│   ├── useErrorToastNotifier.ts    # エラー通知統合
+│   ├── useAuthActionGuard.ts       # 未ログイン時ガード
+│   └── useSyncedFavoriteIds.ts     # お気に入りID同期
 │
 ├── constants/
 │   └── songListConstants.ts    # 楽曲検索定数・ユーティリティ
 │
 ├── utils/
-│   └── keyBadge.ts             # キーバッジ色付けロジック
+│   ├── keyBadge.tsx            # キーバッジ色付けロジック
+│   ├── favoriteMutation.ts     # お気に入り共通ミューテーション
+│   ├── deleteAction.ts         # 削除処理共通フロー
+│   └── setUtils.ts             # Set操作ユーティリティ
 │
 ├── pages/
 │   ├── Home.tsx                # メニュー画面 (録音方法選択グリッド)
@@ -204,7 +222,7 @@ const ResultRoute = () => {
 
 - `routeWrappers/` ディレクトリ不要 — routes.tsx で全て完結
 - ページコンポーネントが Context に依存しない — 再利用性・テスト性向上
-- ファイル総数削減（-6 ファイル）
+- ルート責務の集約と依存注入の明確化
 - ルート側で依存注入を一元化できる（認証・遷移・共有 state）
 
 ### 3.2 URL 一覧（現行）
@@ -579,6 +597,6 @@ SUPABASE_JWT_SECRET=xxx
 ## 関連ドキュメント
 
 - [GUIDELINES.md](./GUIDELINES.md) - デザイン・コーディング規約
-- [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) - 実装詳細ガイド
+- [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) - 実装運用ルールと検証観点
 - [../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) - バックエンドアーキテクチャ
 - [../../docs/requirements/REQUIREMENTS.md](../../docs/requirements/REQUIREMENTS.md) - プロジェクト要件定義

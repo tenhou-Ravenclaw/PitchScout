@@ -2,6 +2,11 @@
 
 > デザインルール、コンポーネント設計、型安全性、コーディング規約
 
+この文書は「実装規約」の単一ソースです。
+
+- 構造・依存関係は [ARCHITECTURE.md](./ARCHITECTURE.md)
+- 実装運用ルール・検証観点は [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)
+
 ---
 
 ## 1. デザインルール
@@ -51,7 +56,7 @@ bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl border border-white/10
 - `BottomNav.tsx`: モバイルボトムナビゲーション
 - `Layout.tsx`: 全ページ共通レイアウト（Header/BottomNav + Outlet）
 
-#### `ui/` — 再利用可能な UI 部品 (9 ファイル)
+#### `ui/` — 再利用可能な UI 部品
 
 - **`cards/`**: 汎用カードコンポーネント (3)
   - `AnalysisCardShell.tsx`: 録音/アップロード画面の共通カード枠
@@ -64,12 +69,15 @@ bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl border border-white/10
 - `SyllableIndex.tsx`: 五十音インデックスナビゲーション
 - `Toast.tsx`: トースト通知
 
-#### `features/` — 機能固有コンポーネント (4 ファイル)
+#### `features/` — 機能固有コンポーネント
 
 - `Recorder.tsx`: マイク録音 + 波形ビジュアライザー
 - `Recorder.css`: Recorder 専用スタイル
 - `KaraokeUploader.tsx`: カラオケ音源アップロード UI
 - `ResultView.tsx`: 分析結果の詳細表示
+- `SongTable.tsx`: 楽曲テーブルの共通表示
+- `SongListMainContent.tsx`: 楽曲一覧のメイン表示
+- `SongListArtistSongsView.tsx`: アーティスト別楽曲表示
 
 ### 2.2 責務分離の原則
 

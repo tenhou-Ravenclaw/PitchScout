@@ -2,6 +2,12 @@
 
 > Result/Analysis 責務分離、エラーUX、API/Context 不変条件、検証項目
 
+この文書は「実装時の運用ルールと検証観点」に限定します。
+
+- 構成・依存関係の全体像: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- デザイン/コーディング規約: [GUIDELINES.md](./GUIDELINES.md)
+- コンポーネントの詳細Props: ソースコード内のJSDoc（`src/components/**`, `src/pages/**`）
+
 ---
 
 ## 1. `/result` と `/analysis` の責務分離仕様
@@ -65,9 +71,9 @@ AnalysisRoute
 
 ### 2.1 現状（2026-02 時点）
 
-- インライン表示（`setError`）と `alert` と `console.error` の3系統が混在している。
-- `alert` は録音開始失敗・履歴削除失敗・お気に入り操作失敗で使われている。
-- API 失敗でもユーザー通知がなく、ログ出力のみで終わる導線が存在する。
+- インライン表示（`setError`）とトースト通知（`Toast`）と `console.error` の3系統で運用している。
+- `alert` は廃止済みで、確認ダイアログは履歴削除時の `window.confirm` のみ残存している。
+- API 失敗時は `toUserMessage` を経由したユーザー向け文言へ変換する実装が定着している。
 
 ### 2.2 統一ルール
 
@@ -83,7 +89,7 @@ AnalysisRoute
 **禁止:**
 
 - ユーザー操作に対する失敗を `console.error` のみで終える実装
-- 新規実装での `alert` 追加（現行は `window.confirm` のみ残存）
+- 新規実装での `alert` 追加（確認用途は `window.confirm` のみ許容）
 
 **推奨:**
 
@@ -94,7 +100,7 @@ AnalysisRoute
 
 | 優先度 | 対象画面                       | 現状                                                 | 方針                                                       |
 | ------ | ------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------- |
-| 高     | `Recorder` / `KaraokeUploader` | timeout・network は一部整備済み、`alert` は未使用    | インライン表示とトーストの運用ルールを固定                |
+| 高     | `Recorder` / `KaraokeUploader` | timeout・network を含め `toUserMessage` + 画面内表示へ統一済み | インライン表示とトーストの運用ルールを維持                |
 | 高     | `HistoryPage`                  | 取得は `setError`、削除前確認に `window.confirm` を使用 | 削除失敗通知はトースト継続、確認UIの将来的な統一を検討     |
 | 高     | `SongListPage`                 | `setError` + トースト + ログの併用                    | 一覧取得失敗はインライン、お気に入り系はトーストで維持     |
 | 中     | `AnalysisResultPage`           | トースト + ログ                                      | 統合音域失敗はページ内通知またはトーストに統一             |
@@ -175,7 +181,7 @@ AnalysisRoute
 | フェーズ | 目的                             | 主対象                                                       |
 | -------- | -------------------------------- | ------------------------------------------------------------ |
 | Phase 1  | エラーUX土台の統一               | `Recorder`, `KaraokeUploader`, `HistoryPage`, `SongListPage` |
-| Phase 2  | `alert` 段階置換と通知統一       | `AnalysisResultPage`, `FavoritesPage`                        |
+| Phase 2  | 確認UI（`window.confirm`）の段階的統一 | `HistoryPage`, 共通UIレイヤー                              |
 | Phase 3  | Result/Analysis 境界の実装最終化 | `ResultPage`, `ResultView`, `AnalysisRoute`, `HistoryRoute`  |
 | Phase 4  | API 呼び出しの集約整理           | `src/api/*` と利用側 import 整理                             |
 | Phase 5  | 回帰検証と最終調整               | 全導線の手動確認 + テスト/ビルド                             |
@@ -189,62 +195,15 @@ AnalysisRoute
 
 ---
 
-## 5. コンポーネント Props 仕様
+## 5. 参照先（重複回避）
 
-> **Note**: 各コンポーネントの詳細なドキュメントはソースコード内の JSDoc を参照してください。ここでは主要コンポーネントの概要のみ記載します。
+重複管理を避けるため、以下を単一ソースとします。
 
-### 5.1 Header
+- コンポーネントProps詳細: 各実装ファイルのJSDoc（`src/components/**`, `src/pages/**`）
+- 画面構成とルーティング: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- コーディング/デザイン規約: [GUIDELINES.md](./GUIDELINES.md)
 
-| Props             | 型                        | 説明                               |
-| ----------------- | ------------------------- | ---------------------------------- |
-| `currentPath`     | `string`                  | 現在の URL パス (アクティブ表示用) |
-| `searchQuery`     | `string`                  | 検索バーの値                       |
-| `onSearchChange`  | `(query: string) => void` | 検索入力ハンドラ                   |
-| `isAuthenticated` | `boolean`                 | ログイン状態                       |
-| `userName`        | `string \| null`          | 表示名                             |
-
-※ 画面遷移とログイン/ログアウト処理はコンポーネント内で `navigate` / `useAuth` を利用して実行する。
-
-### 5.2 BottomNav
-
-| Props             | 型        | 説明                                   |
-| ----------------- | --------- | -------------------------------------- |
-| `currentPath`     | `string`  | 現在の URL パス                        |
-| `isAuthenticated` | `boolean` | ログイン状態 (マイページ/ログイン切替) |
-
-### 5.3 Recorder
-
-| Props              | 型                               | 説明                            |
-| ------------------ | -------------------------------- | ------------------------------- |
-| `onResult`         | `(data: AnalysisResult) => void` | 分析結果コールバック            |
-| `initialUseDemucs` | `boolean`                        | true: カラオケモード (BGM 除去) |
-
-- Web Audio API で波形ビジュアライザー (Canvas) を描画
-- MediaRecorder API でブラウザ録音
-
-### 5.4 KaraokeUploader
-
-| Props      | 型                               | 説明                 |
-| ---------- | -------------------------------- | -------------------- |
-| `onResult` | `(data: AnalysisResult) => void` | 分析結果コールバック |
-
-- 対応フォーマット: WAV, MP3, M4A, AAC, MP4, OGG, FLAC, WMA, WebM
-- 結果は `onResult` 経由で親ページに返し、`/result` へ遷移する
-
-### 5.5 ResultView
-
-| Props    | 型               | 説明                                   |
-| -------- | ---------------- | -------------------------------------- |
-| `result` | `AnalysisResult` | バックエンドからの分析結果オブジェクト |
-
-表示セクション:
-
-1. 声質タイプ + 全体音域
-2. 地声/裏声バランスバー
-3. 地声・裏声の詳細カード
-4. 歌唱力スコア (総合・音域・安定性・表現力)
-5. 声が似ているアーティスト
-6. おすすめ曲リスト
+この文書では、実装判断や検証観点に必要な契約（責務分離・不変条件・検証手順）のみを保持します。
 
 ---
 
