@@ -11,6 +11,14 @@ import {
 } from "../utils/favoriteMutation";
 import { FAVORITE_ARTIST_MESSAGES, FAVORITE_LOGIN_REQUIRED_MESSAGE } from "../constants/favoriteMessages";
 
+/** useFavoriteArtists の返り値型です。 */
+interface UseFavoriteArtistsResult {
+  /** お気に入り追加/削除を切り替えます。 */
+  toggleFavorite: (artistId: number, artistName: string) => Promise<void>;
+  /** 指定アーティストがお気に入りか判定します。 */
+  isFavorite: (artistId: number) => boolean;
+}
+
 /**
  * **useFavoriteArtists カスタムフック**
  * 
@@ -37,7 +45,7 @@ import { FAVORITE_ARTIST_MESSAGES, FAVORITE_LOGIN_REQUIRED_MESSAGE } from "../co
  * {isFavorite(artist.id) ? <StarSolid /> : <StarOutline />}
  * ```
  */
-export const useFavoriteArtists = () => {
+export const useFavoriteArtists = (): UseFavoriteArtistsResult => {
   const [favoriteIdSet, setFavoriteIdSet] = useState<Set<number>>(new Set());
   const { showToast, notifyError } = useErrorToastNotifier();
   const { isAuthenticated } = useAuth();
@@ -98,6 +106,6 @@ export const useFavoriteArtists = () => {
 
   return {
     toggleFavorite,
-    isFavorite
+    isFavorite,
   };
 };

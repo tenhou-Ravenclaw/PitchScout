@@ -11,6 +11,16 @@ import {
 } from "../utils/favoriteMutation";
 import { FAVORITE_SONG_MESSAGES } from "../constants/favoriteMessages";
 
+/** useFavoriteSongs の返り値型です。 */
+interface UseFavoriteSongsResult {
+  /** お気に入り追加/削除を切り替えます。 */
+  toggleFavoriteSong: (songId: number) => Promise<void>;
+  /** 指定楽曲がお気に入りか判定します。 */
+  isFavoriteSong: (songId: number) => boolean;
+  /** 指定楽曲が更新中か判定します。 */
+  isToggling: (songId: number) => boolean;
+}
+
 /**
  * **useFavoriteSongs カスタムフック**
  * 
@@ -41,7 +51,7 @@ import { FAVORITE_SONG_MESSAGES } from "../constants/favoriteMessages";
  * {isToggling(song.id) && <Spinner />}
  * ```
  */
-export const useFavoriteSongs = (onLoginRequired?: () => void) => {
+export const useFavoriteSongs = (onLoginRequired?: () => void): UseFavoriteSongsResult => {
   const { isAuthenticated } = useAuth();
   const [favoriteSongIds, setFavoriteSongIds] = useState<Set<number>>(new Set());
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set());
@@ -127,6 +137,6 @@ export const useFavoriteSongs = (onLoginRequired?: () => void) => {
   return {
     toggleFavoriteSong,
     isFavoriteSong,
-    isToggling
+    isToggling,
   };
 };
