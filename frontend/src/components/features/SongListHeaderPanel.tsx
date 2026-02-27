@@ -54,7 +54,7 @@ const SongListHeaderPanel: React.FC<SongListHeaderPanelProps> = ({
           <p className="text-xs text-slate-400 font-bold tracking-wide">
             {activeQuery
               ? `"${activeQuery}" の検索結果`
-              : (userRange ? "音域に合わせたキーおすすめを表示中" : "録音すると、キーおすすめが表示されます")}
+              : (userRange ? "" : "録音すると、キーおすすめが表示されます")}
           </p>
         </div>
         <SyllableIndex

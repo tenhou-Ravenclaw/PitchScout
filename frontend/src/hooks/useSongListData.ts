@@ -107,22 +107,40 @@ export const useSongListData = ({
 
   // ページネーション操作
   const handlePaginate = useCallback((action: PaginationAction) => {
-    if (action === "next") {
-      setArtistPage(artistPage + 1);
-      setPageInput((artistPage + 2).toString());
-      return;
+    if (activeQuery) {
+      // 楽曲検索のページネーション
+      if (action === "next") {
+        setSearchPage(searchPage + 1);
+        setSearchPageInput((searchPage + 2).toString());
+        return;
+      }
+      if (action === "prev") {
+        setSearchPage(Math.max(searchPage - 1, 0));
+        setSearchPageInput(Math.max(searchPage, 1).toString());
+        return;
+      }
+      const pageNum = parseInt(searchPageInput, 10);
+      if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalSearchPages) {
+        setSearchPage(pageNum - 1);
+      }
+    } else {
+      // アーティスト一覧のページネーション
+      if (action === "next") {
+        setArtistPage(artistPage + 1);
+        setPageInput((artistPage + 2).toString());
+        return;
+      }
+      if (action === "prev") {
+        setArtistPage(Math.max(artistPage - 1, 0));
+        setPageInput(Math.max(artistPage, 1).toString());
+        return;
+      }
+      const pageNum = parseInt(pageInput, 10);
+      if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+        setArtistPage(pageNum - 1);
+      }
     }
-    if (action === "prev") {
-      setArtistPage(Math.max(artistPage - 1, 0));
-      setPageInput(Math.max(artistPage, 1).toString());
-      return;
-    }
-    // jump
-    const pageNum = parseInt(pageInput, 10);
-    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
-      setArtistPage(pageNum - 1);
-    }
-  }, [artistPage, pageInput, totalPages]);
+  }, [activeQuery, searchPage, searchPageInput, totalSearchPages, artistPage, pageInput, totalPages, setArtistPage, setSearchPage]);
 
   return {
     activeQuery,

@@ -51,6 +51,7 @@ const SongListArtistSongsView: React.FC<SongListArtistSongsViewProps> = ({
         onBack={onBack}
         artistName={artistName}
         songCount={artistSongs.length}
+        userRange={userRange}
       />
 
       {songsLoading ? (

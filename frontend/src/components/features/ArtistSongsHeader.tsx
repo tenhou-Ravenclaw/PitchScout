@@ -16,6 +16,8 @@ interface ArtistSongsHeaderProps {
   artistName: string;
   /** 表示対象の楽曲数 */
   songCount: number;
+  /** ユーザー音域 */
+  userRange?: import("../../api").UserRange | null;
 }
 
 /**
@@ -25,6 +27,7 @@ const ArtistSongsHeader: React.FC<ArtistSongsHeaderProps> = ({
   onBack,
   artistName,
   songCount,
+  userRange,
 }) => {
   return (
     <div className="w-full max-w-5xl mb-6">
@@ -42,7 +45,14 @@ const ArtistSongsHeader: React.FC<ArtistSongsHeaderProps> = ({
           <h1 className="text-3xl sm:text-4xl font-black italic title-gradient-cyan-fuchsia drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
             {artistName}
           </h1>
-          <p className="text-sm text-cyan-400 mt-1 font-bold tracking-widest">{songCount}曲</p>
+          <div className="flex items-center gap-4 mt-1">
+            <p className="text-sm text-cyan-400 font-bold tracking-widest">{songCount}曲</p>
+            {userRange && (
+              <p className="text-xs text-slate-400 font-bold tracking-wide border-l border-slate-700 pl-4">
+                音域に合わせたキーおすすめを表示中
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>
