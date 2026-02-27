@@ -46,7 +46,7 @@ const hasAnalysisError = (
    メインコンポーネント本体
    ════════════════════════════════════════════════ */
 const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthenticated }) => {
-  const { favoriteIds, toggleFavorite, isFavorite } = useFavoriteArtists(); // お気に入りアーティスト管理
+  const { toggleFavorite, isFavorite } = useFavoriteArtists(); // お気に入りアーティスト管理
   const [integratedRange, setIntegratedRange] = useState<IntegratedVocalRange | null>(null); // 直近N件をまとめた総合的な音域
   const [loadingIntegrated, setLoadingIntegrated] = useState(false);
   const { toastMessage, showToast, hideToast } = useToast();
@@ -70,7 +70,7 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthe
       }
     };
     fetchIntegratedRange();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, showToast]);
 
   /**
    * ── ロード中の表示設定 ──
