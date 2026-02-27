@@ -1,8 +1,8 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import Landing from "../Landing";
+import Landing from "../pages/Landing";
 
-const LandingRoute: React.FC = () => {
+export const LandingRoute: React.FC = () => {
   const navigate = useNavigate();
   return (
     <Landing
@@ -11,5 +11,3 @@ const LandingRoute: React.FC = () => {
     />
   );
 };
-
-export default LandingRoute;

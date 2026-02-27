@@ -1,20 +1,29 @@
 # ピッチスカウト フロントエンド アーキテクチャ
 
+> システム構造、状態管理、API連携、ワークフロー
+
+**関連ドキュメント:**
+
+- [GUIDELINES.md](./GUIDELINES.md) - デザイン・コーディング規約
+- [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) - 実装詳細ガイド
+
+---
+
 ## 1. プロジェクト概要
 
 **ピッチスカウト**は、ユーザーの声を録音・分析し、音域に合った楽曲やキー変更を提案する Web アプリ。
 
-| 項目 | 技術 |
-|------|------|
-| フレームワーク | React 19 + TypeScript |
-| スタイリング | Tailwind CSS 3 |
-| HTTP クライアント | Axios |
-| 認証 | Supabase Auth (Google OAuth) |
-| アイコン | Heroicons v2 |
-| ビルドツール | Create React App (react-scripts) |
-| バックエンド | FastAPI (Python) |
-| 楽曲 DB | SQLite (songs.db / 約 5000 曲) |
-| ユーザー DB | Supabase (PostgreSQL) |
+| 項目              | 技術                             |
+| ----------------- | -------------------------------- |
+| フレームワーク    | React 19 + TypeScript            |
+| スタイリング      | Tailwind CSS 3                   |
+| HTTP クライアント | Axios                            |
+| 認証              | Supabase Auth (Google OAuth)     |
+| アイコン          | Heroicons v2                     |
+| ビルドツール      | Create React App (react-scripts) |
+| バックエンド      | FastAPI (Python)                 |
+| 楽曲 DB           | SQLite (songs.db / 約 5000 曲)   |
+| ユーザー DB       | Supabase (PostgreSQL)            |
 
 ---
 
@@ -23,187 +32,238 @@
 ```
 src/
 ├── index.tsx                  # エントリポイント
-├── App.tsx                    # ルートコンポーネント・ViewState 管理・画面切替
-├── api.ts                     # Axios クライアント・API 関数・UserRange 型
+├── App.tsx                    # Provider 初期化 + BrowserRouter 起動
+├── routes.tsx                 # RouteObject 定義 + インラインルートラッパー関数
+├── api.ts                     # 互換レイヤー（src/api/ を再エクスポート）
+├── api/                       # API モジュール本体
+│   ├── client.ts              # Axios インスタンス + JWT 自動付与
+│   ├── types.ts               # API 型定義
+│   ├── analysis.ts            # analyzeVoice / analyzeKaraoke
+│   ├── songs.ts               # songs / artists 系 API
+│   ├── favorites.ts           # favorites 系 API
+│   ├── history.ts             # analysis history 系 API
+│   ├── integratedRange.ts     # integrated-range API
+│   └── index.ts               # バレルエクスポート
 ├── supabaseClient.ts          # Supabase クライアント初期化 (null 安全)
 │
 ├── contexts/
-│   └── AuthContext.tsx         # 認証コンテキスト (Google OAuth)
+│   ├── AuthContext.tsx         # 認証コンテキスト (Google OAuth)
+│   ├── AppContext.tsx          # result / userRange / searchQuery 共有
+│   └── AnalysisContext.tsx     # 解析進捗（progress / stepLabel）管理
 │
 ├── components/
-│   ├── Header.tsx              # デスクトップヘッダー (md+ 表示)
-│   ├── BottomNav.tsx           # モバイルボトムナビ (<md 表示)
-│   ├── Recorder.tsx            # マイク録音 + 波形ビジュアライザー
-│   ├── KaraokeUploader.tsx     # カラオケ音源アップロード
-│   └── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
+│   ├── layout/
+│   │   ├── Header.tsx              # デスクトップヘッダー (md+ 表示)
+│   │   ├── BottomNav.tsx           # モバイルボトムナビ (<md 表示)
+│   │   └── Layout.tsx              # 共通レイアウト（Header/BottomNav/Outlet）
+│   │
+│   ├── ui/
+│   │   ├── cards/
+│   │   │   ├── AnalysisCardShell.tsx    # 録音/アップロード共通カード
+│   │   │   ├── AuthRequiredCard.tsx     # 未ログイン時の共通カード
+│   │   │   └── CenteredCardShell.tsx    # 中央配置カードの共通枠
+│   │   ├── Pagination.tsx          # テーブルページネーション
+│   │   ├── SearchBar.tsx           # 楽曲検索バー
+│   │   ├── SyllableIndex.tsx       # 五十音インデックス
+│   │   ├── ErrorBanner.tsx         # エラー表示バナー
+│   │   ├── Toast.tsx               # トースト通知
+│   │   └── LogoSplash.tsx          # ロゴシャドウアニメーション
+│   │
+│   └── features/
+│       ├── Recorder.tsx            # マイク録音 + 波形ビジュアライザー
+│       ├── Recorder.css            # Recorder 専用スタイル
+│       ├── KaraokeUploader.tsx     # カラオケ音源アップロード
+│       └── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
 │
-├── Landing.tsx                 # ランディング画面 (NEW RECORD / HISTORY)
-├── Home.tsx                    # メニュー画面 (録音方法選択グリッド)
-├── LoginPage.tsx               # ログイン画面 (Google OAuth ボタン)
-├── AnalysisResultPage.tsx      # 分析結果ダッシュボード (レーダーチャート付き)
-├── SongListPage.tsx            # 楽曲一覧 (アーティスト別グリッド + 曲テーブル)
-├── GuidePage.tsx               # 使い方ガイド
-├── PlaceholderPage.tsx         # 開発中画面の汎用プレースホルダー
-├── RecordingSelectionPage.tsx  # 録音方法選択 (旧 UI・未使用)
+├── hooks/
+│   ├── useToast.ts             # トースト通知管理
+│   ├── useFavoriteArtists.ts   # お気に入りアーティスト取得
+│   └── useFavoriteSongs.ts     # お気に入り曲取得デバウンス
+│
+├── constants/
+│   └── songListConstants.ts    # 楽曲検索定数・ユーティリティ
+│
+├── utils/
+│   └── keyBadge.ts             # キーバッジ色付けロジック
+│
+├── pages/
+│   ├── Home.tsx                # メニュー画面 (録音方法選択グリッド)
+│   ├── Landing.tsx             # ランディング画面 (NEW RECORD / HISTORY)
+│   ├── LoginPage.tsx           # ログイン画面 (Google OAuth ボタン)
+│   ├── AnalysisResultPage.tsx  # 分析結果ダッシュボード (レーダーチャート付き)
+│   ├── SongListPage.tsx        # 楽曲一覧 (アーティスト別グリッド + 曲テーブル)
+│   ├── FavoritesPage.tsx       # お気に入り一覧
+│   ├── HistoryPage.tsx         # 分析履歴一覧
+│   ├── GuidePage.tsx           # 使い方ガイド
+│   ├── RecorderPage.tsx        # マイク / カラオケ録音ラッパー
+│   ├── UploaderPage.tsx        # 音源アップロード
+│   └── ResultPage.tsx          # 録音/アップロード直後の中間結果
+│
+├── styles/
+│   └── LogoSplash.css          # ロゴシャドウアニメーション専用
 │
 ├── assets/
 │   └── logo.png                # アプリロゴ
-│
-├── App.css                     # App 用 CSS
-├── index.css                   # グローバル CSS (Tailwind ディレクティブ)
-├── HomePage.css                # Landing 用カスタム CSS (アニメーション等)
 │
 ├── App.test.tsx                # テスト
 ├── setupTests.ts               # テスト設定
 ├── react-app-env.d.ts          # CRA 型定義
 └── reportWebVitals.ts          # パフォーマンス計測
+
+**ファイル総数**: 61 ファイル（2026-02-26 時点、`find src -type f` 実測）
 ```
+
+### 2.1 主要ディレクトリ説明
+
+#### `pages/` — ページコンポーネント統一ディレクトリ
+
+- 全 11 個のページコンポーネントを集約
+- 各ページは **Context 非依存** で、Props を受け取り表示のみを行う
+- `routes.tsx` 内の **インラインルートラッパー関数** が Context と受け渡しを担当
+
+#### `hooks/` — 再利用フックの集約
+
+- `useToast`: トースト通知ロジック（4 ページで使用）
+- `useFavoriteArtists`: お気に入りアーティスト取得（デバウンス付き）
+- `useFavoriteSongs`: お気に入り曲の一括取得と更新
+
+#### `constants/` — 定数とユーティリティ
+
+- `songListConstants.ts`: 楽曲検索用の五十音インデックス・検索エイリアス（150+ 行）
+
+#### `utils/` — 共有ユーティリティ
+
+- `keyBadge.ts`: キーバッジの色付けロジック
+
+#### `styles/` — グローバルスタイル
+
+- `src/index.css`: Tailwind @layer components で共有 CSS クラス定義
+  - `.table-container`: テーブルベースカード
+  - `.table-header`: テーブルヘッダースタイル
+  - `.table-row`: テーブル行スタイル (group対応)
+  - `.key-badge-*`: キーバッジの色分け（perfect/good/ok/hard/default）
+  - `.title-gradient-*`: タイトル用グラデーション（cyan-fuchsia / cyber）
+  - `.btn-primary-cyan`: ログインなどの主要ボタン
+  - `.btn-back-link`: 戻るリンクボタン
+- `LogoSplash.css`: ロゴシャドウアニメーション専用
 
 ---
 
-## 3. 画面遷移 (ViewState)
+## 3. 画面遷移（Router + URL設計）
 
-`App.tsx` で定義された `ViewState` 型により、全 11 画面を管理:
+現行フロントエンドは `ViewState` ではなく、`react-router-dom` による URL ルーティングで画面管理を行う。
+
+### 3.1 ルーティング方針
+
+- `App.tsx` は `BrowserRouter` + Provider 初期化を担当する
+- `routes.tsx` で URL と画面コンポーネントを定義し、**ページごとのインラインルートラッパー関数** を含む
+- `Layout.tsx` 配下に `Outlet` を配置し、`Header` / `BottomNav` を共通レイアウトとして扱う
+- **ルートラッパー関数** が AppContext / AuthContext を読み取り、ページコンポーネントに Props で渡す
+- ページコンポーネント（`src/pages/` 配下）は **Context に直接依存しない** — Props のみを受け取る設計
+
+#### インラインルートラッパーパターン
+
+`routes.tsx` 内にルート専用のラッパー関数が定義される：
 
 ```typescript
-type ViewState =
-  | "landing"    // ランディング
-  | "menu"       // メニュー (録音方法選択)
-  | "recorder"   // 録音
-  | "uploader"   // カラオケ音源アップロード
-  | "result"     // 分析結果 (ResultView)
-  | "analysis"   // 分析ダッシュボード (AnalysisResultPage)
-  | "songList"   // 楽曲一覧
-  | "history"    // 履歴 (Placeholder)
-  | "mypage"     // マイページ (Placeholder)
-  | "guide"      // 使い方ガイド
-  | "login";     // ログイン
+// Context/遷移をラッパーで吸収し、ページへ Props を渡す
+const HomeRoute = () => {
+  const navigate = useNavigate();
+  const { isAnalyzing } = useAnalysis();
+  return (
+    <Home
+      onNormalClick={() => navigate("/record")}
+      onKaraokeClick={() => navigate("/karaoke")}
+      onUploadClick={() => navigate("/upload")}
+      onHistoryClick={() => navigate("/history")}
+      isAnalyzing={isAnalyzing}
+    />
+  );
+};
+
+const AnalysisRoute = () => {
+  const { isAuthenticated } = useAuth();
+  const { result } = useAppContext();
+  return <AnalysisResultPage result={result} isAuthenticated={isAuthenticated} />;
+};
+
+const ResultRoute = () => {
+  const navigate = useNavigate();
+  const { result, isFromHistory } = useAppContext();
+  return (
+    <ResultPage
+      result={result}
+      isFromHistory={isFromHistory}
+      onBack={() => navigate(isFromHistory ? "/history" : "/menu")}
+    />
+  );
+};
 ```
 
-### 遷移図 (ASCII)
+**メリット:**
+
+- `routeWrappers/` ディレクトリ不要 — routes.tsx で全て完結
+- ページコンポーネントが Context に依存しない — 再利用性・テスト性向上
+- ファイル総数削減（-6 ファイル）
+- ルート側で依存注入を一元化できる（認証・遷移・共有 state）
+
+### 3.2 URL 一覧（現行）
+
+| Path         | 画面           | 役割                            |
+| ------------ | -------------- | ------------------------------- |
+| `/`          | LandingRoute   | ランディング                    |
+| `/menu`      | HomeRoute      | 録音導線の入口                  |
+| `/record`    | RecorderPage   | マイク録音                      |
+| `/karaoke`   | RecorderPage   | カラオケ録音                    |
+| `/upload`    | UploaderPage   | 音源アップロード                |
+| `/result`    | ResultPage     | 録音/アップロード直後の中間結果 |
+| `/analysis`  | AnalysisRoute  | 分析ダッシュボード（詳細表示）  |
+| `/songs`     | SongListRoute  | 楽曲/アーティスト検索           |
+| `/favorites` | FavoritesRoute | お気に入り                      |
+| `/history`   | HistoryRoute   | 分析履歴                        |
+| `/guide`     | GuidePage      | 使い方ガイド                    |
+| `/login`     | LoginPage      | ログイン                        |
+
+### 3.3 設計方針
+
+- `/result`: 録音・アップロード導線に閉じた結果確認ページ。
+- `/analysis`: 履歴統合音域・比較・詳細分析を扱う分析ハブ。
+- `Header` / `BottomNav` からの常時遷移は `/analysis`, `/songs`, `/favorites`, `/history`, `/guide`, `/login` を中心に整理する。
+
+### 3.4 遷移図
 
 ```
-                    ┌──────────┐
-                    │ landing  │  ← 初期画面
-                    └────┬─────┘
-                 ┌───────┴────────┐
-                 ▼                ▼
-            ┌────────┐      ┌─────────┐
-            │  menu  │      │ history │ (Placeholder)
-            └──┬─┬─┬─┘      └─────────┘
-       ┌───────┘ │ └────────┐
-       ▼         ▼          ▼
-  ┌──────────┐ ┌──────────┐ ┌──────────┐
-  │ recorder │ │ recorder │ │ uploader │
-  │ (通常)   │ │(カラオケ)│ │          │
-  └────┬─────┘ └────┬─────┘ └──────────┘
-       └──────┬─────┘
-              ▼
-        ┌──────────┐     ┌──────────┐
-        │  result  │────▶│ analysis │
-        └──────────┘     └──────────┘
+        ┌──────────┐
+        │ landing  │
+        └────┬─────┘
+          ▼
+        ┌──────────┐
+        │   menu   │
+        └─┬────┬───┘
+          │    │
+    ┌───────────┘    └───────────┐
+    ▼                            ▼
+  ┌──────────┐                 ┌──────────┐
+  │ record   │                 │  upload  │
+  │ karaoke  │                 │          │
+  └────┬─────┘                 └────┬─────┘
+    └──────────────┬─────────────┘
+          ▼
+        ┌──────────┐
+        │  result  │（録音導線の一部）
+        └──────────┘
 
-  Header/BottomNav から常にアクセス可能:
-    songList, guide, login, analysis
+  常時アクセス（Header / BottomNav）:
+    analysis, songs, favorites, history, guide, login
 ```
 
-> **設計意図**: React Router を使わず `useState<ViewState>` で画面を切り替える SPA パターン。ハッカソン規模ではシンプルで十分。
+> **補足**: 旧 `ViewState` ベース記述は廃止し、URL ルーティングを単一の遷移基盤とする。
+
+> **詳細**: `/result` と `/analysis` の責務分離、エラーUX統一、API/Context不変条件については [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) を参照。
 
 ---
 
-## 4. デザインルール
-
-### カラーパレット (ダークテーマ)
-
-| 用途 | カラー | Tailwind クラス例 |
-|------|--------|-------------------|
-| 背景 (ベース) | Slate 900 | `bg-slate-900` |
-| カード背景 | Slate 900/60 + blur | `bg-slate-900/60 backdrop-blur-md` |
-| ボーダー | White 10% | `border border-white/10` |
-| アクセント (主) | Cyan | `text-cyan-400`, `border-cyan-500/30` |
-| アクセント (副) | Pink / Rose | `text-pink-500`, `text-rose-400` |
-| 成功 / 地声 | Indigo | `bg-indigo-500` |
-| 成功 / 裏声 | Emerald | `bg-emerald-400` |
-| スコア (高) | Emerald | `text-emerald-500` |
-| スコア (中) | Sky / Amber | `text-sky-500`, `text-amber-500` |
-| スコア (低) | Rose | `text-rose-400` |
-
-### Glassmorphism カードパターン
-
-```
-bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl border border-white/10
-```
-
-### レスポンシブ方針
-
-| ブレークポイント | ナビゲーション |
-|------------------|----------------|
-| `md` 以上 (768px+) | `Header` を表示 (`hidden md:flex`) |
-| `md` 未満 | `BottomNav` を表示 (`md:hidden`) |
-| コンテンツ | `pb-24 md:pb-0` で BottomNav 分の余白を確保 |
-
----
-
-## 5. コンポーネント一覧
-
-### Header
-
-| Props | 型 | 説明 |
-|-------|----|------|
-| `onLogoClick` | `() => void` (optional) | ロゴクリック → landing へ |
-| `onMenuClick` | `() => void` | 「録音」ナビクリック |
-| `onAnalysisClick` | `() => void` | 「分析結果」ナビクリック |
-| `onSongListClick` | `() => void` | 「楽曲一覧」ナビクリック |
-| `onGuideClick` | `() => void` | 「使い方ガイド」ナビクリック |
-| `currentView` | `string` | 現在の ViewState (アクティブ表示用) |
-| `searchQuery` | `string` | 検索バーの値 |
-| `onSearchChange` | `(query: string) => void` | 検索入力ハンドラ |
-| `isAuthenticated` | `boolean` | ログイン状態 |
-| `userName` | `string \| null` | 表示名 |
-| `onLoginClick` | `() => void` | ログインボタン |
-| `onLogoutClick` | `() => void` | ログアウトボタン |
-
-### BottomNav
-
-| Props | 型 | 説明 |
-|-------|----|------|
-| `currentView` | `string` | 現在の ViewState |
-| `onViewChange` | `(view: any) => void` | 画面切替 |
-| `isAuthenticated` | `boolean` | ログイン状態 (マイページ/ログイン切替) |
-
-### Recorder
-
-| Props | 型 | 説明 |
-|-------|----|------|
-| `onResult` | `(data: any) => void` | 分析結果コールバック |
-| `initialUseDemucs` | `boolean` | true: カラオケモード (BGM 除去) |
-
-- Web Audio API で波形ビジュアライザー (Canvas) を描画
-- MediaRecorder API でブラウザ録音
-
-### KaraokeUploader
-
-- Props なし (自己完結コンポーネント)
-- 対応フォーマット: WAV, MP3, M4A, AAC, MP4, OGG, FLAC, WMA, WebM
-- 内部で `ResultView` を使用して結果を表示
-
-### ResultView
-
-| Props | 型 | 説明 |
-|-------|----|------|
-| `result` | `any` | バックエンドからの分析結果オブジェクト |
-
-表示セクション:
-1. 声質タイプ + 全体音域
-2. 地声/裏声バランスバー
-3. 地声・裏声の詳細カード
-4. 歌唱力スコア (総合・音域・安定性・表現力)
-5. 声が似ているアーティスト
-6. おすすめ曲リスト
-
----
-
-## 6. 状態管理
+## 4. 状態管理
 
 ### AuthContext (グローバル)
 
@@ -220,64 +280,100 @@ AuthProvider (App.tsx でラップ)
 - Supabase クライアントが `null` (env 未設定) の場合、認証機能は無効化されるが**アプリは正常動作する**
 - `onAuthStateChange` でリダイレクト後のセッション復帰を監視
 
-### App.tsx ローカルステート
+### AppContext（グローバル）
 
-| State | 型 | 用途 |
-|-------|----|------|
-| `view` | `ViewState` | 現在表示中の画面 |
-| `isKaraokeMode` | `boolean` | 録音モード (通常 / カラオケ) |
-| `result` | `any` | 最新の分析結果 |
-| `searchQuery` | `string` | 楽曲検索クエリ |
-| `userRange` | `UserRange \| null` | ユーザーの音域 (キーおすすめ用) |
+| State           | 型                       | 用途                       |
+| --------------- | ------------------------ | -------------------------- |
+| `result`        | `AnalysisResult \| null` | 最新の分析結果             |
+| `userRange`     | `UserRange \| null`      | ユーザー音域（キー提案用） |
+| `searchQuery`   | `string`                 | 楽曲検索クエリ             |
+| `isFromHistory` | `boolean`                | 履歴経由の結果表示フラグ   |
+
+### AnalysisContext（グローバル）
+
+| State         | 型                       | 用途             |
+| ------------- | ------------------------ | ---------------- |
+| `isAnalyzing` | `boolean`                | 解析中フラグ     |
+| `progress`    | `number`                 | 解析進捗（0-100） |
+| `stepLabel`   | `string`                 | 進捗ステップ文言 |
 
 ### localStorage キー
 
-| キー | 内容 |
-|------|------|
+| キー         | 内容                                    |
+| ------------ | --------------------------------------- |
 | `voiceRange` | `UserRange` (JSON) — 音域データの永続化 |
-| `lastResult` | 分析結果 (JSON) — 最新結果の永続化 |
 
 ---
 
-## 7. API 連携
+## 5. API 連携
 
-### フロントエンド API 関数 (`api.ts`)
+### フロントエンド API 構成
 
-| 関数 | メソッド | エンドポイント | 説明 |
-|------|----------|----------------|------|
-| `analyzeVoice(blob)` | POST | `/analyze` | マイク録音の音域分析 |
-| `analyzeKaraoke(file, filename)` | POST | `/analyze-karaoke` | カラオケ音源の音域分析 (Demucs) |
-| `getSongs(limit, offset, query, userRange)` | GET | `/songs` | 楽曲検索 + キーおすすめ |
+- 現在の API 実装は `src/api/` 配下のモジュール群に分割されている。
+- `src/api.ts` は互換性維持のための再エクスポート層で、既存 import を壊さない。
+- 以後の新規実装は `src/api/` 配下への追加を基本とする。
+
+| モジュール               | 役割                                       |
+| ------------------------ | ------------------------------------------ |
+| `api/client.ts`          | Axios 設定、10分タイムアウト、JWT 自動付与 |
+| `api/types.ts`           | `AnalysisResult` など API 契約型           |
+| `api/analysis.ts`        | 音声解析エンドポイント                     |
+| `api/songs.ts`           | 楽曲/アーティスト検索                      |
+| `api/favorites.ts`       | お気に入り操作                             |
+| `api/history.ts`         | 履歴取得/削除                              |
+| `api/integratedRange.ts` | 統合音域取得                               |
+| `api/error.ts`           | API エラーのユーザー向けメッセージ変換     |
+| `api/index.ts`           | バレル再エクスポート                       |
+
+### フロントエンド API 関数（公開API）
+
+| 関数                                        | メソッド | エンドポイント                  | 説明                            |
+| ------------------------------------------- | -------- | ------------------------------- | ------------------------------- |
+| `analyzeVoice(blob)`                        | POST     | `/analyze`                      | マイク録音の音域分析            |
+| `analyzeKaraoke(file, filename)`            | POST     | `/analyze-karaoke`              | カラオケ音源の音域分析 (Demucs) |
+| `getSongs(limit, offset, query, userRange)` | GET      | `/songs`                        | 楽曲検索 + キーおすすめ         |
+| `getArtists(limit, offset, query)`          | GET      | `/artists`                      | アーティスト一覧                |
+| `getArtistSongs(artistId, userRange)`       | GET      | `/artists/{id}/songs`           | 指定アーティストの楽曲          |
+| `getFavoriteArtists()`                      | GET      | `/favorite-artists`             | お気に入りアーティスト一覧      |
+| `addFavoriteArtist(artistId, artistName)`   | POST     | `/favorite-artists`             | お気に入りアーティスト追加      |
+| `removeFavoriteArtist(artistId)`            | DELETE   | `/favorite-artists/{artist_id}` | お気に入りアーティスト削除      |
+| `getFavorites(limit)`                       | GET      | `/favorites`                    | お気に入り曲一覧                |
+| `addFavorite(songId)`                       | POST     | `/favorites`                    | お気に入り曲追加                |
+| `removeFavorite(songId)`                    | DELETE   | `/favorites/{song_id}`          | お気に入り曲削除                |
+| `checkFavorite(songId)`                     | GET      | `/favorites/check/{song_id}`    | 楽曲のお気に入り状態確認        |
+| `getAnalysisHistory(limit)`                 | GET      | `/analysis/history`             | 分析履歴取得                    |
+| `deleteAnalysisHistory(recordId)`           | DELETE   | `/analysis/history/{record_id}` | 分析履歴削除                    |
+| `getIntegratedVocalRange(limit)`            | GET      | `/analysis/integrated-range`    | 統合音域取得                    |
 
 ### バックエンド主要エンドポイント
 
-| メソッド | パス | 認証 | 説明 |
-|----------|------|------|------|
-| POST | `/analyze` | 任意 | アカペラ音源分析 |
-| POST | `/analyze-karaoke` | 任意 | カラオケ音源分析 (Demucs BGM 除去) |
-| GET | `/songs` | 不要 | 楽曲一覧 + キーおすすめ |
-| GET | `/recommend` | 不要 | おすすめ曲取得 |
-| GET | `/similar-artists` | 不要 | 似ているアーティスト取得 |
-| POST | `/auth/signup` | 不要 | メールでユーザー登録 |
-| POST | `/auth/signin` | 不要 | メールでログイン |
-| POST | `/auth/signout` | 必須 | ログアウト |
-| POST | `/auth/refresh` | 不要 | セッションリフレッシュ |
-| POST | `/auth/reset-password` | 不要 | パスワードリセットメール送信 |
-| POST | `/auth/update-password` | 必須 | パスワード更新 |
-| GET | `/profile/me` | 必須 | プロファイル取得 |
-| PUT | `/profile/me` | 必須 | プロファイル更新 |
-| PUT | `/profile/vocal-range` | 必須 | 声域情報更新 |
-| POST | `/analysis` | 必須 | 分析履歴保存 |
-| GET | `/analysis/history` | 必須 | 分析履歴取得 |
-| POST | `/favorites` | 必須 | お気に入り追加 |
-| DELETE | `/favorites/{song_id}` | 必須 | お気に入り削除 |
-| GET | `/favorites` | 必須 | お気に入り一覧 |
-| GET | `/favorites/check/{song_id}` | 必須 | お気に入り確認 |
+| メソッド | パス                         | 認証 | 説明                               |
+| -------- | ---------------------------- | ---- | ---------------------------------- |
+| POST     | `/analyze`                   | 任意 | アカペラ音源分析                   |
+| POST     | `/analyze-karaoke`           | 任意 | カラオケ音源分析 (Demucs BGM 除去) |
+| GET      | `/songs`                     | 不要 | 楽曲一覧 + キーおすすめ            |
+| GET      | `/recommend`                 | 不要 | おすすめ曲取得                     |
+| GET      | `/similar-artists`           | 不要 | 似ているアーティスト取得           |
+| POST     | `/auth/signup`               | 不要 | メールでユーザー登録               |
+| POST     | `/auth/signin`               | 不要 | メールでログイン                   |
+| POST     | `/auth/signout`              | 必須 | ログアウト                         |
+| POST     | `/auth/refresh`              | 不要 | セッションリフレッシュ             |
+| POST     | `/auth/reset-password`       | 不要 | パスワードリセットメール送信       |
+| POST     | `/auth/update-password`      | 必須 | パスワード更新                     |
+| GET      | `/profile/me`                | 必須 | プロファイル取得                   |
+| PUT      | `/profile/me`                | 必須 | プロファイル更新                   |
+| PUT      | `/profile/vocal-range`       | 必須 | 声域情報更新                       |
+| POST     | `/analysis`                  | 必須 | 分析履歴保存                       |
+| GET      | `/analysis/history`          | 必須 | 分析履歴取得                       |
+| POST     | `/favorites`                 | 必須 | お気に入り追加                     |
+| DELETE   | `/favorites/{song_id}`       | 必須 | お気に入り削除                     |
+| GET      | `/favorites`                 | 必須 | お気に入り一覧                     |
+| GET      | `/favorites/check/{song_id}` | 必須 | お気に入り確認                     |
 
 ### 認証トークン自動付与
 
 ```typescript
-// api.ts — Axios interceptor
+// api/client.ts — Axios interceptor
 API.interceptors.request.use(async (config) => {
   if (supabase) {
     const { data } = await supabase.auth.getSession();
@@ -294,7 +390,7 @@ API.interceptors.request.use(async (config) => {
 
 ---
 
-## 8. 主要ワークフロー
+## 6. 主要ワークフロー
 
 ### 録音 → 分析フロー
 
@@ -320,10 +416,9 @@ menu で録音方法選択  →  Recorder コンポーネント表示
                          result を受信           ←  JSON レスポンス
                          │
                          setResult(data)
-                         setView("result")
-                         localStorage に保存
+                         navigate("/result")
                          │
-                         ResultView で表示
+                         ResultPage (ResultView) で表示
 ```
 
 ### 楽曲検索フロー
@@ -331,7 +426,7 @@ menu で録音方法選択  →  Recorder コンポーネント表示
 ```
 Header 検索バー入力  →  onSearchChange(query)
                          setSearchQuery(query)
-                         setView("songList")
+                         navigate("/songs")
                          │
 SongListPage           →  500ms デバウンス後
                          getSongs(500, 0, query, userRange)
@@ -359,43 +454,42 @@ SongListPage           →  500ms デバウンス後
 
 ---
 
-## 9. 主要型定義
+## 7. 主要型定義
 
-### UserRange (`api.ts`)
+### UserRange
 
 ```typescript
 interface UserRange {
-  chest_min_hz: number;    // 地声最低音 (Hz)
-  chest_max_hz: number;    // 地声最高音 (Hz)
+  chest_min_hz: number; // 地声最低音 (Hz)
+  chest_max_hz: number; // 地声最高音 (Hz)
   falsetto_max_hz?: number; // 裏声最高音 (Hz)
 }
 ```
 
-### Song (`SongListPage.tsx`)
+### Song
 
 ```typescript
 interface Song {
   id: number;
   title: string;
   artist: string;
-  lowest_note: string | null;   // "C3" 形式
+  lowest_note: string | null; // "C3" 形式
   highest_note: string | null;
   falsetto_note: string | null;
   note: string | null;
   source: string;
-  recommended_key?: number;     // キー変更推奨値 (±N)
-  fit?: string;                 // "perfect" | "good" | "ok" | "hard"
+  recommended_key?: number; // キー変更推奨値 (±N)
+  fit?: string; // "perfect" | "good" | "ok" | "hard"
 }
 ```
 
-### 分析結果オブジェクト (バックエンド返却)
+### AnalysisResult（分析結果オブジェクト）
 
 ```typescript
-// ResultView / AnalysisResultPage が受け取る result の主要フィールド
-{
+interface AnalysisResult {
   // 音域
-  overall_min: string;        // "C3"
-  overall_max: string;        // "G5"
+  overall_min: string; // "C3"
+  overall_max: string; // "G5"
   overall_min_hz: number;
   overall_max_hz: number;
   chest_min: string;
@@ -406,21 +500,21 @@ interface Song {
   falsetto_max?: string;
   falsetto_min_hz?: number;
   falsetto_max_hz?: number;
-  chest_ratio: number;        // 0-100
-  falsetto_ratio: number;     // 0-100
-  chest_count: number;        // フレーム数
+  chest_ratio: number; // 0-100
+  falsetto_ratio: number; // 0-100
+  chest_count: number; // フレーム数
   falsetto_count: number;
 
   // 声質タイプ
   voice_type: {
-    voice_type: string;       // "ハイトーン" etc.
-    range_class: string;      // "高音域" etc.
+    voice_type: string; // "ハイトーン" etc.
+    range_class: string; // "高音域" etc.
     description: string;
   };
 
   // 歌唱力分析
   singing_analysis: {
-    overall_score: number;    // 0-100
+    overall_score: number; // 0-100
     range_score: number;
     range_semitones: number;
     stability_score: number;
@@ -428,8 +522,8 @@ interface Song {
   };
 
   // おすすめ
-  recommended_songs: Array<{ id, title, artist, match_score, recommended_key, fit, ... }>;
-  similar_artists: Array<{ id, name, similarity_score, typical_lowest, typical_highest }>;
+  recommended_songs: RecommendedSong[];
+  similar_artists: SimilarArtist[];
 
   // エラー時
   error?: string;
@@ -438,7 +532,7 @@ interface Song {
 
 ---
 
-## 10. 開発環境セットアップ
+## 8. 開発環境セットアップ
 
 ### 前提条件
 
@@ -450,7 +544,7 @@ interface Song {
 ```bash
 cd frontend
 npm install
-cp .env.example .env   # Supabase の URL と Anon Key を設定
+# .env を手動作成して Supabase の URL と Anon Key を設定
 npm start              # http://localhost:3000
 ```
 
@@ -468,7 +562,7 @@ REACT_APP_SUPABASE_ANON_KEY=eyJ...
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env   # Supabase サービスキー等を設定
+# .env を手動作成して Supabase サービスキー等を設定
 uvicorn main:app --reload  # http://127.0.0.1:8000
 ```
 
@@ -479,3 +573,12 @@ SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_KEY=eyJ...           # service_role キー
 SUPABASE_JWT_SECRET=xxx
 ```
+
+---
+
+## 関連ドキュメント
+
+- [GUIDELINES.md](./GUIDELINES.md) - デザイン・コーディング規約
+- [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) - 実装詳細ガイド
+- [../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) - バックエンドアーキテクチャ
+- [../../docs/requirements/REQUIREMENTS.md](../../docs/requirements/REQUIREMENTS.md) - プロジェクト要件定義

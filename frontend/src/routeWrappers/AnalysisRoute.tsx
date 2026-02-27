@@ -1,15 +1,14 @@
 import React from "react";
-import AnalysisResultPage from "../AnalysisResultPage";
+import { useAuth } from "../contexts/AuthContext";
 import { useAppContext } from "../contexts/AppContext";
+import AnalysisResultPage from "../pages/AnalysisResultPage";
 
-const AnalysisRoute: React.FC = () => {
+export const AnalysisRoute: React.FC = () => {
+  const { isAuthenticated } = useAuth();
   const { result } = useAppContext();
-
   return (
     <div className="min-h-screen bg-transparent">
-      <AnalysisResultPage result={result} />
+      <AnalysisResultPage result={result} isAuthenticated={isAuthenticated} />
     </div>
   );
 };
-
-export default AnalysisRoute;

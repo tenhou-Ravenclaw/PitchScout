@@ -1,20 +1,28 @@
+/**
+ * 【AnalysisContext.tsx】
+ * 役割：音声解析中の「進捗状況（プログレスバー）」や「メッセージ」を管理します。
+ * 特徴：解析モード（アップロード・カラオケ録音など）に応じた疑似的なタイマー進行を制御します。
+ */
 import React, { createContext, useState, useContext, ReactNode, useRef } from 'react';
 
+/** ── 解析モードの型定義 ── */
 export type AnalysisMode = 'upload' | 'karaoke_record' | 'mic_record' | null;
 
+/** ── 共有データの設計図 ── */
 interface AnalysisContextType {
-  isAnalyzing: boolean;
+  isAnalyzing: boolean; // 解析中かどうか
   setIsAnalyzing: (isAnalyzing: boolean) => void;
-  progress: number;
+  progress: number;     // プログレスバーの数値（0～100）
   setProgress: (progress: number | ((prev: number) => number)) => void;
-  stepLabel: string;
+  stepLabel: string;    // 画面に表示する「〇〇中...」というメッセージ
   setStepLabel: (label: string) => void;
-  startAnalysisTimer: (mode: AnalysisMode) => void;
-  stopAnalysisTimer: () => void;
+  startAnalysisTimer: (mode: AnalysisMode) => void; // タイマー開始
+  stopAnalysisTimer: () => void;                    // タイマー停止
 }
 
 const AnalysisContext = createContext<AnalysisContextType | undefined>(undefined);
 
+/** ── アップロード時の進捗ステップ ── */
 const STEPS_UPLOAD = [
   { progress: 10, label: "⚡ 音源を読み込み中..." },
   { progress: 35, label: "🎤 超高速ボーカル分離中..." },
@@ -22,6 +30,7 @@ const STEPS_UPLOAD = [
   { progress: 85, label: "📊 音域を解析中..." },
 ];
 
+/** ── カラオケ録音（Demucs使用）時の進捗ステップ ── */
 const STEPS_DEMUCS = [
   { progress: 20, label: "⚡ 超高速ボーカル分離中..." },
   { progress: 50, label: "🎵 ボーカル抽出中（1〜2分）..." },
@@ -34,14 +43,17 @@ export const AnalysisProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [progress, setProgress] = useState(0);
   const [stepLabel, setStepLabel] = useState("");
   
-  // タイマーの参照を保持
+  // タイマーのIDを保持するための参照
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  /** ── 進捗タイマーの開始ロジック ──
+   * 💡 モードに合わせて一定時間ごとに進捗率（%）とメッセージを更新します。
+   */
   const startAnalysisTimer = (mode: AnalysisMode) => {
     setIsAnalyzing(true);
     let stepIndex = 0;
     
-    // 既存のタイマーが動いていればクリアする
+    // すでにタイマーが動いていればクリア
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
@@ -55,7 +67,7 @@ export const AnalysisProvider: React.FC<{ children: ReactNode }> = ({ children }
           setProgress(STEPS_UPLOAD[stepIndex].progress);
           setStepLabel(STEPS_UPLOAD[stepIndex].label);
         }
-      }, 8000);
+      }, 8000); // 8秒ごとに次のステップへ
     } else if (mode === 'karaoke_record') {
       setProgress(STEPS_DEMUCS[0].progress);
       setStepLabel(STEPS_DEMUCS[0].label);
@@ -67,18 +79,28 @@ export const AnalysisProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
       }, 8000);
     } else if (mode === 'mic_record') {
+      // マイク録音は一瞬で終わるため、固定値を表示
       setProgress(50);
       setStepLabel("解析中...");
-      // マイク録音はステップ進行なし
     }
   };
 
+  /** ── タイマーの停止 ── */
   const stopAnalysisTimer = () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
   };
+
+  React.useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <AnalysisContext.Provider value={{ 
@@ -92,6 +114,7 @@ export const AnalysisProvider: React.FC<{ children: ReactNode }> = ({ children }
   );
 };
 
+/** ── 他の部品からデータを使うためのフック ── */
 export const useAnalysis = () => {
   const context = useContext(AnalysisContext);
   if (!context) {

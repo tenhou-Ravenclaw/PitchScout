@@ -61,6 +61,10 @@ class AnalysisCreate(BaseModel):
     file_name: Optional[str] = None
 
 
+class AnalysisUpdate(BaseModel):
+    file_name: Optional[str] = Field(None, max_length=200)
+
+
 class AnalysisResponse(BaseModel):
     id: str
     user_id: str

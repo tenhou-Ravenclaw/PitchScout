@@ -1,18 +1,15 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import FavoritesPage from "../FavoritesPage";
-import { useAppContext } from "../contexts/AppContext";
+import { useAuth } from "../contexts/AuthContext";
+import FavoritesPage from "../pages/FavoritesPage";
 
-const FavoritesRoute: React.FC = () => {
+export const FavoritesRoute: React.FC = () => {
   const navigate = useNavigate();
-  const { userRange } = useAppContext();
-
+  const { isAuthenticated } = useAuth();
   return (
     <FavoritesPage
-      userRange={userRange}
+      isAuthenticated={isAuthenticated}
       onLoginClick={() => navigate("/login")}
     />
   );
 };
-
-export default FavoritesRoute;

@@ -26,6 +26,7 @@ from database import get_all_songs, search_songs, count_songs, init_db, get_arti
 from database_supabase import (
     get_user_profile, update_user_profile, update_vocal_range,
     create_analysis_record, get_analysis_history,delete_analysis_record,
+    update_analysis_record,
     get_integrated_vocal_range,
     add_favorite_song, remove_favorite_song, get_favorite_songs, is_favorite,
     # お気に入りアーティスト
@@ -45,7 +46,7 @@ from models import (
     SignUpRequest, SignInRequest, RefreshTokenRequest,
     PasswordResetRequest, PasswordUpdateRequest,
     UserProfileUpdate, VocalRangeUpdate,
-    AnalysisCreate, FavoriteSongAdd,
+    AnalysisCreate, AnalysisUpdate, FavoriteSongAdd,
     FavoriteArtistAdd,
 )
 
@@ -188,6 +189,15 @@ def delete_my_analysis_history(record_id: str, user: dict = Depends(get_current_
     if success:
         return {"message": "履歴を削除しました"}
     raise HTTPException(status_code=400, detail="履歴の削除に失敗しました")
+
+
+@app.patch("/analysis/history/{record_id}")
+def update_my_analysis_history(record_id: str, data: AnalysisUpdate, user: dict = Depends(get_current_user)):
+    """自分の分析履歴を更新 (file_nameなど)"""
+    result = update_analysis_record(user["id"], record_id, data.model_dump(exclude_none=True))
+    if result:
+        return result
+    raise HTTPException(status_code=400, detail="履歴の更新に失敗しました")
 
 
 # ============================================================
