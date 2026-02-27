@@ -18,8 +18,14 @@ function AppRoutes() {
 }
 
 export default function App() {
-  // アプリ起動時のアニメーション（スプラッシュ）を表示するかどうかの状態
-  const [showSplash, setShowSplash] = useState(true);
+  // アプリ起動時のアニメーション（スプラッシュ）を表示するかどうかの状態。
+  // useState の遅延初期化を利用し、AppRoutes が初回レンダリングされる前に
+  // URL を "/" へ同期リセットする。
+  // これにより、スプラッシュの裏でランディングページを事前描画できる。
+  const [showSplash, setShowSplash] = useState(() => {
+    window.history.replaceState(null, "", "/");
+    return true;
+  });
 
   // アニメーションが終わったら非表示にする関数
   const handleSplashEnd = () => {
@@ -33,10 +39,10 @@ export default function App() {
       <AuthProvider>      {/* ログイン情報を共有 */}
         <AnalysisProvider> {/* 解析の状態を共有 */}
           <AppProvider>      {/* アプリ全体のデータを共有 */}
-            
+
             {/* 起動時アニメーションの表示 */}
             {showSplash && <LogoSplash onAnimationEnd={handleSplashEnd} />}
-            
+
             {/* 現在のURLに合わせた画面（ページ）の表示 */}
             <AppRoutes />
 

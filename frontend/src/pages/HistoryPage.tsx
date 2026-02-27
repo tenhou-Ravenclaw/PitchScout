@@ -42,7 +42,8 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   const [swipedId, setSwipedId] = useState<string | null>(null);       // 現在スワイプ中のアイテムID
   const [deletingId, setDeletingId] = useState<string | null>(null);   // 現在削除アニメーション中のID
   const [editingId, setEditingId] = useState<string | null>(null);     // 編集中のアイテムID
-  const [editValue, setEditValue] = useState<string>("");              // 編集中のファイル名
+  const [editValue, setEditValue] = useState<string>("");              // 編集中のファイル名（拡張子を除いた部分）
+  const [editExt, setEditExt] = useState<string>("");                  // 編集中のファイルの拡張子（変更不可）
   const [swipeOffset, setSwipeOffset] = useState<number>(0);           // スワイプの移動距離（正：左スワイプ＝削除、負：右スワイプ＝編集）
   const { toastMessage, showToast, hideToast } = useToast();
   const swipeStates = useRef<Record<string, SwipeState>>({});         // 各アイテムのスワイプ状態を保持
@@ -80,11 +81,25 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
     await performDelete(recordId);
   };
 
+  /**
+   * ファイル名を basename と拡張子に分割します。
+   * "recording.mp3" → { baseName: "recording", ext: ".mp3" }
+   * "名称未設定"    → { baseName: "名称未設定", ext: "" }
+   */
+  const splitFileName = (fileName: string): { baseName: string; ext: string } => {
+    const dotIndex = fileName.lastIndexOf(".");
+    return dotIndex > 0
+      ? { baseName: fileName.slice(0, dotIndex), ext: fileName.slice(dotIndex) }
+      : { baseName: fileName, ext: "" };
+  };
+
   /** ── 編集開始 ── */
   const handleEdit = (e: React.MouseEvent, record: AnalysisHistoryRecord) => {
     e.stopPropagation();
+    const { baseName, ext } = splitFileName(record.file_name || "");
     setEditingId(record.id);
-    setEditValue(record.file_name || "");
+    setEditValue(baseName);
+    setEditExt(ext);
     setSwipedId(null);
     setSwipeOffset(0);
   };
@@ -93,7 +108,8 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   const saveEdit = async (e: React.FormEvent | React.MouseEvent, recordId: string) => {
     e.stopPropagation();
     try {
-      const updated = await collectionApi.analysisHistory.update(recordId, { file_name: editValue });
+      // 入力した basename に保持していた拡張子を結合して保存する
+      const updated = await collectionApi.analysisHistory.update(recordId, { file_name: editValue + editExt });
       setHistory(prev => prev.map(r => r.id === recordId ? { ...r, file_name: updated.file_name } : r));
       setEditingId(null);
       showToast("ファイル名を更新しました。");
@@ -173,8 +189,10 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
       // 右に深くスワイプ：編集モード
       const record = history.find(r => r.id === recordId);
       if (record) {
+        const { baseName, ext } = splitFileName(record.file_name || "");
         setEditingId(recordId);
-        setEditValue(record.file_name || "");
+        setEditValue(baseName);
+        setEditExt(ext);
       }
       setSwipedId(null);
       setSwipeOffset(0);
@@ -290,14 +308,23 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
                   
                   {editingId === record.id ? (
                     <div className="flex items-center gap-2 mt-1" onClick={e => e.stopPropagation()}>
-                      <input
-                        autoFocus
-                        type="text"
-                        value={editValue}
-                        onChange={e => setEditValue(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && saveEdit(e, record.id)}
-                        className="bg-slate-900 border border-blue-500 text-white text-sm px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 w-full max-w-[200px]"
-                      />
+                      {/* 拡張子より前の部分のみ編集可能 */}
+                      <div className="flex items-center border border-blue-500 rounded overflow-hidden bg-slate-900 focus-within:ring-1 focus-within:ring-blue-400">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={editValue}
+                          onChange={e => setEditValue(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && saveEdit(e, record.id)}
+                          className="bg-transparent text-white text-sm px-2 py-1 focus:outline-none w-full max-w-[150px]"
+                        />
+                        {/* 拡張子は変更不可として固定表示 */}
+                        {editExt && (
+                          <span className="text-slate-400 text-sm px-2 py-1 border-l border-slate-600 bg-slate-800 select-none">
+                            {editExt}
+                          </span>
+                        )}
+                      </div>
                       <button onClick={e => saveEdit(e, record.id)} className="p-1 text-green-400 hover:text-green-300">
                         <CheckIcon className="w-5 h-5" />
                       </button>
