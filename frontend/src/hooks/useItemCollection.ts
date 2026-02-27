@@ -103,7 +103,8 @@ export function useItemCollection(
       }
 
       // 現在の状態を Ref から取得（最新の状態を反映）
-      const wasIncluded = (idsRef.current as any[]).includes(id);
+      // number[] | string[] の共通型 (number | string)[] にキャストして includes を呼ぶ
+      const wasIncluded = (idsRef.current as (number | string)[]).includes(id);
 
       // オプティミスティック更新
       if (type === "favoriteSong" || type === "favoriteArtist") {

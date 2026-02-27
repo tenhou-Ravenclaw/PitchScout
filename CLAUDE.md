@@ -8,7 +8,7 @@ Cursor: `.cursor/rules/` / Copilot: `.github/copilot-instructions.md` にも同�
 ### 必須 (MUST)
 - **MUST**: 新機能追加前に影響範囲を全て調査する（コンポーネント、API、型定義、Context、設定）
 - **MUST**: 実装前に設計書を参照する（`docs/requirements/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`）
-- **MUST**: フロントエンドの API 通信は `api.ts` の axios インスタンスのみ使う
+- **MUST**: フロントエンドの API 通信は `api/client.ts` の axios インスタンス（`API`）のみ使う
 - **MUST**: `supabaseClient.ts` の null ガード（`supabase === null`）を維持する
 - **MUST**: 日本語でドキュメンテーションコメントを書く（Python docstring / TypeScript JSDoc）
 - **MUST**: 全関数に型を付ける（Python 型ヒント / TypeScript は `any` 禁止）
