@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCallback } from "react";
 import { UserRange } from "../api";
 import { Artist, Song } from "../api";
@@ -35,8 +35,25 @@ export const useSongListData = ({
   notifyError,
   onSearchChange,
 }: UseSongListDataParams) => {
+  // ── 状態管理 (State) ──
   const [activeQuery, setActiveQuery] = useState(initialQuery);
   const [searchInput, setSearchInput] = useState(initialQuery);
+  const [pageInput, setPageInput] = useState("1");
+  const [searchPageInput, setSearchPageInput] = useState("1");
+  const [selectedArtist, setSelectedArtist] = useState<Artist | null>(null);
+  const [artistSongs, setArtistSongs] = useState<Song[]>([]);
+  const [songsLoading, setSongsLoading] = useState(false);
+
+  // 外部（グローバル検索バーなど）からのクエリ変更を同期する
+  useEffect(() => {
+    if (initialQuery !== activeQuery) {
+      setActiveQuery(initialQuery);
+      setSearchInput(initialQuery);
+      if (initialQuery) {
+        setSelectedArtist(null); // 検索が実行されたらアーティスト選択を解除して結果を表示
+      }
+    }
+  }, [initialQuery, activeQuery]);
 
   // アーティスト一覧＋ページング
   const {
@@ -71,13 +88,6 @@ export const useSongListData = ({
     notifyError
   );
 
-  // サブhookで管理しきれない値・ロジックを追加
-  const [pageInput, setPageInput] = useState("1");
-  const [searchPageInput, setSearchPageInput] = useState("1");
-  const [selectedArtist, setSelectedArtist] = useState<Artist | null>(null);
-  const [artistSongs, setArtistSongs] = useState<Song[]>([]);
-  const [songsLoading, setSongsLoading] = useState(false);
-
   // アーティスト選択・楽曲取得
   const handleSelectArtist = useCallback(async (artist: Artist) => {
     setSelectedArtist(artist);
@@ -100,6 +110,7 @@ export const useSongListData = ({
   // 検索フォーム送信
   const handleSearchSubmit = useCallback((query: string) => {
     setActiveQuery(query);
+    setSelectedArtist(null); // アーティスト選択状態を解除して検索結果を表示
     if (onSearchChange) {
       onSearchChange(query);
     }
@@ -183,4 +194,3 @@ export const useSongListData = ({
     handleIndexJump,
   };
 };
-

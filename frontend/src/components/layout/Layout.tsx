@@ -31,12 +31,23 @@ const Layout: React.FC = () => {
 
   /** ── 検索実行時の処理 ──
    * ヘッダーの検索窓で Enter を押した際、検索ワードをセットして検索ページへ移動させます。
+   *
+   * `/songs?q=...` の URL パラメータに検索クエリを乗せることで、
+   * マウント時に確実にクエリを取得できる（React state の更新タイミングに依存しない）。
+   * すでに /songs にいる場合は replace で履歴スタックを汚さない。
    */
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    if (query && location.pathname !== "/songs") {
-      navigate("/songs");
+    if (query) {
+      // クエリあり: /songs?q=... へ遷移（すでに /songs なら replace で履歴を汚さない）
+      navigate(`/songs?q=${encodeURIComponent(query)}`, {
+        replace: location.pathname === "/songs",
+      });
+    } else if (location.pathname === "/songs") {
+      // /songs 上でクリアした場合は URL パラメータを除去してアーティスト一覧へ
+      navigate("/songs", { replace: true });
     }
+    // 他ページでクリアした場合は遷移しない（context リセットのみ）
   };
 
   return (

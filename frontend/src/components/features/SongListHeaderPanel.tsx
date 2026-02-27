@@ -25,6 +25,8 @@ interface SongListHeaderPanelProps {
   userRange?: UserRange | null;
   /** 五十音インデックス押下時の処理 */
   onIndexClick: (char: string) => Promise<void>;
+  /** タイトルとインデックスを非表示にするか */
+  hideTitleArea?: boolean;
 }
 
 /**
@@ -37,6 +39,7 @@ const SongListHeaderPanel: React.FC<SongListHeaderPanelProps> = ({
   activeQuery,
   userRange,
   onIndexClick,
+  hideTitleArea = false,
 }) => {
   return (
     <div className="w-full max-w-3xl flex flex-col mb-4 gap-6">
@@ -46,22 +49,25 @@ const SongListHeaderPanel: React.FC<SongListHeaderPanelProps> = ({
         onSubmit={onSearchSubmit}
         placeholder="楽曲名・アーティスト名で検索..."
       />
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl sm:text-4xl font-black italic title-gradient-cyan-fuchsia mb-2 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
-            {activeQuery ? "楽曲検索結果" : "ARTISTS"}
-          </h1>
-          <p className="text-xs text-slate-400 font-bold tracking-wide">
-            {activeQuery
-              ? `"${activeQuery}" の検索結果`
-              : (userRange ? "" : "録音すると、キーおすすめが表示されます")}
-          </p>
+      
+      {!hideTitleArea && (
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-black italic title-gradient-cyan-fuchsia mb-2 drop-shadow-[0_0_10px_rgba(34,211,238,0.3)] tracking-wider">
+              {activeQuery ? "楽曲検索結果" : "ARTISTS"}
+            </h1>
+            <p className="text-xs text-slate-400 font-bold tracking-wide">
+              {activeQuery
+                ? `"${activeQuery}" の検索結果`
+                : (userRange ? "" : "録音すると、キーおすすめが表示されます")}
+            </p>
+          </div>
+          <SyllableIndex
+            onIndexClick={onIndexClick}
+            visible={!activeQuery}
+          />
         </div>
-        <SyllableIndex
-          onIndexClick={onIndexClick}
-          visible={!activeQuery}
-        />
-      </div>
+      )}
     </div>
   );
 };

@@ -71,6 +71,8 @@ interface SongListMainContentProps {
   isFavoriteSong: (id: number) => boolean;
   /** 楽曲お気に入り切替中判定 */
   isTogglingSong: (id: number) => boolean;
+  /** ヘッダーを非表示にする（親要素で表示する場合など） */
+  hideHeader?: boolean;
 }
 
 /**
@@ -146,17 +148,20 @@ const SongListMainContent: React.FC<SongListMainContentProps> = ({
   onToggleFavoriteSong,
   isFavoriteSong,
   isTogglingSong,
+  hideHeader,
 }) => {
   return (
     <>
-      <SongListHeaderPanel
-        searchInput={searchInput}
-        onSearchInputChange={onSearchInputChange}
-        onSearchSubmit={onSearchSubmit}
-        activeQuery={activeQuery}
-        userRange={userRange}
-        onIndexClick={onIndexClick}
-      />
+      {!hideHeader && (
+        <SongListHeaderPanel
+          searchInput={searchInput}
+          onSearchInputChange={onSearchInputChange}
+          onSearchSubmit={onSearchSubmit}
+          activeQuery={activeQuery}
+          userRange={userRange}
+          onIndexClick={onIndexClick}
+        />
+      )}
 
       {error && <ErrorBanner message={error} className="max-w-3xl mb-4" />}
 

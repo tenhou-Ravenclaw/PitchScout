@@ -17,6 +17,7 @@ import { useSongListData } from '../hooks/useSongListData';
 import Toast from '../components/ui/Toast';
 import SongListArtistSongsView from '../components/features/SongListArtistSongsView';
 import SongListMainContent from '../components/features/SongListMainContent';
+import SongListHeaderPanel from '../components/features/SongListHeaderPanel';
 
 /**
  * ── 以下、定数とヘルパーは constants/songListConstants.ts に移動しました ──
@@ -72,55 +73,67 @@ const SongListPage: React.FC<SongListPageProps> = ({ searchQuery = "", userRange
     onSearchChange,
   });
 
-  // ── 描画：アーティスト別の楽曲一覧 ──
-  if (selectedArtist) {
-    return (
-      <SongListArtistSongsView
-        artistName={selectedArtist.name}
-        artistSongs={artistSongs}
-        songsLoading={songsLoading}
-        userRange={userRange}
-        onBack={closeSelectedArtist}
-        onToggleFavoriteSong={toggleFavoriteSong}
-        isFavoriteSong={isFavoriteSong}
-        isToggling={isToggling}
-      />
-    );
-  }
 
   // ── 描画：メインの検索・一覧画面 ──
   return (
     <div className="flex flex-col items-center min-h-[calc(100vh-80px)] bg-transparent p-4 sm:p-8">
       {toastMessage && <Toast message={toastMessage} onClose={hideToast} />}
 
-      <SongListMainContent
-        searchInput={searchInput}
-        onSearchInputChange={setSearchInput}
-        onSearchSubmit={handleSearchSubmit}
-        activeQuery={activeQuery}
-        userRange={userRange}
-        onIndexClick={handleIndexJump}
-        error={error}
-        searchSongs={searchSongs}
-        searchPage={searchPage}
-        searchPageInput={searchPageInput}
-        onSearchPageInputChange={setSearchPageInput}
-        searchLoading={searchLoading}
-        totalSearchPages={totalSearchPages}
-        artists={artists}
-        artistPage={artistPage}
-        pageInput={pageInput}
-        onPageInputChange={setPageInput}
-        loading={loading}
-        totalPages={totalPages}
-        onPaginate={handlePaginate}
-        onSelectArtist={handleSelectArtist}
-        onToggleFavoriteArtist={toggleFavoriteArtist}
-        isFavoriteArtist={isFavorite}
-        onToggleFavoriteSong={toggleFavoriteSong}
-        isFavoriteSong={isFavoriteSong}
-        isTogglingSong={isToggling}
-      />
+      {/* 描画：アーティスト別の楽曲一覧 or メインコンテンツ */}
+      {selectedArtist ? (
+        <SongListArtistSongsView
+          artistName={selectedArtist.name}
+          artistSongs={artistSongs}
+          songsLoading={songsLoading}
+          userRange={userRange}
+          onBack={closeSelectedArtist}
+          onToggleFavoriteSong={toggleFavoriteSong}
+          isFavoriteSong={isFavoriteSong}
+          isToggling={isToggling}
+        />
+      ) : (
+        <>
+          {/* ヘッダーパネル（検索バー、タイトル、インデックス）はアーティスト未選択時のみ表示する */}
+          <SongListHeaderPanel
+            searchInput={searchInput}
+            onSearchInputChange={setSearchInput}
+            onSearchSubmit={handleSearchSubmit}
+            activeQuery={activeQuery}
+            userRange={userRange}
+            onIndexClick={handleIndexJump}
+          />
+
+          <SongListMainContent
+            searchInput={searchInput}
+            onSearchInputChange={setSearchInput}
+            onSearchSubmit={handleSearchSubmit}
+            activeQuery={activeQuery}
+            userRange={userRange}
+            onIndexClick={handleIndexJump}
+            error={error}
+            searchSongs={searchSongs}
+            searchPage={searchPage}
+            searchPageInput={searchPageInput}
+            onSearchPageInputChange={setSearchPageInput}
+            searchLoading={searchLoading}
+            totalSearchPages={totalSearchPages}
+            artists={artists}
+            artistPage={artistPage}
+            pageInput={pageInput}
+            onPageInputChange={setPageInput}
+            loading={loading}
+            totalPages={totalPages}
+            onPaginate={handlePaginate}
+            onSelectArtist={handleSelectArtist}
+            onToggleFavoriteArtist={toggleFavoriteArtist}
+            isFavoriteArtist={isFavorite}
+            onToggleFavoriteSong={toggleFavoriteSong}
+            isFavoriteSong={isFavoriteSong}
+            isTogglingSong={isToggling}
+            hideHeader={true} // SongListMainContent 側のヘッダーを非表示にする
+          />
+        </>
+      )}
     </div>
   );
 };
