@@ -24,6 +24,7 @@ export interface CollectionApiMap {
   analysisHistory: {
     get: (limit?: number) => Promise<AnalysisHistoryRecord[]>;
     remove: (recordId: string) => Promise<{ message: string }>;
+    update: (recordId: string, data: { file_name: string }) => Promise<AnalysisHistoryRecord>;
   };
 }
 
@@ -71,6 +72,10 @@ export const collectionApi: CollectionApiMap = {
     },
     remove: async (recordId: string): Promise<{ message: string }> => {
       const res = await API.delete<{ message: string }>(`/analysis/history/${recordId}`);
+      return res.data;
+    },
+    update: async (recordId: string, data: { file_name: string }): Promise<AnalysisHistoryRecord> => {
+      const res = await API.patch<AnalysisHistoryRecord>(`/analysis/history/${recordId}`, data);
       return res.data;
     },
   },

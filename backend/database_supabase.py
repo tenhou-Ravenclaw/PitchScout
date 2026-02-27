@@ -337,6 +337,17 @@ def delete_analysis_record(user_id: str, record_id: str) -> bool:
         print(f"履歴削除エラー: {e}")
         return False
 
+def update_analysis_record(user_id: str, record_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """分析履歴を更新 (file_nameなど)"""
+    try:
+        response = supabase.table("analysis_history").update(data).eq(
+            "id", record_id
+        ).eq("user_id", user_id).execute()
+        return response.data[0] if response.data else None
+    except Exception as e:
+        print(f"履歴更新エラー: {e}")
+        return None
+
 
 def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[str, Any]]:
     """
