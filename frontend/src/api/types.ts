@@ -1,3 +1,4 @@
+
 /**
  * API でやり取りするデータ型をまとめたファイル
  */
@@ -16,6 +17,8 @@ export interface VoiceType {
   description?: string;
 }
 
+export type KeyFit = "perfect" | "good" | "ok" | "hard" | undefined;
+
 export interface RecommendedSong {
   id: number;
   title: string;
@@ -24,7 +27,7 @@ export interface RecommendedSong {
   highest_note: string | null;
   match_score: number;
   recommended_key?: number;
-  fit?: string;
+  fit?: KeyFit;
 }
 
 export interface SimilarArtist {
@@ -48,7 +51,7 @@ export interface Song {
   note: string | null;
   source: string;
   recommended_key?: number;
-  fit?: string;
+  fit?: KeyFit;
 }
 
 export interface FavoriteArtist {
@@ -132,19 +135,7 @@ export interface AnalysisHistoryRecord {
   result_json?: AnalysisResult | null;
 }
 
-export interface IntegratedVocalRange {
-  overall_min?: string;
-  overall_max?: string;
-  overall_min_hz?: number;
-  overall_max_hz?: number;
-  chest_min?: string;
-  chest_max?: string;
-  chest_min_hz?: number;
-  chest_max_hz?: number;
-  falsetto_max?: string;
-  falsetto_max_hz?: number;
-  chest_ratio?: number;
-  falsetto_ratio?: number;
+export interface IntegratedVocalRange extends Partial<AnalysisResult> {
   data_count: number;
   limit: number;
   singing_analysis?: SingingAnalysis;

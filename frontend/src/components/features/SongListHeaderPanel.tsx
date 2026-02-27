@@ -24,7 +24,7 @@ interface SongListHeaderPanelProps {
   /** ユーザー音域 */
   userRange?: UserRange | null;
   /** 五十音インデックス押下時の処理 */
-  onIndexClick: (char: string) => void;
+  onIndexClick: (char: string) => Promise<void>;
 }
 
 /**

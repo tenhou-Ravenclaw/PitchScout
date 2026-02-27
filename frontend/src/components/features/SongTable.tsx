@@ -92,7 +92,12 @@ const SongTable: React.FC<SongTableProps> = ({
                 {userRange && (
                   <td className="py-3 px-4 text-center">
                     {song.recommended_key !== undefined
-                      ? keyBadge(song.recommended_key, song.fit)
+                      ? keyBadge(
+                          song.recommended_key,
+                          ["perfect", "good", "ok", "hard"].includes(song.fit ?? "")
+                            ? (song.fit as import("../../api/types").KeyFit)
+                            : undefined
+                        )
                       : <span className="text-slate-600">-</span>}
                   </td>
                 )}

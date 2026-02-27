@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from "react";
+import { RadarChart } from "../components/ui/RadarChart";
 import {
   AnalysisResult,
   IntegratedVocalRange,
@@ -40,41 +41,6 @@ const hasAnalysisError = (
 /* ───── 歌唱力レーダーチャート (SVG) ───── 
  * 音域、安定性、表現力などのスコアを多角形で視覚化します。
  */
-const RadarChart: React.FC<{ data: { label: string; value: number }[] }> = ({ data }) => {
-  const cx = 120, cy = 120, r = 90; // チャートの中心座標と最大半径
-  const n = data.length;
-  if (n === 0) return null;
-
-  // 各頂点の角度を計算
-  const angles = data.map((_, i) => (Math.PI * 2 * i) / n - Math.PI / 2);
-  
-  // スコア（0〜100）に基づいた描画用ポイントを算出
-  const points = data.map((d, i) => {
-    const ratio = d.value / 100;
-    const x = cx + r * ratio * Math.cos(angles[i]);
-    const y = cy + r * ratio * Math.sin(angles[i]);
-    return `${x},${y}`;
-  }).join(" ");
-
-  return (
-    <svg viewBox="0 0 240 240" className="w-full h-full max-w-[220px]">
-      {/* 背景の同心円（33%, 66%, 100%のガイドライン） */}
-      {[0.33, 0.66, 1.0].map((level, li) => (
-        <polygon key={li} points={angles.map(a => `${cx + r * level * Math.cos(a)},${cy + r * level * Math.sin(a)}`).join(" ")} fill="none" stroke="#334155" strokeWidth="1" />
-      ))}
-      {/* 中心から伸びる軸線 */}
-      {angles.map((a, i) => <line key={i} x1={cx} y1={cy} x2={cx + r * Math.cos(a)} y2={cy + r * Math.sin(a)} stroke="#334155" strokeWidth="1" />)}
-      {/* 実際のスコアエリア（半透明の紫） */}
-      <polygon points={points} fill="rgba(99, 102, 241, 0.2)" stroke="#6366f1" strokeWidth="2" />
-      {/* 項目名のラベル */}
-      {data.map((d, i) => (
-        <text key={i} x={cx + (r + 20) * Math.cos(angles[i])} y={cy + (r + 20) * Math.sin(angles[i])} textAnchor="middle" dominantBaseline="central" className="fill-slate-400 text-[10px] font-bold">
-          {d.label}
-        </text>
-      ))}
-    </svg>
-  );
-};
 
 /* ════════════════════════════════════════════════
    メインコンポーネント本体

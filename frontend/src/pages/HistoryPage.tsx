@@ -6,12 +6,7 @@
  */
 import React, { useEffect, useState, useRef } from "react";
 // API通信用の関数と型定義をインポート
-import {
-  getAnalysisHistory,
-  AnalysisHistoryRecord,
-  deleteAnalysisHistory,
-  toUserMessage,
-} from "../api";
+import { collectionApi, AnalysisHistoryRecord, toUserMessage } from "../api";
 import { useToast } from "../hooks/useToast";
 import ErrorBanner from "../components/ui/ErrorBanner";
 import LoadingState from "../components/ui/LoadingState";
@@ -61,7 +56,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
     const fetchHistory = async () => {
       try {
-        const data = await getAnalysisHistory();
+        const data = await collectionApi.analysisHistory.get();
         setHistory(data);
       } catch (err: unknown) {
         setError("履歴の取得に失敗しました。");
@@ -94,7 +89,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
     try {
       // サーバー側のデータを削除
-      await deleteAnalysisHistory(recordId);
+      await collectionApi.analysisHistory.remove(recordId);
       // 画面上のリストからも消す
       setHistory((prev) => prev.filter((record) => record.id !== recordId));
     } catch (err) {

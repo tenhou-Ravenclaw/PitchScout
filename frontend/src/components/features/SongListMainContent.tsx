@@ -12,70 +12,65 @@ import Pagination from "../ui/Pagination";
 import ArtistListPanel from "./ArtistListPanel";
 import SongListHeaderPanel from "./SongListHeaderPanel";
 import SongTable from "./SongTable";
-import { ARTISTS_PER_PAGE, SONGS_PER_PAGE } from "../../constants/songListConstants";
+import { SONGS_PER_PAGE } from "../../constants/songListConstants";
 import { PaginationAction } from "../../hooks/useSongListData";
 
 /**
  * SongListMainContent が受け取るプロパティ
  */
 interface SongListMainContentProps {
-  /** 検索入力の現在値 */
+  /** 検索入力値 */
   searchInput: string;
-  /** 検索入力変更時の処理 */
+  /** 検索入力変更 */
   onSearchInputChange: (value: string) => void;
-  /** 検索確定時の処理 */
+  /** 検索実行 */
   onSearchSubmit: (query: string) => void;
-  /** 現在のアクティブ検索クエリ */
+  /** 現在の検索クエリ */
   activeQuery: string;
-  /** ユーザー音域 */
+  /** ユーザー声域 */
   userRange?: UserRange | null;
-  /** 五十音インデックス押下時の処理 */
-  onIndexClick: (char: string) => void;
-  /** 画面内エラーメッセージ */
+  /** インデックスジャンプ */
+  onIndexClick: (char: string) => Promise<void>;
+  /** エラー文 */
   error: string | null;
-
-  /** 検索結果一覧 */
+  /** 検索結果楽曲 */
   searchSongs: Song[];
-  /** 検索結果ページ番号 */
+  /** 検索ページ番号 */
   searchPage: number;
-  /** 検索結果ページ入力値 */
+  /** 検索ページ入力値 */
   searchPageInput: string;
-  /** 検索結果ページ入力更新 */
+  /** 検索ページ入力変更 */
   onSearchPageInputChange: (value: string) => void;
-  /** 検索結果ローディング状態 */
+  /** 検索中フラグ */
   searchLoading: boolean;
-  /** 検索結果総ページ数 */
+  /** 検索ページ総数 */
   totalSearchPages: number;
-
   /** アーティスト一覧 */
   artists: Artist[];
   /** アーティストページ番号 */
   artistPage: number;
-  /** アーティストページ入力値 */
+  /** ページ入力値 */
   pageInput: string;
-  /** アーティストページ入力更新 */
+  /** ページ入力変更 */
   onPageInputChange: (value: string) => void;
-  /** アーティスト一覧ローディング状態 */
+  /** ローディングフラグ */
   loading: boolean;
-  /** アーティスト総ページ数 */
+  /** ページ総数 */
   totalPages: number;
-
   /** ページング操作 */
   onPaginate: (action: PaginationAction) => void;
-
   /** アーティスト選択 */
   onSelectArtist: (artist: Artist) => void;
-  /** アーティストお気に入りトグル */
-  onToggleFavoriteArtist: (artistId: number, artistName: string) => void;
-  /** アーティストお気に入り判定 */
-  isFavoriteArtist: (artistId: number) => boolean;
-
-  /** 楽曲お気に入りトグル */
-  onToggleFavoriteSong: (songId: number) => void;
-  /** 楽曲お気に入り判定 */
-  isFavoriteSong: (songId: number) => boolean;
-  /** 楽曲お気に入り処理中判定 */
-  isTogglingSong: (songId: number) => boolean;
+  /** お気に入りアーティスト切替 */
+  onToggleFavoriteArtist: (artistId: number, artistName: string) => Promise<void>;
+  /** お気に入りアーティスト判定 */
+  isFavoriteArtist: (artistId: number, artistName: string) => boolean;
+  /** お気に入り楽曲切替 */
+  onToggleFavoriteSong: (id: number) => void;
+  /** お気に入り楽曲判定 */
+  isFavoriteSong: (id: number) => boolean;
+  /** 楽曲お気に入り切替中判定 */
+  isTogglingSong: (id: number) => boolean;
 }
 
 /**
@@ -202,7 +197,7 @@ const SongListMainContent: React.FC<SongListMainContentProps> = ({
             artists={artists}
             onSelectArtist={onSelectArtist}
             onToggleFavoriteArtist={onToggleFavoriteArtist}
-            isFavorite={isFavoriteArtist}
+            isFavorite={artistId => isFavoriteArtist(artistId, artists.find(a => a.id === artistId)?.name ?? "")}
           />
 
           {!loading && (
