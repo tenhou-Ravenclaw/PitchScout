@@ -26,10 +26,11 @@ import { useItemCollection } from "./useItemCollection";
  * ```
  */
 export const useFavoriteSongs = (onLoginRequired?: () => void) => {
-  const { toggle, isIncluded, isToggling } = useItemCollection("favoriteSong", onLoginRequired);
+  const { toggle, isIncluded, isToggling, loading } = useItemCollection("favoriteSong", onLoginRequired);
   return {
     toggleFavoriteSong: toggle,
     isFavoriteSong: isIncluded,
     isToggling,
+    isLoading: loading,
   };
 };

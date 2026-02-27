@@ -51,7 +51,10 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
     }, [isAuthenticated]);
 
     // useFavoriteSongs hookでお気に入り削除・オプティミスティック更新を管理
-    const { toggleFavoriteSong, isFavoriteSong, isToggling } = useFavoriteSongs(onLoginClick);
+    const { toggleFavoriteSong, isFavoriteSong, isToggling, isLoading: isCollLoading } = useFavoriteSongs(onLoginClick);
+
+    // フィルタリング後のリスト（削除済みのものを除外）
+    const visibleFavorites = favorites.filter(fav => isFavoriteSong(fav.song_id));
 
     /** ── 表示判定：未ログインの場合 ── */
     if (!isAuthenticated) {
@@ -66,7 +69,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
     }
 
     /** ── 表示判定：読み込み中の場合 ── */
-    if (loading) {
+    if (loading || isCollLoading) {
         return (
             <PageStateContainer>
                 <LoadingState className="text-slate-500" />
@@ -84,7 +87,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
     }
 
     /** ── 表示判定：0件の場合 ── */
-    if (favorites.length === 0) {
+    if (visibleFavorites.length === 0) {
         return (
             <PageStateContainer>
                 <div className="text-center">
@@ -102,7 +105,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
     return (
         <div className="flex flex-col items-center min-h-[calc(100vh-80px)] bg-transparent p-4 sm:p-8">
             <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2 drop-shadow-md">お気に入り</h1>
-            <p className="text-sm text-slate-400 mb-6">{favorites.length}曲</p>
+            <p className="text-sm text-slate-400 mb-6">{visibleFavorites.length}曲</p>
 
             <div className="table-container">
                 <table className="w-full text-left">
@@ -118,7 +121,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
                         </tr>
                     </thead>
                     <tbody>
-                        {favorites.filter(fav => isFavoriteSong(fav.song_id)).map((fav, i) => (
+                        {visibleFavorites.map((fav, i) => (
                             <tr key={fav.favorite_id} className="table-row group">
                                 <td className="py-3 px-5 text-slate-500 text-xs">{i + 1}</td>
                                 <td className="py-3 px-4 text-slate-200 font-medium group-hover:text-white transition-colors">{fav.title}</td>

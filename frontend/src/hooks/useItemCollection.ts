@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { collectionApi, CollectionType } from "../api/collectionApi";
 import type { FavoriteSong, FavoriteArtist, AnalysisHistoryRecord } from "../api/types";
 import { toUserMessage } from "../api/error";
@@ -52,6 +52,12 @@ export function useItemCollection(
   const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
 
+  // 最新の ids を常に参照するための Ref（stale closure 対策）
+  const idsRef = useRef(ids);
+  useEffect(() => {
+    idsRef.current = ids;
+  }, [ids]);
+
   /**
    * 初回マウント時・認証状態変化時にIDリストをサーバーと同期します。
    * 楽曲・アーティストお気に入りは未ログイン時に空リセットします。
@@ -96,12 +102,13 @@ export function useItemCollection(
         return;
       }
 
-      // オプティミスティック更新と現在状態の記録（関数型更新で stale closure を回避）
-      let wasIncluded = false;
+      // 現在の状態を Ref から取得（最新の状態を反映）
+      const wasIncluded = (idsRef.current as any[]).includes(id);
+
+      // オプティミスティック更新
       if (type === "favoriteSong" || type === "favoriteArtist") {
         const numId = id as number;
         setIds((prev) => {
-          wasIncluded = (prev as number[]).includes(numId);
           return wasIncluded
             ? (prev as number[]).filter((i) => i !== numId)
             : [...(prev as number[]), numId];
