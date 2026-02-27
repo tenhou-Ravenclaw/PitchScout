@@ -25,7 +25,7 @@ const LoadingFallback: React.FC = () => (
 const Layout: React.FC = () => {
   // ── グローバルなデータと機能の取得 ──
   const { searchQuery, setSearchQuery } = useAppContext();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -74,9 +74,11 @@ const Layout: React.FC = () => {
 
         {/* ── メインコンテンツ ──
            💡 URLに応じて Outlet の部分に各ページの内容が流し込まれます。
+           isLoading 中はセッション確認が終わっていないため、ページを描画しない。
+           これにより、再ログイン時に以前のページが一瞬映るフラッシュを防ぐ。
         */}
         <Suspense fallback={<LoadingFallback />}>
-          <Outlet />
+          {isLoading ? <LoadingFallback /> : <Outlet />}
         </Suspense>
 
         {/* ── 共通ボトムナビ (スマホ用) ── */}
