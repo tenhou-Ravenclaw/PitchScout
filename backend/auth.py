@@ -34,6 +34,9 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
                 detail="無効なトークンです"
             )
         return user.user.model_dump()
+    except HTTPException:
+        # すでに適切な HTTPException が raise されている場合はそのまま再送出
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

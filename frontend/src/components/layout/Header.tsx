@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 // 認証情報の管理やログアウト処理を取得
 import { useAuth } from '../../contexts/AuthContext';
 import logo from '../../assets/logo.png';
+import ConfirmDialog from '../ui/ConfirmDialog';
 
 /** ヘッダーが受け取るプロパティの定義 */
 interface HeaderProps {
@@ -30,6 +31,8 @@ const Header: React.FC<HeaderProps> = ({
     const { logout } = useAuth();
     // 検索入力フィールドの値を内部状態で管理します
     const [inputValue, setInputValue] = useState(searchQuery);
+    /** ログアウト確認ダイアログの表示フラグ */
+    const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
     /** ── 同期 (Effect) ──
      * 外部からsearchQueryがリセットされた際などに、入力欄の中身を合わせます。
@@ -48,7 +51,22 @@ const Header: React.FC<HeaderProps> = ({
         `${active ? 'text-cyan-400 font-bold drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]' : 'hover:text-cyan-400 text-slate-400'} transition-all bg-transparent border-0 cursor-pointer`;
 
     return (
-        /** hidden md:flex: スマホでは非表示、PCサイズで表示します */
+        <>
+        {/* ── ログアウト確認ダイアログ（header の外・fixed要素なので DOM 位置は問わない） ── */}
+        {showLogoutDialog && (
+            <ConfirmDialog
+                message="ログアウトしますか？"
+                confirmLabel="ログアウト"
+                cancelLabel="キャンセル"
+                isDangerous
+                onConfirm={() => {
+                    setShowLogoutDialog(false);
+                    logout();
+                }}
+                onCancel={() => setShowLogoutDialog(false)}
+            />
+        )}
+        {/** hidden md:flex: スマホでは非表示、PCサイズで表示します */}
         <header className="hidden md:flex items-center justify-between px-8 py-4 bg-slate-900/80 backdrop-blur-md border-b border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.15)] sticky top-0 z-50">
             
             {/* ── 左端：ロゴエリア ── */}
@@ -121,7 +139,7 @@ const Header: React.FC<HeaderProps> = ({
                         </span>
                         <button
                             type="button"
-                            onClick={logout}
+                            onClick={() => setShowLogoutDialog(true)}
                             className="text-xs text-slate-400 hover:text-rose-400 transition-colors bg-transparent border-0 cursor-pointer"
                         >
                             ログアウト
@@ -138,6 +156,7 @@ const Header: React.FC<HeaderProps> = ({
                 )}
             </div>
         </header>
+        </>
     );
 };
 

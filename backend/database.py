@@ -236,6 +236,26 @@ def get_song(song_id: int) -> dict | None:
         conn.close()
 
 
+def get_songs_by_ids(song_ids: list[int]) -> dict[int, dict]:
+    """IDリストで楽曲を一括取得し、{song_id: song_dict} の辞書を返す"""
+    if not song_ids:
+        return {}
+    conn = get_connection()
+    try:
+        placeholders = ",".join("?" * len(song_ids))
+        rows = conn.execute(f"""
+            SELECT s.id, s.artist_id, s.title, a.name as artist,
+                   s.lowest_note, s.highest_note, s.falsetto_note, s.note,
+                   s.source
+            FROM songs s
+            JOIN artists a ON s.artist_id = a.id
+            WHERE s.id IN ({placeholders})
+        """, song_ids).fetchall()
+        return {row["id"]: dict(row) for row in rows}
+    finally:
+        conn.close()
+
+
 def get_artist(artist_id: int) -> dict | None:
     """IDでアーティストを取得"""
     conn = get_connection()

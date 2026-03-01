@@ -4,7 +4,8 @@ Supabaseデータベースの接続管理とクエリ関数
 import os
 from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
-from database import get_song
+import database
+from database import get_song, get_songs_by_ids
 from dotenv import load_dotenv
 
 # 環境変数をロード
@@ -23,50 +24,6 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ============================================================
 # 楽曲関連のクエリ関数
 # ============================================================
-
-def search_songs(query: str, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
-    """
-    曲名またはアーティスト名であいまい検索。
-
-    [FIX] PostgRESTはJOINテーブルに対して or_().ilike() が使えない。
-          タイトル検索とアーティスト検索を分けて実行し、重複をIDで除外する。
-    """
-    # 曲名で検索
-    title_resp = supabase.table("songs").select(
-        "id, title, lowest_note, highest_note, falsetto_note, note, source, artists(name)"
-    ).ilike("title", f"%{query}%").range(offset, offset + limit - 1).execute()
-
-    # アーティスト名で検索（artists テーブルで一致するIDを取得）
-    artist_resp = supabase.table("artists").select("id").ilike(
-        "name", f"%{query}%"
-    ).execute()
-
-    artist_songs: List[Dict[str, Any]] = []
-    if artist_resp.data:
-        artist_ids = [a["id"] for a in artist_resp.data]
-        for artist_id in artist_ids:
-            resp = supabase.table("songs").select(
-                "id, title, lowest_note, highest_note, falsetto_note, note, source, artists(name)"
-            ).eq("artist_id", artist_id).range(0, limit - 1).execute()
-            artist_songs.extend(resp.data or [])
-
-    # 重複除去（IDベース）
-    seen_ids: set = set()
-    merged: List[Dict[str, Any]] = []
-    for song in (title_resp.data or []) + artist_songs:
-        if song["id"] not in seen_ids:
-            seen_ids.add(song["id"])
-            merged.append(song)
-
-    # artistsをフラットに変換
-    result = []
-    for song in merged[:limit]:
-        result.append({
-            **{k: v for k, v in song.items() if k != "artists"},
-            "artist": song["artists"]["name"] if song.get("artists") else None,
-        })
-    return result
-
 
 def get_song(song_id: int) -> Optional[Dict[str, Any]]:
     """IDで楽曲を取得"""
@@ -227,11 +184,16 @@ def get_favorite_songs(user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         "id, song_id, created_at"
     ).eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
 
+    if not response.data:
+        return []
+
+    # song_id を一括取得して N+1 を回避
+    song_ids = [fav["song_id"] for fav in response.data]
+    songs_map = database.get_songs_by_ids(song_ids)
+
     favorites = []
-    import database
     for fav in response.data:
-        song = database.get_song(fav["song_id"])
-        
+        song = songs_map.get(fav["song_id"])
         # SQLite側に曲が存在すればリストに追加
         if song:
             favorites.append({
@@ -244,7 +206,7 @@ def get_favorite_songs(user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
                 "highest_note": song.get("highest_note"),
                 "falsetto_note": song.get("falsetto_note"),
             })
-            
+
     return favorites
 
 

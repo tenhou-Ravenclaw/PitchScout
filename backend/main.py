@@ -1,13 +1,17 @@
 import warnings
 warnings.filterwarnings("ignore")
 
-from fastapi import FastAPI, File, UploadFile, BackgroundTasks, Depends, HTTPException, Query, Form
+from fastapi import FastAPI, File, UploadFile, BackgroundTasks, Depends, HTTPException, Query, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 import shutil
 import os
 import uuid
 import time
+
+# アップロードファイルの上限（50MB）
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 from audio_converter import convert_to_wav, convert_to_wav_hq
 from analyzer import analyze
@@ -57,12 +61,33 @@ app = FastAPI(title="Voice Range Analysis API")
 def on_startup():
     init_db()
 
+# ── CORS ──────────────────────────────────────────────────────
+# ALLOWED_ORIGINS 環境変数でオリジンをカンマ区切りで指定する。
+# 未設定の場合はローカル開発用のデフォルト値を使用。
+_raw_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://127.0.0.1:3000"
+)
+ALLOWED_ORIGINS: list[str] = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: 本番環境では具体的なオリジンに限定すること
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+# ── アップロードサイズ制限ミドルウェア ────────────────────────
+@app.middleware("http")
+async def limit_upload_size(request: Request, call_next):
+    """Content-Length ヘッダーで上限（50MB）を超えるリクエストを早期拒否する"""
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_UPLOAD_BYTES:
+        return JSONResponse(
+            status_code=413,
+            content={"error": f"ファイルサイズが上限（{MAX_UPLOAD_BYTES // (1024 * 1024)}MB）を超えています"},
+        )
+    return await call_next(request)
 
 # ============================================================
 # 認証エンドポイント
@@ -493,7 +518,7 @@ async def analyze_voice(
 
     try:
         print(f"[API] [1/3] ファイル保存中...")
-        ext = os.path.splitext(file.filename)[1] or ".tmp"
+        ext = os.path.splitext(file.filename or "")[1] or ".tmp"
         temp_input_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}{ext}")
 
         with open(temp_input_path, "wb") as buffer:
@@ -565,7 +590,7 @@ async def analyze_karaoke(
 
     try:
         print(f"[API] [1/4] ファイル保存中...")
-        ext = os.path.splitext(file.filename)[1] or ".tmp"
+        ext = os.path.splitext(file.filename or "")[1] or ".tmp"
         temp_input_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}{ext}")
         with open(temp_input_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)

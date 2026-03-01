@@ -59,7 +59,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   /** ── Googleログインの実行 ──
-   * 💡 本番環境と開発環境でリダイレクト先を自動的に切り替えます。
+   * 💡 window.location.origin を使うことで、開発時は http://localhost:3000、
+   *    本番時は https://pitchscout.ten-hou.com へ自動的にリダイレクト先が決まります。
+   *    環境変数や手動の本番判定は不要です。
    */
   const loginWithGoogle = useCallback(async () => {
     if (!supabase) {
@@ -67,15 +69,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    // ドメインをチェックして本番かどうかを判定
-    const isProduction = window.location.hostname === "pitchscout.ten-hou.com";
-    const redirectUrl = process.env.REACT_APP_REDIRECT_URL ||
-      (isProduction ? "https://pitchscout.ten-hou.com" : window.location.origin);
-
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: redirectUrl,
+        redirectTo: window.location.origin,
       },
     });
   }, []);
