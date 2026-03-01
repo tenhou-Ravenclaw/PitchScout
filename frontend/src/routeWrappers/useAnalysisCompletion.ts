@@ -17,7 +17,7 @@ export const useAnalysisCompletion = () => {
   );
 
   const goMenu = useCallback(() => {
-    navigate("/menu");
+    navigate("/record");
   }, [navigate]);
 
   return { handleComplete, goMenu };

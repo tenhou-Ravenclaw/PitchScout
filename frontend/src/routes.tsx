@@ -1,9 +1,9 @@
 
 import Layout from "./components/layout/Layout";
-import { RouteObject } from "react-router-dom";
+import { Navigate, RouteObject } from "react-router-dom";
 import GuidePage from "./pages/GuidePage";
 import { LandingRoute } from "./routeWrappers/LandingRoute";
-import { HomeRoute } from "./routeWrappers/HomeRoute";
+import { RecordRoute } from "./routeWrappers/RecordRoute";
 import { RecorderRoute } from "./routeWrappers/RecorderRoute";
 import { KaraokeRoute } from "./routeWrappers/KaraokeRoute";
 import { UploaderRoute } from "./routeWrappers/UploaderRoute";
@@ -19,10 +19,12 @@ export const routes: RouteObject[] = [
     element: <Layout />,
     children: [
       { path: "/", element: <LandingRoute /> },
-      { path: "/menu", element: <HomeRoute /> },
-      { path: "/record", element: <RecorderRoute /> },
-      { path: "/karaoke", element: <KaraokeRoute /> },
-      { path: "/upload", element: <UploaderRoute /> },
+      { path: "/record", element: <RecordRoute /> },
+      { path: "/record/normal", element: <RecorderRoute /> },
+      { path: "/record/karaoke", element: <KaraokeRoute /> },
+      { path: "/record/upload", element: <UploaderRoute /> },
+      { path: "/karaoke", element: <Navigate to="/record/karaoke" replace /> },
+      { path: "/upload", element: <Navigate to="/record/upload" replace /> },
       { path: "/result", element: <ResultRoute /> },
       { path: "/analysis", element: <AnalysisRoute /> },
       { path: "/songs", element: <SongListRoute /> },

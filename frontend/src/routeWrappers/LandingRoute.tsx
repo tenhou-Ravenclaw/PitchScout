@@ -6,7 +6,7 @@ export const LandingRoute: React.FC = () => {
   const navigate = useNavigate();
   return (
     <Landing
-      onRecordClick={() => navigate("/menu")}
+      onRecordClick={() => navigate("/record")}
       onHistoryClick={() => navigate("/history")}
     />
   );

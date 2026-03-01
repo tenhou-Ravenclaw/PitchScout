@@ -10,7 +10,7 @@ export const ResultRoute: React.FC = () => {
     <ResultPage
       result={result}
       isFromHistory={isFromHistory}
-      onBack={() => navigate(isFromHistory ? "/history" : "/menu")}
+      onBack={() => navigate(isFromHistory ? "/history" : "/record")}
     />
   );
 };

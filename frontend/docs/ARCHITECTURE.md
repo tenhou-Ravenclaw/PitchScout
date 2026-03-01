@@ -87,7 +87,7 @@ src/
 │   └── keyBadge.ts             # キーバッジ色付けロジック
 │
 ├── pages/
-│   ├── Home.tsx                # メニュー画面 (録音方法選択グリッド)
+│   ├── Record.tsx              # メニュー画面 (録音方法選択グリッド)
 │   ├── Landing.tsx             # ランディング画面 (NEW RECORD / HISTORY)
 │   ├── LoginPage.tsx           # ログイン画面 (Google OAuth ボタン)
 │   ├── AnalysisResultPage.tsx  # 分析結果ダッシュボード (レーダーチャート付き)
@@ -167,11 +167,11 @@ src/
 
 ```typescript
 // Context/遷移をラッパーで吸収し、ページへ Props を渡す
-const HomeRoute = () => {
+const RecordRoute = () => {
   const navigate = useNavigate();
   const { isAnalyzing } = useAnalysis();
   return (
-    <Home
+    <Record
       onNormalClick={() => navigate("/record")}
       onKaraokeClick={() => navigate("/karaoke")}
       onUploadClick={() => navigate("/upload")}
@@ -194,7 +194,7 @@ const ResultRoute = () => {
     <ResultPage
       result={result}
       isFromHistory={isFromHistory}
-      onBack={() => navigate(isFromHistory ? "/history" : "/menu")}
+      onBack={() => navigate(isFromHistory ? "/history" : "/record")}
     />
   );
 };
@@ -212,10 +212,10 @@ const ResultRoute = () => {
 | Path         | 画面           | 役割                            |
 | ------------ | -------------- | ------------------------------- |
 | `/`          | LandingRoute   | ランディング                    |
-| `/menu`      | HomeRoute      | 録音導線の入口                  |
-| `/record`    | RecorderPage   | マイク録音                      |
-| `/karaoke`   | RecorderPage   | カラオケ録音                    |
-| `/upload`    | UploaderPage   | 音源アップロード                |
+| `/record`    | RecordRoute    | 録音導線の入口                  |
+| `/record/normal` | RecorderPage | マイク録音                    |
+| `/record/karaoke` | RecorderPage | カラオケ録音                |
+| `/record/upload` | UploaderPage | 音源アップロード              |
 | `/result`    | ResultPage     | 録音/アップロード直後の中間結果 |
 | `/analysis`  | AnalysisRoute  | 分析ダッシュボード（詳細表示）  |
 | `/songs`     | SongListRoute  | 楽曲/アーティスト検索           |

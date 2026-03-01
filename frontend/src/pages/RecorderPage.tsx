@@ -1,7 +1,7 @@
 /**
  * 【RecorderPage.tsx】
  * 役割：音声の録音（マイクまたはカラオケ）を行うためのページです。
- * 特徴：現在のURL（/record または /karaoke）を判断して、モードを自動で切り替えます。
+ * 特徴：ルート側から受け取る `isKaraokeMode` に応じて録音モードを切り替えます。
  */
 import React from "react";
 import Recorder from "../components/features/Recorder";

@@ -86,7 +86,7 @@ src/
 │   └── keyBadge.ts             # キーバッジ色付けロジック
 │
 ├── pages/
-│   ├── Home.tsx                # メニュー画面 (録音方法選択グリッド)
+│   ├── Record.tsx              # メニュー画面 (録音方法選択グリッド)
 │   ├── Landing.tsx             # ランディング画面 (NEW RECORD / HISTORY)
 │   ├── LoginPage.tsx           # ログイン画面 (Google OAuth ボタン)
 │   ├── AnalysisResultPage.tsx  # 分析結果ダッシュボード (レーダーチャート付き)
@@ -162,11 +162,11 @@ src/
 
 ```typescript
 // Context/遷移をラッパーで吸収し、ページへ Props を渡す
-const HomeRoute = () => {
+const RecordRoute = () => {
   const navigate = useNavigate();
   const { isAnalyzing } = useAnalysis();
   return (
-    <Home
+    <Record
       onNormalClick={() => navigate("/record")}
       onKaraokeClick={() => navigate("/karaoke")}
       onUploadClick={() => navigate("/upload")}
@@ -189,7 +189,7 @@ const ResultRoute = () => {
     <ResultPage
       result={result}
       isFromHistory={isFromHistory}
-      onBack={() => navigate(isFromHistory ? "/history" : "/menu")}
+      onBack={() => navigate(isFromHistory ? "/history" : "/record")}
     />
   );
 };
@@ -206,10 +206,10 @@ const ResultRoute = () => {
 | Path | 画面 | 役割 |
 |------|------|------|
 | `/` | LandingRoute | ランディング |
-| `/menu` | HomeRoute | 録音導線の入口 |
-| `/record` | RecorderPage | マイク録音 |
-| `/karaoke` | RecorderPage | カラオケ録音 |
-| `/upload` | UploaderPage | 音源アップロード |
+| `/record` | RecordRoute | 録音導線の入口 |
+| `/record/normal` | RecorderPage | マイク録音 |
+| `/record/karaoke` | RecorderPage | カラオケ録音 |
+| `/record/upload` | UploaderPage | 音源アップロード |
 | `/result` | ResultPage | 録音/アップロード直後の中間結果 |
 | `/analysis` | AnalysisRoute | 分析ダッシュボード（詳細表示） |
 | `/songs` | SongListRoute | 楽曲/アーティスト検索 |
@@ -276,7 +276,7 @@ const ResultRoute = () => {
 
 | コンポーネント | 受け取る入力 | 主な出力/副作用 | 責務 | 非責務 |
 |---------------|--------------|------------------|------|--------|
-| `ResultPage` | `result`, `isFromHistory`, `onBack` | 戻る遷移（`/menu` or `/history`） | 中間結果ページの導線制御 | 統合音域計算、詳細比較表示 |
+| `ResultPage` | `result`, `isFromHistory`, `onBack` | 戻る遷移（`/record` or `/history`） | 中間結果ページの導線制御 | 統合音域計算、詳細比較表示 |
 | `ResultView` | `result: AnalysisResult` | なし（表示専用） | 単発結果の要約表示（音域・スコア・おすすめ） | ルーティング、履歴統合取得、認証依存ロジック |
 | `AnalysisRoute` | `AppContext.result`, `AuthContext.isAuthenticated` | `AnalysisResultPage` へ受け渡し | Context とページの橋渡し | 描画ロジック本体 |
 | `AnalysisResultPage` | `result: AnalysisResult \| null`, `isAuthenticated` | `getIntegratedVocalRange(20)` 取得、お気に入り操作 | 詳細分析表示と統合音域表示の切替 | 録音直後導線の戻り制御 |
@@ -395,8 +395,8 @@ AnalysisRoute
 
 #### 手動確認シナリオ（最小セット）
 
-1. `menu` → `record` で録音し、`/result` 表示後に「トップへ戻る」で `/menu` へ戻る。
-2. `menu` → `upload` で解析し、タイムアウト/通信断時のエラーメッセージを確認する。
+1. `/record` → `/record/normal` で録音し、`/result` 表示後に「トップへ戻る」で `/record` へ戻る。
+2. `/record` → `/record/upload` で解析し、タイムアウト/通信断時のエラーメッセージを確認する。
 3. `history` から履歴選択し、`/result` で「履歴に戻る」が機能することを確認する。
 4. `/analysis` を直接開き、ログイン有無で表示（統合音域あり/なし）が破綻しないことを確認する。
 5. `songs` / `favorites` / `history` で API 失敗時の通知が画面で確認できることを確認する。

@@ -62,7 +62,7 @@ const Header: React.FC<HeaderProps> = ({
                 <button type="button" onClick={() => navigate("/guide")} className={navClass(isActive(["/guide"]))}>
                     使い方ガイド
                 </button>
-                <button type="button" onClick={() => navigate("/menu")} className={navClass(isActive(["/menu", "/record", "/karaoke", "/upload"]))}>
+                <button type="button" onClick={() => navigate("/record")} className={navClass(isActive(["/record", "/karaoke", "/upload"]))}>
                     録音
                 </button>
                 <button type="button" onClick={() => navigate("/analysis")} className={navClass(isActive(["/analysis", "/result"]))}>
