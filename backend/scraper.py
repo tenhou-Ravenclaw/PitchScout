@@ -11,7 +11,7 @@ import time
 import sqlite3
 import httpx
 from bs4 import BeautifulSoup
-from database import init_db, get_connection, DB_PATH
+from db.songs import init_db, get_connection, DB_PATH
 
 ARTIST_LIST_URL = "https://voice-key.news/artist-key/"
 REQUEST_INTERVAL = 1.5  # 秒

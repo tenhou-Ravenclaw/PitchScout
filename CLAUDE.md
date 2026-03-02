@@ -19,7 +19,7 @@ Cursor: `.cursor/rules/` / Copilot: `.github/copilot-instructions.md` にも同�
 - **NEVER**: `.env` やシークレットをログ出力・コミットしない
 - **NEVER**: A4 = 440Hz を使わない（日本のカラオケ標準は A4 = 442Hz）
 - **DON'T**: Redux/Zustand を導入しない（React Context のみ使用）
-- **DON'T**: `main.py` 以外にエンドポイント、`models.py` 以外にモデルを定義しない
+- **DON'T**: `routers/` 以外にエンドポイント、`models.py` 以外にモデルを定義しない（`routers/` 内は FastAPI `APIRouter` を使うこと。`main.py` はアプリ設定・ミドルウェア・ルーター登録のみ）
 
 ## 開発ワークフロー
 
@@ -45,12 +45,19 @@ Cursor: `.cursor/rules/` / Copilot: `.github/copilot-instructions.md` にも同�
 フロントエンド (React/TS)               バックエンド (FastAPI/Python)
 ─────────────────                      ──────────────────────
 routes.tsx (useRoutes)                 main.py (全エンドポイント)
-  └─ routeWrappers/ ──props──> pages   ├─ analyzer.py (CREPE ピッチ解析)
-contexts/ (Auth, Analysis, App)        ├─ register_classifier.py (ML 地声/裏声判定)
-api.ts (axios, 自動認証) ──HTTP──>     ├─ vocal_separator.py (Demucs ボーカル分離)
-supabaseClient.ts (null許容)           ├─ recommender.py (楽曲マッチング)
-                                       ├─ database.py (SQLite: songs.db)
-                                       └─ database_supabase.py (Supabase: ユーザー)
+  └─ routeWrappers/ ──props──> pages   ├─ audio/
+contexts/ (Auth, Analysis, App)        │    ├─ converter.py (ffmpeg WAV変換)
+api.ts (axios, 自動認証) ──HTTP──>     │    ├─ separator.py (Demucs ボーカル分離)
+supabaseClient.ts (null許容)           │    └─ noise.py (ノイズ除去)
+                                       ├─ analysis/
+                                       │    ├─ pipeline.py (CREPE ピッチ解析)
+                                       │    ├─ classifier.py (ML 地声/裏声判定)
+                                       │    ├─ features.py (特徴量抽出)
+                                       │    └─ scoring.py (歌唱力スコアリング)
+                                       ├─ recommender.py (楽曲マッチング)
+                                       └─ db/
+                                            ├─ songs.py (SQLite: songs.db)
+                                            └─ users.py (Supabase: ユーザー)
 ```
 
 ### デュアルデータベース設計
@@ -58,12 +65,13 @@ supabaseClient.ts (null許容)           ├─ recommender.py (楽曲マッチ�
 - **Supabase** (クラウド PostgreSQL): 認証、ユーザープロファイル、分析履歴、お気に入り。スキーマは `backend/supabase_migration.sql`。
 
 ### 音声解析パイプライン (バックエンド)
-1. WAV 変換 (`audio_converter.py`) → 16kHz モノラル（マイク）or 44.1kHz ステレオ（カラオケ）
-2. カラオケモードのみ: Demucs ボーカル分離 (`vocal_separator.py`, htdemucs_6s)
+1. WAV 変換 (`audio/converter.py`) → 16kHz モノラル（マイク）or 44.1kHz ステレオ（カラオケ）
+2. カラオケモードのみ: Demucs ボーカル分離 (`audio/separator.py`, htdemucs_6s)
 3. CREPE ピッチ検出（複数閾値の信頼度フォールバック: 0.5 → 0.01）
-4. ML 声区分類 (`register_classifier.py`): scikit-learn モデル + ルールベースフォールバック
+4. ML 声区分類 (`analysis/classifier.py`): scikit-learn モデル + ルールベースフォールバック
 5. 統計的外れ値除去、オクターブ補正、持続音バリデーション
-6. Hz 範囲マッチングによる楽曲推薦 (`recommender.py`)
+6. 歌唱力スコアリング (`analysis/scoring.py`)
+7. Hz 範囲マッチングによる楽曲推薦 (`recommender.py`)
 
 解析エンドポイントは2つ: `POST /analyze`（アカペラ/マイク、Demucs なし）と `POST /analyze-karaoke`（Demucs 分離あり）。
 
@@ -136,8 +144,8 @@ SQLite 再構築: `rm -f songs.db && python scraper.py`
 
 ## 連携ポイント
 
-- **Supabase**: 認証、ユーザープロファイル、分析履歴、お気に入り（`backend/auth.py`、`backend/database_supabase.py`）。
-- **SQLite**: 楽曲検索・アーティスト一覧（`backend/database.py`）。実行時は読み取り専用。
+- **Supabase**: 認証、ユーザープロファイル、分析履歴、お気に入り（`backend/auth.py`、`backend/db/users.py`）。
+- **SQLite**: 楽曲検索・アーティスト一覧（`backend/db/songs.py`）。実行時は読み取り専用。
 - **外部 ML/音声処理**: Demucs, torchcrepe, librosa, torchaudio（`backend/requirements.txt`）。
 - **DB 更新スクリプト**: `backend/scraper.py`、`scraper_vocal_range.py`、`update_*.py`。
 

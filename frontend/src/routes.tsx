@@ -10,8 +10,8 @@ import { RouteObject } from "react-router-dom";
  *
  * 名前付きエクスポートは .then() で default に変換して lazy に渡します。
  */
-const LandingRoute  = lazy(() => import("./routeWrappers/LandingRoute").then(m => ({ default: m.LandingRoute })));
 const HomeRoute     = lazy(() => import("./routeWrappers/HomeRoute").then(m => ({ default: m.HomeRoute })));
+const MenuRoute     = lazy(() => import("./routeWrappers/MenuRoute").then(m => ({ default: m.MenuRoute })));
 const RecorderRoute = lazy(() => import("./routeWrappers/RecorderRoute").then(m => ({ default: m.RecorderRoute })));
 const KaraokeRoute  = lazy(() => import("./routeWrappers/KaraokeRoute").then(m => ({ default: m.KaraokeRoute })));
 const UploaderRoute = lazy(() => import("./routeWrappers/UploaderRoute").then(m => ({ default: m.UploaderRoute })));
@@ -27,8 +27,8 @@ export const routes: RouteObject[] = [
   {
     element: <Layout />,
     children: [
-      { path: "/",          element: <LandingRoute /> },
-      { path: "/menu",      element: <HomeRoute /> },
+      { path: "/",          element: <HomeRoute /> },
+      { path: "/menu",      element: <MenuRoute /> },
       { path: "/record",    element: <RecorderRoute /> },
       { path: "/karaoke",   element: <KaraokeRoute /> },
       { path: "/upload",    element: <UploaderRoute /> },

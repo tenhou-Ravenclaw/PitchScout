@@ -135,7 +135,7 @@ export interface AnalysisHistoryRecord {
   result_json?: AnalysisResult | null;
 }
 
-export interface IntegratedVocalRange extends Partial<AnalysisResult> {
+export interface TotalVocalRange extends Partial<AnalysisResult> {
   data_count: number;
   limit: number;
   singing_analysis?: SingingAnalysis;

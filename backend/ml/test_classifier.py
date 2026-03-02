@@ -21,10 +21,10 @@ import sys
 import numpy as np
 import pytest
 
-# ml/ から実行時に backend/ を PATH に追加して feature_extractor 等を import できるようにする
+# ml/ から実行時に backend/ を PATH に追加して analysis パッケージ等を import できるようにする
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from feature_extractor import N_FEATURES, extract_features
+from analysis.features import N_FEATURES, extract_features
 from config import CREPE_NOISE_GATE, FALSETTO_HARD_MIN_HZ
 
 # ============================================================
@@ -166,7 +166,7 @@ class TestRegisterClassifier:
     """
 
     def setup_method(self):
-        from register_classifier import classify_register, new_register_stats
+        from analysis.classifier import classify_register, new_register_stats
         self._classify = classify_register
         self._new_stats = new_register_stats
 

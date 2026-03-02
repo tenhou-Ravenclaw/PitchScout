@@ -3,7 +3,7 @@ export * from "./client";
 export * from "./types";
 export * from "./analysis";
 export * from "./songs";
-export * from "./collectionApi";
-export * from "./integratedRange";
+export * from "./listApi";
+export * from "./totalRange";
 export * from "./error";
-// お気に入りAPIラッパーは collectionApi に集約済み
+// お気に入りAPIラッパーは listApi に集約済み

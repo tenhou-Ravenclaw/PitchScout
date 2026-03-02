@@ -35,10 +35,10 @@ import librosa
 import torch
 import torchcrepe
 
-# ml/ から実行時に親ディレクトリ (backend/) の feature_extractor を見つける
+# ml/ から実行時に親ディレクトリ (backend/) の analysis パッケージを見つける
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from feature_extractor import extract_features
+from analysis.features import extract_features
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "training_data")
 DATASET_PATH = os.path.join(DATA_DIR, "dataset.npz")
@@ -57,11 +57,14 @@ CHEST_CRITERIA = {
 }
 
 # 裏声の高確信度条件（全て満たす）
+# 【設計方針】
+#   声楽研究で最も信頼性が高い指標は H1-H2（第1倍音と第2倍音の差）。
+#   - 地声: H2 ≥ H1 → H1-H2 ≤ 0 dB
+#   - 裏声: H1 >> H2 → H1-H2 ≥ 6 dB が高確信度
+#   HNR・centroid_r はプロ歌手では個人差が大きく AND 条件に向かないため除外。
 FALSETTO_CRITERIA = {
-    "h1_h2_min": 5.0,         # H1-H2 >= 5dB（H1が突出）
-    "hcount_max": 4,           # 倍音4本以下
-    "hnr_max": 0.55,           # HNR低い（息混じり）
-    "centroid_r_max": 4.5,     # スペクトル重心/f0 < 4.5
+    "h1_h2_min": 6.0,   # H1-H2 >= 6dB（裏声で最も信頼できる指標）
+    "hcount_max": 7,     # 倍音7本以下（プロ裏声でも 4〜7 本程度）
 }
 
 
@@ -83,9 +86,7 @@ def is_confident_falsetto(feat: np.ndarray) -> bool:
     return (
         h1_h2 >= FALSETTO_CRITERIA["h1_h2_min"]
         and hcount <= FALSETTO_CRITERIA["hcount_max"]
-        and hnr <= FALSETTO_CRITERIA["hnr_max"]
-        and cr <= FALSETTO_CRITERIA["centroid_r_max"]
-        and f0 >= 270  # 270Hz未満の裏声は生理的に不可
+        and f0 >= 220  # A3(220Hz)以上、男性低裏声をカバー（元は 270Hz で男声が除外されていた）
     )
 
 

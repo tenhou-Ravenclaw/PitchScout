@@ -6,10 +6,11 @@
 
 import React, { useState, useEffect } from "react";
 import { RadarChart } from "../components/ui/RadarChart";
+import PianoKeyboard from "../components/ui/PianoKeyboard";
 import {
   AnalysisResult,
-  IntegratedVocalRange,
-  getIntegratedVocalRange,
+  TotalVocalRange,
+  getTotalVocalRange,
   toUserMessage,
 } from "../api"; // API通信用の型定義と関数をインポート
 import { StarIcon as StarSolid } from "@heroicons/react/24/solid";
@@ -33,7 +34,7 @@ interface AnalysisResultPageProps {
  * @returns エラーが含まれる場合は true
  */
 const hasAnalysisError = (
-  data: AnalysisResult | IntegratedVocalRange | null,
+  data: AnalysisResult | TotalVocalRange | null,
 ): data is AnalysisResult & { error: string } => {
   return !!data && "error" in data && typeof data.error === "string" && data.error.length > 0;
 };
@@ -47,7 +48,7 @@ const hasAnalysisError = (
    ════════════════════════════════════════════════ */
 const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthenticated }) => {
   const { toggleFavorite, isFavorite } = useFavoriteArtists(); // お気に入りアーティスト管理
-  const [integratedRange, setIntegratedRange] = useState<IntegratedVocalRange | null>(null); // 直近N件をまとめた総合的な音域
+  const [integratedRange, setIntegratedRange] = useState<TotalVocalRange | null>(null); // 直近N件をまとめた総合的な音域
   const [loadingIntegrated, setLoadingIntegrated] = useState(false);
   const { toastMessage, showToast, hideToast } = useToast();
 
@@ -60,7 +61,7 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthe
       if (!isAuthenticated) return;
       setLoadingIntegrated(true);
       try {
-        const data = await getIntegratedVocalRange(20); // 直近20件をベースに計算
+        const data = await getTotalVocalRange(20); // 直近20件をベースに計算
         setIntegratedRange(data);
       } catch (e) {
         showToast(toUserMessage(e, "統合音域の取得に失敗しました"));
@@ -143,6 +144,34 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthe
                 </span>
               </div>
 
+              {/* ── ピアノ鍵盤による声域ビジュアライザ ── */}
+              <div className="mb-6">
+                <div className="flex items-center gap-4 mb-2 text-xs text-slate-400">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm bg-indigo-300" />
+                    地声
+                  </span>
+                  {displayData.falsetto_max && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block w-3 h-3 rounded-sm bg-emerald-300" />
+                      裏声
+                    </span>
+                  )}
+                  {displayData.falsetto_max && (
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block w-3 h-3 rounded-sm border-2 border-emerald-500 bg-indigo-300" />
+                      重なり
+                    </span>
+                  )}
+                </div>
+                <PianoKeyboard
+                  chestMin={displayData.chest_min ?? displayData.overall_min}
+                  chestMax={displayData.chest_max ?? displayData.overall_max}
+                  falsettoMin={displayData.falsetto_min}
+                  falsettoMax={displayData.falsetto_max}
+                />
+              </div>
+
               {/* 地声・裏声の内訳 */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
                 <div className="bg-indigo-900/30 p-4 rounded-2xl border border-indigo-500/30">
@@ -151,8 +180,12 @@ const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({ result, isAuthe
                 </div>
                 {displayData.falsetto_max && (
                   <div className="bg-emerald-900/30 p-4 rounded-2xl border border-emerald-500/30">
-                    <p className="text-xs font-bold text-emerald-400 mb-1">裏声最高音 (Falsetto)</p>
-                    <p className="text-xl font-bold text-slate-100">{displayData.falsetto_max}</p>
+                    <p className="text-xs font-bold text-emerald-400 mb-1">裏声範囲 (Falsetto)</p>
+                    <p className="text-xl font-bold text-slate-100">
+                      {displayData.falsetto_min
+                        ? `${displayData.falsetto_min} ~ ${displayData.falsetto_max}`
+                        : displayData.falsetto_max}
+                    </p>
                   </div>
                 )}
               </div>

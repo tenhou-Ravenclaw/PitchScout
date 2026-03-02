@@ -20,3 +20,10 @@ separated/
 
 # OS
 .DS_Store
+
+
+ml/training_data/
+ml/vocalset_data/
+
+# データディレクトリ
+data/

@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import Client
-from database_supabase import supabase
+from db.users import supabase
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -151,7 +151,7 @@ def request_password_reset(email: str) -> bool:
         return False
 
 
-def update_password(token: str, new_password: str) -> bool:
+def update_password(user_id: str, new_password: str) -> bool:
     """
     パスワードを更新
     """

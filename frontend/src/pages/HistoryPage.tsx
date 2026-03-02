@@ -6,7 +6,7 @@
  */
 import React, { useEffect, useState, useRef } from "react";
 // API通信用の関数と型定義をインポート
-import { collectionApi, AnalysisHistoryRecord, toUserMessage } from "../api";
+import { listApi, AnalysisHistoryRecord, toUserMessage } from "../api";
 import { useToast } from "../hooks/useToast";
 import ErrorBanner from "../components/ui/ErrorBanner";
 import LoadingState from "../components/ui/LoadingState";
@@ -60,7 +60,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
     const fetchHistory = async () => {
       try {
-        const data = await collectionApi.analysisHistory.get();
+        const data = await listApi.analysisHistory.get();
         setHistory(data);
       } catch (err: unknown) {
         setError("履歴の取得に失敗しました。");
@@ -109,7 +109,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
     e.stopPropagation();
     try {
       // 入力した basename に保持していた拡張子を結合して保存する
-      const updated = await collectionApi.analysisHistory.update(recordId, { file_name: editValue + editExt });
+      const updated = await listApi.analysisHistory.update(recordId, { file_name: editValue + editExt });
       setHistory(prev => prev.map(r => r.id === recordId ? { ...r, file_name: updated.file_name } : r));
       setEditingId(null);
       showToast("ファイル名を更新しました。");
@@ -136,7 +136,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
     try {
       // サーバー側のデータを削除
-      await collectionApi.analysisHistory.remove(recordId);
+      await listApi.analysisHistory.remove(recordId);
       // 画面上のリストからも消す
       setHistory((prev) => prev.filter((record) => record.id !== recordId));
     } catch (err) {

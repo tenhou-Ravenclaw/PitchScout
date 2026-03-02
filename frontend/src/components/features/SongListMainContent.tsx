@@ -8,12 +8,12 @@ import React from "react";
 import { Artist, Song, UserRange } from "../../api";
 import ErrorBanner from "../ui/ErrorBanner";
 import LoadingState from "../ui/LoadingState";
-import Pagination from "../ui/Pagination";
+import PageNav from "../ui/PageNav";
 import ArtistListPanel from "./ArtistListPanel";
 import SongListHeaderPanel from "./SongListHeaderPanel";
 import SongTable from "./SongTable";
 import { SONGS_PER_PAGE } from "../../constants/songListConstants";
-import { PaginationAction } from "../../hooks/useSongListData";
+import { PageAction } from "../../hooks/useSongListData";
 
 /**
  * SongListMainContent が受け取るプロパティ
@@ -58,7 +58,7 @@ interface SongListMainContentProps {
   /** ページ総数 */
   totalPages: number;
   /** ページング操作 */
-  onPaginate: (action: PaginationAction) => void;
+  onPaginate: (action: PageAction) => void;
   /** アーティスト選択 */
   onSelectArtist: (artist: Artist) => void;
   /** お気に入りアーティスト切替 */
@@ -88,7 +88,7 @@ interface PaginationSectionProps {
   /** ページ入力更新 */
   onPageInputChange: (value: string) => void;
   /** ページング操作 */
-  onPaginate: (action: PaginationAction) => void;
+  onPaginate: (action: PageAction) => void;
 }
 
 /**
@@ -106,7 +106,7 @@ const PaginationSection: React.FC<PaginationSectionProps> = ({
   }
 
   return (
-    <Pagination
+    <PageNav
       currentPage={currentPage}
       totalPages={totalPages}
       pageInput={pageInput}

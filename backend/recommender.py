@@ -1,11 +1,12 @@
 """
-recommender.py — 歌唱力分析・おすすめ曲・似てるアーティスト
+recommender.py — おすすめ曲・似てるアーティスト
 
 analyzeの結果とsongs.dbを照合して:
-  1. 歌唱力分析スコア（音域・安定性・表現力）
-  2. 音域に合ったおすすめ曲（地声平均も考慮）
-  3. 声質が似てるアーティスト
+  1. 音域に合ったおすすめ曲（地声平均も考慮）
+  2. 声質が似てるアーティスト
 を返す。
+
+歌唱力分析スコアは analysis/scoring.py に移動。
 
 【おすすめ曲の配分】
   - DISCOVERY_SLOTS(4曲)は必ずお気に入り以外のアーティストから選ぶ
@@ -16,7 +17,7 @@ analyzeの結果とsongs.dbを照合して:
 import math
 import numpy as np
 from note_converter import NOTE_TABLE, hz_to_label_and_hz
-from database import get_connection
+from db.songs import get_connection
 
 # ============================================================
 # カラオケ表記 ↔ Hz 変換
@@ -64,130 +65,7 @@ def _semitones(hz1: float, hz2: float) -> float:
 
 
 # ============================================================
-# 1. 歌唱力分析
-# ============================================================
-def analyze_singing_ability(
-    f0_array: np.ndarray,
-    conf_array: np.ndarray,
-    chest_notes: list[float],
-    falsetto_notes: list[float],
-    overall_min_hz: float,
-    overall_max_hz: float,
-) -> dict:
-    """
-    CREPE解析データから歌唱力指標を算出
-
-    Returns:
-        {
-            "range_semitones": 音域の広さ(半音),
-            "range_score":     音域スコア(0-100),
-            "stability_score": 安定性スコア(0-100),
-            "expression_score":表現力スコア(0-100),
-            "overall_score":   総合スコア(0-100),
-        }
-    """
-    result = {}
-
-    # --- 音域の広さ ---
-    # 一般: 1-1.5oct(12-18st), 上手い: 2oct(24st), プロ級: 2.5+oct(30+st)
-    range_st = _semitones(overall_min_hz, overall_max_hz)
-    range_score = min(100.0, (range_st / 30.0) * 100.0)
-    result["range_semitones"] = round(range_st, 1)
-    result["range_score"] = round(range_score, 1)
-
-    # --- ピッチ安定性 ---
-    stability_score = _compute_stability(f0_array, conf_array)
-    result["stability_score"] = round(stability_score, 1)
-
-    # --- 表現力（声区の使い分け＋音域の活用度） ---
-    expression_score = _compute_expression(
-        chest_notes, falsetto_notes, overall_min_hz, overall_max_hz
-    )
-    result["expression_score"] = round(expression_score, 1)
-
-    # --- 総合スコア ---
-    overall = range_score * 0.30 + stability_score * 0.45 + expression_score * 0.25
-    result["overall_score"] = round(overall, 1)
-
-    return result
-
-
-def _compute_stability(f0: np.ndarray, conf: np.ndarray) -> float:
-    """ピッチ安定性スコア (0-100)
-
-    持続音セグメント内のピッチ偏差を計測する。
-    隣接フレーム間のピッチ差が1半音以内なら同一音符とみなし、
-    3フレーム以上続くセグメントごとにセント標準偏差を算出、
-    セグメント長で重み付き平均 → スコア化。
-    """
-    from config import STABILITY_MIN_SEGMENT, STABILITY_SCALING
-
-    mask = (conf >= 0.3) & (f0 > 0)
-    f0_valid = f0[mask]
-    if len(f0_valid) < 10:
-        return 50.0
-
-    semitone_ratio = 2 ** (1 / 12)  # ≈1.0595
-    segments = []
-    current_seg = [f0_valid[0]]
-
-    for i in range(1, len(f0_valid)):
-        ratio = f0_valid[i] / f0_valid[i - 1]
-        if 1 / semitone_ratio <= ratio <= semitone_ratio:
-            current_seg.append(f0_valid[i])
-        else:
-            if len(current_seg) >= STABILITY_MIN_SEGMENT:
-                segments.append(current_seg)
-            current_seg = [f0_valid[i]]
-    if len(current_seg) >= STABILITY_MIN_SEGMENT:
-        segments.append(current_seg)
-
-    if not segments:
-        return 50.0
-
-    weighted_sum = 0.0
-    total_frames = 0
-    for seg in segments:
-        arr = np.array(seg)
-        med = np.median(arr)
-        cents = 1200.0 * np.log2(arr / med)
-        weighted_sum += float(np.std(cents)) * len(seg)
-        total_frames += len(seg)
-
-    avg_std = weighted_sum / total_frames
-    # 目安: 10cents=プロ(92), 25cents=上手い素人(80), 40cents=普通のカラオケ(68), 75+=40以下
-    return max(0.0, min(100.0, 100.0 - avg_std * STABILITY_SCALING))
-
-
-def _compute_expression(
-    chest_notes: list[float],
-    falsetto_notes: list[float],
-    overall_min_hz: float,
-    overall_max_hz: float,
-) -> float:
-    """表現力スコア (0-100)"""
-    total = len(chest_notes) + len(falsetto_notes)
-    if total == 0:
-        return 0.0
-
-    score = 30.0  # ベース
-
-    if len(falsetto_notes) > 0 and len(chest_notes) > 0:
-        minor = min(len(falsetto_notes), len(chest_notes))
-        diversity = minor / total
-        score += diversity * 80.0
-
-    all_notes = chest_notes + falsetto_notes
-    if len(all_notes) >= 5:
-        arr = np.array(all_notes)
-        iqr_st = _semitones(float(np.percentile(arr, 25)), float(np.percentile(arr, 75)))
-        score += min(30.0, iqr_st * 3.0)
-
-    return min(100.0, score)
-
-
-# ============================================================
-# 2. おすすめ曲
+# 1. おすすめ曲
 # ============================================================
 
 # お気に入りアーティスト以外から必ず確保する曲数
@@ -549,3 +427,197 @@ def recommend_key_for_song(
         fit = "hard"
 
     return {"recommended_key": best_shift, "fit": fit}
+
+
+# ============================================================
+# 6. 統合音域集計（複数の分析履歴レコードから集計）
+# ============================================================
+
+def aggregate_vocal_range(
+    records: list[dict],
+    favorite_artist_ids: list[int] | None = None,
+) -> dict | None:
+    """
+    複数の分析履歴レコードから統合音域と総合分析を計算する。
+
+    database_supabase.py の DB 取得ロジックを分離し、ビジネスロジック層に集約。
+    DB 取得は呼び出し元（routers/users.py）が行い、本関数はレコードリストを受け取る。
+
+    Args:
+        records: get_analysis_history() が返すレコードのリスト
+        favorite_artist_ids: お気に入りアーティストIDリスト（おすすめ曲の優先度に使用）
+
+    Returns:
+        統合音域・タイプ・おすすめ曲・アーティスト・歌唱力指標を含む辞書。
+        有効データがない場合は None。
+    """
+    if not records:
+        return None
+
+    # Hz値のリストを収集
+    chest_min_values: list[float] = []
+    chest_max_values: list[float] = []
+    falsetto_min_values: list[float] = []
+    falsetto_max_values: list[float] = []
+    overall_min_values: list[float] = []
+    overall_max_values: list[float] = []
+    chest_ratio_values: list[float] = []
+
+    # 歌唱力指標の収集
+    range_scores: list[float] = []
+    stability_scores: list[float] = []
+    expression_scores: list[float] = []
+    overall_scores: list[float] = []
+
+    valid_count = 0
+    for record in records:
+        # result_json がある場合はそこから取得
+        if record.get("result_json"):
+            result = record["result_json"]
+            if result.get("chest_min_hz"):
+                chest_min_values.append(result["chest_min_hz"])
+            if result.get("chest_max_hz"):
+                chest_max_values.append(result["chest_max_hz"])
+            if result.get("falsetto_min_hz"):
+                falsetto_min_values.append(result["falsetto_min_hz"])
+            elif result.get("falsetto_min"):
+                # 旧データは falsetto_min_hz がないためラベルから変換
+                hz = label_to_hz(result["falsetto_min"])
+                if hz:
+                    falsetto_min_values.append(hz)
+            if result.get("falsetto_max_hz"):
+                falsetto_max_values.append(result["falsetto_max_hz"])
+            if result.get("overall_min_hz"):
+                overall_min_values.append(result["overall_min_hz"])
+            if result.get("overall_max_hz"):
+                overall_max_values.append(result["overall_max_hz"])
+            if result.get("chest_ratio") is not None:
+                chest_ratio_values.append(result["chest_ratio"])
+
+            # 歌唱力指標
+            if result.get("singing_analysis"):
+                sa = result["singing_analysis"]
+                if sa.get("range_score") is not None:
+                    range_scores.append(sa["range_score"])
+                if sa.get("stability_score") is not None:
+                    stability_scores.append(sa["stability_score"])
+                if sa.get("expression_score") is not None:
+                    expression_scores.append(sa["expression_score"])
+                if sa.get("overall_score") is not None:
+                    overall_scores.append(sa["overall_score"])
+
+            valid_count += 1
+        # 古い形式の場合は直接取得
+        elif record.get("vocal_range_min_hz") or record.get("vocal_range_max_hz"):
+            if record.get("vocal_range_min_hz"):
+                overall_min_values.append(record["vocal_range_min_hz"])
+                chest_min_values.append(record["vocal_range_min_hz"])
+            if record.get("vocal_range_max_hz"):
+                overall_max_values.append(record["vocal_range_max_hz"])
+                chest_max_values.append(record["vocal_range_max_hz"])
+            if record.get("falsetto_max_hz"):
+                falsetto_max_values.append(record["falsetto_max_hz"])
+            valid_count += 1
+
+    if valid_count == 0:
+        return None
+
+    # 統合値を計算（最小値と最大値を採用）
+    aggregated: dict = {
+        "data_count": valid_count,
+        "limit": len(records),
+    }
+
+    # 音域情報
+    if overall_min_values:
+        overall_min_hz = min(overall_min_values)
+        overall_min_label, overall_min_hz_val = hz_to_label_and_hz(overall_min_hz)
+        aggregated["overall_min"] = overall_min_label
+        aggregated["overall_min_hz"] = overall_min_hz_val
+
+    if overall_max_values:
+        overall_max_hz = max(overall_max_values)
+        overall_max_label, overall_max_hz_val = hz_to_label_and_hz(overall_max_hz)
+        aggregated["overall_max"] = overall_max_label
+        aggregated["overall_max_hz"] = overall_max_hz_val
+
+    chest_min_hz_val: float | None = None
+    if chest_min_values:
+        chest_min_hz = min(chest_min_values)
+        chest_min_label, chest_min_hz_val = hz_to_label_and_hz(chest_min_hz)
+        aggregated["chest_min"] = chest_min_label
+        aggregated["chest_min_hz"] = chest_min_hz_val
+
+    chest_max_hz_val: float | None = None
+    if chest_max_values:
+        chest_max_hz = max(chest_max_values)
+        chest_max_label, chest_max_hz_val = hz_to_label_and_hz(chest_max_hz)
+        aggregated["chest_max"] = chest_max_label
+        aggregated["chest_max_hz"] = chest_max_hz_val
+
+    if falsetto_min_values:
+        falsetto_min_hz = min(falsetto_min_values)
+        falsetto_min_label, falsetto_min_hz_val = hz_to_label_and_hz(falsetto_min_hz)
+        aggregated["falsetto_min"] = falsetto_min_label
+        aggregated["falsetto_min_hz"] = falsetto_min_hz_val
+
+    falsetto_max_hz_val: float | None = None
+    if falsetto_max_values:
+        falsetto_max_hz = max(falsetto_max_values)
+        falsetto_max_label, falsetto_max_hz_val = hz_to_label_and_hz(falsetto_max_hz)
+        aggregated["falsetto_max"] = falsetto_max_label
+        aggregated["falsetto_max_hz"] = falsetto_max_hz_val
+
+    # 地声比率の平均
+    avg_chest_ratio = sum(chest_ratio_values) / len(chest_ratio_values) if chest_ratio_values else 0.8
+    aggregated["chest_ratio"] = avg_chest_ratio
+    aggregated["falsetto_ratio"] = 1.0 - avg_chest_ratio
+
+    # 歌唱力指標の平均
+    if range_scores or stability_scores or expression_scores or overall_scores:
+        aggregated["singing_analysis"] = {}
+        if range_scores:
+            aggregated["singing_analysis"]["range_score"] = sum(range_scores) / len(range_scores)
+        if stability_scores:
+            aggregated["singing_analysis"]["stability_score"] = sum(stability_scores) / len(stability_scores)
+        if expression_scores:
+            aggregated["singing_analysis"]["expression_score"] = sum(expression_scores) / len(expression_scores)
+        if overall_scores:
+            aggregated["singing_analysis"]["overall_score"] = sum(overall_scores) / len(overall_scores)
+
+        # 音域の半音数を計算
+        if chest_min_hz_val and chest_max_hz_val:
+            aggregated["singing_analysis"]["range_semitones"] = round(
+                12 * math.log2(chest_max_hz_val / chest_min_hz_val)
+            )
+
+    # 声質タイプ・おすすめ曲・似てるアーティストを追加（chest Hz が揃っている場合のみ）
+    if chest_min_hz_val and chest_max_hz_val:
+        # 幾何平均で chest_avg を算出
+        chest_avg_hz = math.sqrt(chest_min_hz_val * chest_max_hz_val)
+
+        aggregated["voice_type"] = classify_voice_type(
+            chest_min_hz_val,
+            chest_max_hz_val,
+            chest_avg_hz,
+            falsetto_max_hz_val,
+            avg_chest_ratio,
+        )
+
+        aggregated["similar_artists"] = find_similar_artists(
+            chest_min_hz_val,
+            chest_max_hz_val,
+            chest_avg_hz,
+            limit=5,
+        )
+
+        aggregated["recommended_songs"] = recommend_songs(
+            chest_min_hz_val,
+            chest_max_hz_val,
+            chest_avg_hz,
+            falsetto_max_hz_val,
+            limit=10,
+            favorite_artist_ids=list(favorite_artist_ids) if favorite_artist_ids else [],
+        )
+
+    return aggregated

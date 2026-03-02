@@ -14,7 +14,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 import httpx
-from database import init_db, get_connection
+from db.songs import init_db, get_connection
 
 SITEMAP_URLS = [
     "https://vocal-range.com/post-sitemap.xml",
