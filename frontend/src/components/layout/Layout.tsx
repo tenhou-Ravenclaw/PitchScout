@@ -28,6 +28,7 @@ const Layout: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const showHeader = location.pathname !== "/";
 
   /** ── 検索実行時の処理 ──
    * ヘッダーの検索窓で Enter を押した際、検索ワードをセットして検索ページへ移動させます。
@@ -63,14 +64,16 @@ const Layout: React.FC = () => {
 
       <div className="relative z-10">
         {/* ── 共通ヘッダー (PC用) ── */}
-        <Header
-          currentPath={location.pathname}
-          searchQuery={searchQuery}
-          onSearchChange={handleSearch}
-          isAuthenticated={isAuthenticated}
-          // ユーザー名がなければメールアドレスを表示するようにしています
-          userName={user?.user_metadata?.full_name || user?.email || null}
-        />
+        {showHeader && (
+          <Header
+            currentPath={location.pathname}
+            searchQuery={searchQuery}
+            onSearchChange={handleSearch}
+            isAuthenticated={isAuthenticated}
+            // ユーザー名がなければメールアドレスを表示するようにしています
+            userName={user?.user_metadata?.full_name || user?.email || null}
+          />
+        )}
 
         {/* ── メインコンテンツ ──
            💡 URLに応じて Outlet の部分に各ページの内容が流し込まれます。
