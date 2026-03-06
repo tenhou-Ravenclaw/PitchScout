@@ -6,13 +6,14 @@
  */
 import React, { useEffect, useState, useRef } from "react";
 // API通信用の関数と型定義をインポート
-import { listApi, AnalysisHistoryRecord, toUserMessage } from "../api";
+import { listApi, AnalysisHistoryRecord, toUserMessage, fetchAnalysisTimeline, AnalysisTimeline } from "../api";
 import { useToast } from "../hooks/useToast";
 import ErrorBanner from "../components/ui/ErrorBanner";
 import LoadingState from "../components/ui/LoadingState";
 import PageStateContainer from "../components/ui/PageStateContainer";
 import Toast from "../components/ui/Toast";
 import AuthRequiredCard from "../components/ui/cards/AuthRequiredCard";
+import VocalGrowthChart from "../components/features/VocalGrowthChart";
 import { PencilIcon, TrashIcon, CheckIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 /** 画面のプロパティ（設定） */
@@ -39,6 +40,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   const [history, setHistory] = useState<AnalysisHistoryRecord[]>([]); // 履歴データ
   const [loading, setLoading] = useState(true);                        // 読み込み中フラグ
   const [error, setError] = useState<string | null>(null);             // エラーメッセージ
+  const [timeline, setTimeline] = useState<AnalysisTimeline | null>(null); // 成長グラフデータ
   const [swipedId, setSwipedId] = useState<string | null>(null);       // 現在スワイプ中のアイテムID
   const [deletingId, setDeletingId] = useState<string | null>(null);   // 現在削除アニメーション中のID
   const [editingId, setEditingId] = useState<string | null>(null);     // 編集中のアイテムID
@@ -71,6 +73,9 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
     };
 
     fetchHistory();
+
+    // 成長グラフ用タイムラインを取得（失敗しても履歴表示は続ける）
+    fetchAnalysisTimeline(40).then(setTimeline).catch(() => {});
   }, [isAuthenticated]);
 
   /** ── 削除処理（ボタンクリック時：確認あり） ── */
@@ -243,6 +248,16 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
           ←スワイプで削除 / 編集スワイプ→
         </p>
       </div>
+
+      {/* 成長グラフ（3件以上ある場合のみ表示） */}
+      {timeline && timeline.timeline.length >= 3 && (
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-cyan-500/30 rounded-2xl p-5 mb-6">
+          <VocalGrowthChart
+            timeline={timeline.timeline}
+            stableRange={timeline.stable_range}
+          />
+        </div>
+      )}
 
       {loading ? (
         <PageStateContainer className="min-h-0 p-0">

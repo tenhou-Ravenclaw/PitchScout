@@ -24,23 +24,41 @@
 
 ```
 backend/
-├── main.py                  # 全 API エンドポイント定義（唯一のエントリポイント）
-├── analyzer.py              # 音声解析パイプライン（CREPE → 声区分類 → 結果集計）
-├── register_classifier.py   # 地声 / 裏声 判定（ML + ルールベースハイブリッド）
-├── feature_extractor.py     # ML 用特徴量抽出（6次元）
-├── recommender.py           # 歌唱力分析・おすすめ曲・似てるアーティスト・キー計算
-├── vocal_separator.py       # Demucs ボーカル分離ラッパー
-├── audio_converter.py       # ffmpeg ラッパー（WAV 変換 2種）
-├── database.py              # SQLite アクセス（楽曲・アーティスト検索）
-├── database_supabase.py     # Supabase アクセス（認証・履歴・お気に入り）
-├── auth.py                  # JWT 認証 Depends（get_current_user / get_optional_user）
+├── main.py                  # FastAPI アプリ設定・ミドルウェア・ルーター登録
+├── config.py                # 音域解析の全定数・閾値（ここのみに記述）
 ├── models.py                # Pydantic リクエスト / レスポンスモデル
-├── config.py                # 解析閾値・定数の一元管理
 ├── note_converter.py        # Hz ↔ 日本式音程表記 変換（A4=442Hz 対応表）
+├── auth.py                  # JWT 認証 Depends（get_current_user / get_optional_user）
+├── recommender.py           # 楽曲マッチング・似てるアーティスト・統合音域
 │
-├── ml/
+├── audio/                   # 音声前処理パッケージ
+│   ├── __init__.py
+│   ├── converter.py         # ffmpeg WAV 変換（16kHz モノラル / 44.1kHz ステレオ）
+│   ├── separator.py         # Demucs ボーカル分離（--two-stems=vocals）
+│   └── noise.py             # ノイズ除去ユーティリティ
+│
+├── analysis/                # 音声解析パッケージ
+│   ├── __init__.py          # analyze() を re-export
+│   ├── pipeline.py          # CREPE ピッチ検出・7ステップパイプライン
+│   ├── classifier.py        # ML 地声/裏声判定（scikit-learn + ルールベース）
+│   ├── features.py          # ML 用特徴量抽出（6次元）
+│   └── scoring.py           # 歌唱力スコアリング（overall/range/stability/expression）
+│
+├── db/                      # データベース接続パッケージ
+│   ├── __init__.py
+│   ├── songs.py             # SQLite 楽曲カタログ（読み取り専用）
+│   └── users.py             # Supabase ユーザーデータ（認証・履歴・お気に入り）
+│
+├── routers/                 # FastAPI ルーター（エンドポイント定義）
+│   ├── __init__.py
+│   ├── auth.py              # /auth/* （メール認証・パスワード管理）
+│   ├── analysis.py          # /analyze, /analyze-karaoke
+│   ├── songs.py             # /songs, /artists, /recommend, /similar-artists
+│   └── users.py             # /profile/*, /analysis/*, /favorites*, /favorite-artists*
+│
+├── ml/                      # ML モデル関連
 │   ├── models/
-│   │   └── register_model.joblib   # 学習済み声区分類モデル
+│   │   └── register_model.joblib   # 学習済み声区分類モデル（起動時ロード・ホットリロード対応）
 │   └── train_register.py           # モデル学習スクリプト
 │
 ├── songs.db                 # 楽曲音域データ（コミット済み・実行時読み取り専用）
@@ -51,193 +69,199 @@ backend/
 ├── scraper_vocal_range.py   # 音域データ補完スクレイパー
 ├── update_db.py             # songs.db 一括更新スクリプト
 ├── update_all_readings.py   # アーティスト読み仮名一括更新
-├── update_manual_readings.py # 手動で読み仮名を設定するスクリプト
+├── update_manual_readings.py # 手動読み仮名設定スクリプト
 ├── check_and_report.py      # データ品質チェックレポートスクリプト
-├── noise_reducer.py         # ノイズ低減ユーティリティ（実験用）
 │
-├── requirements.txt         # Python 依存パッケージ
-├── .env                     # 環境変数（Supabase URL / KEY / JWT_SECRET）
-└── supabase_migration.sql   # Supabase テーブル定義 SQL
+├── supabase_migration.sql   # Supabase テーブル定義 SQL
+├── requirements.txt
+└── .env                     # 環境変数（Supabase URL / KEY / ログレベル等）
 ```
 
 ---
 
-## 3. API エンドポイント一覧
+## 3. 依存関係グラフ（循環なし）
 
-エントリポイントは `main.py` のみ。全エンドポイントをここで定義する。
+```
+config.py, note_converter.py          ← 依存なし（ベース層）
+audio/converter.py                    ← ffmpeg（外部コマンド）
+audio/separator.py                    ← Demucs（PyTorch）
+audio/noise.py                        ← librosa
+analysis/features.py                  ← numpy, librosa, config
+analysis/scoring.py                   ← numpy, math, config
+analysis/classifier.py                ← analysis.features, config
+analysis/pipeline.py                  ← analysis.classifier, analysis.scoring,
+                                         note_converter, config
+analysis/__init__.py                  ← analysis.pipeline（re-export）
+db/songs.py                           ← sqlite3 のみ
+db/users.py                           ← db.songs, supabase-py
+recommender.py                        ← note_converter, db.songs, numpy, math
+auth.py                               ← db.users
+routers/auth.py                       ← auth, models
+routers/analysis.py                   ← audio.*, analysis, recommender,
+                                         db.users, auth
+routers/songs.py                      ← db.songs, db.users, recommender, auth
+routers/users.py                      ← db.users, recommender, auth, models
+main.py                               ← routers.*, db.songs
+```
 
-### 認証 (`/auth/*`)
+---
+
+## 4. API エンドポイント一覧
+
+### 認証 (`/auth/*`) — `routers/auth.py`
 
 | メソッド | パス | 認証 | 説明 |
-|----------|------|------|------|
-| POST | `/auth/signup` | 不要 | メールでユーザー登録 |
-| POST | `/auth/signin` | 不要 | メールでログイン → JWT 返却 |
+|----------|------|:----:|------|
+| POST | `/auth/signup` | — | メール+パスワードでユーザー登録 |
+| POST | `/auth/signin` | — | メール+パスワードでログイン → JWT 返却 |
 | POST | `/auth/signout` | 必須 | ログアウト |
-| POST | `/auth/refresh` | 不要 | リフレッシュトークンでセッション更新 |
-| POST | `/auth/reset-password` | 不要 | パスワードリセットメール送信 |
+| POST | `/auth/refresh` | — | リフレッシュトークンでセッション更新 |
+| POST | `/auth/reset-password` | — | パスワードリセットメール送信 |
 | POST | `/auth/update-password` | 必須 | パスワード更新 |
 
-### ユーザープロファイル (`/profile/*`)
+### 音声解析 — `routers/analysis.py`
 
 | メソッド | パス | 認証 | 説明 |
-|----------|------|------|------|
+|----------|------|:----:|------|
+| POST | `/analyze` | 任意 | アカペラ/マイク録音の音域分析（Demucs なし）。ログイン済みなら履歴自動保存 |
+| POST | `/analyze-karaoke` | 任意 | カラオケ音源の音域分析（Demucs ボーカル分離あり）。ログイン済みなら履歴自動保存 |
+
+### 楽曲・アーティスト — `routers/songs.py`
+
+| メソッド | パス | 認証 | 説明 |
+|----------|------|:----:|------|
+| GET | `/songs` | — | 楽曲一覧（検索・ページネーション・キーおすすめ付き） |
+| GET | `/artists` | — | アーティスト一覧（検索・ページネーション） |
+| GET | `/artists/{artist_id}/songs` | — | 特定アーティストの楽曲一覧（声域指定でキー推薦付き） |
+| GET | `/recommend` | 任意 | Hz 指定でおすすめ曲取得 |
+| GET | `/similar-artists` | — | Hz 指定で声が似てるアーティスト取得 |
+
+### ユーザー — `routers/users.py`
+
+| メソッド | パス | 認証 | 説明 |
+|----------|------|:----:|------|
 | GET | `/profile/me` | 必須 | 自分のプロファイル取得 |
-| PUT | `/profile/me` | 必須 | プロファイル更新 |
-| PUT | `/profile/vocal-range` | 必須 | 声域情報更新 |
-
-### 分析履歴 (`/analysis/*`)
-
-| メソッド | パス | 認証 | 説明 |
-|----------|------|------|------|
+| PUT | `/profile/me` | 必須 | プロファイル更新（display_name / avatar_url 等） |
+| PUT | `/profile/vocal-range` | 必須 | 声域情報（min/max/falsetto）更新 |
 | POST | `/analysis` | 必須 | 分析履歴を手動保存（声域も同時更新） |
-| GET | `/analysis/history` | 必須 | 自分の分析履歴一覧（最新50件） |
-| GET | `/analysis/integrated-range` | 必須 | 直近N件の統合音域取得 |
-| DELETE | `/analysis/history/{id}` | 必須 | 分析履歴削除 |
-| PATCH | `/analysis/history/{id}` | 必須 | ファイル名などの更新 |
-
-### お気に入り楽曲 (`/favorites/*`)
-
-| メソッド | パス | 認証 | 説明 |
-|----------|------|------|------|
-| POST | `/favorites` | 必須 | お気に入りに楽曲追加 |
-| DELETE | `/favorites/{song_id}` | 必須 | お気に入りから楽曲削除 |
+| GET | `/analysis/history` | 必須 | 分析履歴取得（新しい順、最大 100 件） |
+| GET | `/analysis/integrated-range` | 必須 | 直近 N 件の統合音域・おすすめ曲取得 |
+| GET | `/analysis/timeline` | 必須 | 直近 N 件のタイムライン＋安定音域取得（成長グラフ用） |
+| DELETE | `/analysis/history/{record_id}` | 必須 | 分析履歴削除 |
+| PATCH | `/analysis/history/{record_id}` | 必須 | 分析履歴の file_name 等を更新 |
+| POST | `/favorites` | 必須 | お気に入り楽曲追加 |
+| DELETE | `/favorites/{song_id}` | 必須 | お気に入り楽曲削除 |
 | GET | `/favorites` | 必須 | お気に入り楽曲一覧 |
 | GET | `/favorites/check/{song_id}` | 必須 | お気に入り登録確認 |
-
-### お気に入りアーティスト (`/favorite-artists/*`)
-
-| メソッド | パス | 認証 | 説明 |
-|----------|------|------|------|
-| POST | `/favorite-artists` | 必須 | お気に入りアーティスト追加（上限10組） |
+| POST | `/favorite-artists` | 必須 | お気に入りアーティスト追加（上限 10 組） |
 | DELETE | `/favorite-artists/{artist_id}` | 必須 | お気に入りアーティスト削除 |
 | GET | `/favorite-artists` | 必須 | お気に入りアーティスト一覧 |
-| GET | `/favorite-artists/check/{artist_id}` | 必須 | お気に入り登録確認 |
-
-### 楽曲・アーティスト（認証不要）
-
-| メソッド | パス | 説明 |
-|----------|------|------|
-| GET | `/artists` | アーティスト一覧（ページネーション・検索対応） |
-| GET | `/artists/{id}/songs` | アーティストの楽曲一覧（声域指定でキー推薦付き） |
-| GET | `/songs` | 楽曲一覧・検索（声域指定でキー推薦付き） |
-| GET | `/recommend` | 音域 Hz 指定でおすすめ曲取得 |
-| GET | `/similar-artists` | 音域 Hz 指定で似てるアーティスト取得 |
-
-### 音声解析（認証オプショナル）
-
-| メソッド | パス | 説明 |
-|----------|------|------|
-| POST | `/analyze` | アカペラ / マイク録音用（Demucs なし）。ログイン済みなら履歴自動保存 |
-| POST | `/analyze-karaoke` | カラオケ音源用（Demucs ボーカル分離あり）。ログイン済みなら履歴自動保存 |
+| GET | `/favorite-artists/check/{artist_id}` | 必須 | お気に入りアーティスト確認 |
 
 ---
 
-## 4. 音声解析パイプライン
+## 5. 音声解析パイプライン
 
-`analyzer.py` の `analyze()` 関数が全体を統括するオーケストレータ。
-内部は7ステップのパイプライン関数に分割されている。
+`analysis/pipeline.py` の `analyze()` 関数が全体を統括するオーケストレータ。
 
 ```
-POST /analyze (マイク)      POST /analyze-karaoke (カラオケ)
-       │                              │
-       ▼                              ▼
-convert_to_wav()            convert_to_wav_hq()
-  (16kHz・モノラル)           (44.1kHz・ステレオ)
-       │                              │
-       │                     separate_vocals() [Demucs]
-       │                       htdemucs_6s モデル
-       │                       --two-stems=vocals
-       │                              │
-       └──────────────┬───────────────┘
-                      ▼
-              analyze(wav_path)
-                      │
-           ┌──────────┤
-           │          ▼
-           │  [STEP 1/7] _load_audio()
-           │    soundfile でWAV読込、ステレオ→モノラル変換
-           │    バリデーション（0.3秒未満・無音チェック）
-           │
-           │  [STEP 2/7] _preprocess()
-           │    音量正規化 → 16kHz リサンプル → PyTorch テンソル化
-           │    デバイス選択 (CUDA or CPU)
-           │
-           │  [STEP 3/7] _run_pitch_detection()
-           │    torchcrepe.predict() で F0・信頼度を全フレーム推定
-           │    デコーダー: weighted_argmax → viterbi → none (フォールバック)
-           │    モデル: tiny → small (フォールバック)
-           │
-           │  [STEP 4/7] _filter_frames()
-           │    信頼度フィルタ（CONF_THRESHOLDS: 0.5 → 0.01 段階的緩和）
-           │    人声絶対範囲フィルタ（65Hz ～ 1324Hz）
-           │    非現実的範囲除去（中央値±1.5oct 下 / ±1.75oct 上）
-           │
-           │  [STEP 5/7] （_filter_frames 内）
-           │    オクターブ補正 (fix_octave_errors)
-           │    信頼度重み付き中央値 (median_freq) 計算
-           │
-           │  [STEP 6/7] _classify_frames()
-           │    フレームごとに classify_register() で地声 / 裏声 / unknown 判定
-           │    段階的信頼度要求（中央値から遠いほど高信頼度を要求）
-           │    裏声ノイズ3段階フィルタ（連続フレーム / RMS / 最小比率）
-           │    統計的外れ値除去 (remove_statistical_outliers)
-           │    孤立極端値除去 (remove_isolated_extremes)
-           │    最高音付近の地声・裏声混在解消
-           │
-           │  [STEP 7/7] _build_result()
-           │    地声・裏声それぞれの min/max を Hz → 日本式音程表記に変換
-           │    最高音堅牢化 (_get_robust_max: 持続フレーム数チェック)
-           │    声区バランス計算 (chest_ratio / falsetto_ratio)
-           │    歌唱力分析 (analyze_singing_ability)
-           │
-           ▼
-      _enrich_result()
-        おすすめ曲 (recommend_songs)
-        似てるアーティスト (find_similar_artists)
-        声質タイプ (classify_voice_type)
-           │
-           ▼ (ログイン済みの場合)
-      create_analysis_record()  ← Supabase に履歴保存
-      update_vocal_range()      ← プロファイルの声域を最新化
-           │
-           ▼
-      JSON レスポンス返却
-      cleanup_files() ← BackgroundTask で一時ファイル削除
+POST /analyze (マイク)          POST /analyze-karaoke (カラオケ)
+       │                                    │
+       ▼                                    ▼
+audio/converter.py                 audio/converter.py
+  convert_to_wav()                   convert_to_wav_hq()
+  (16kHz・モノラル)                  (44.1kHz・ステレオ)
+       │                                    │
+       │                          audio/separator.py
+       │                            separate_vocals()
+       │                            [Demucs htdemucs_6s]
+       │                            --two-stems=vocals
+       │                                    │
+       └─────────────┬──────────────────────┘
+                     ▼
+             analysis/pipeline.py
+                 analyze()
+                     │
+      ┌──────────────┤
+      │              ▼
+      │   [STEP 1/7] _load_audio()
+      │     soundfile で WAV 読込、ステレオ→モノラル変換
+      │     バリデーション（0.3秒未満・無音チェック）
+      │
+      │   [STEP 2/7] _preprocess()
+      │     音量正規化 → 16kHz リサンプル → PyTorch テンソル化
+      │     デバイス選択 (CUDA or CPU)
+      │
+      │   [STEP 3/7] _run_pitch_detection()
+      │     torchcrepe.predict() で F0・信頼度を全フレーム推定
+      │     CONF_THRESHOLDS: 0.5 → 0.35 → 0.2 → 0.1 → 0.05 → 0.01
+      │
+      │   [STEP 4/7] _filter_frames()
+      │     信頼度フィルタ（段階的緩和）
+      │     人声絶対範囲フィルタ（65Hz ～ 1324Hz）
+      │     非現実的範囲除去（中央値±1.5oct 下 / ±1.75oct 上）
+      │
+      │   [STEP 5/7] オクターブ補正・重心計算
+      │     fix_octave_errors() でオクターブ誤検出を修正
+      │     信頼度重み付き中央値 (median_freq) 計算
+      │
+      │   [STEP 6/7] _classify_frames()
+      │     analysis/classifier.py で地声 / 裏声 / unknown 判定
+      │     裏声ノイズ3段階フィルタ（連続フレーム / RMS / 最小比率）
+      │     統計的外れ値除去・孤立極端値除去
+      │     最高音付近の地声・裏声混在解消
+      │
+      │   [STEP 7/7] _build_result()
+      │     地声・裏声の min/max を Hz → 日本式音程表記に変換
+      │     最高音堅牢化（MIN_SUSTAIN_FRAMES=3 フレーム以上持続）
+      │     声区バランス計算（chest_ratio / falsetto_ratio）
+      │     analysis/scoring.py で歌唱力スコアを計算
+      │
+      ▼
+  routers/analysis.py: _enrich_result()
+    recommend_songs()       ← recommender.py
+    find_similar_artists()  ← recommender.py
+    classify_voice_type()   ← recommender.py
+      │
+      ▼ (ログイン済みの場合)
+  db/users.py: create_analysis_record()  ← Supabase に履歴保存
+  db/users.py: update_vocal_range()      ← プロファイルの声域を最新化
+      │
+      ▼
+  JSON レスポンス返却
+  cleanup_files() ← BackgroundTask で一時ファイル削除
 ```
 
 ---
 
-## 5. モジュール詳細
+## 6. モジュール詳細
 
-### `main.py` — エントリポイント
+### `main.py` — アプリ設定
 
-- 全エンドポイントの定義
-- `_enrich_result(result, user)`: 解析結果に おすすめ曲・似てるアーティスト・声質タイプを付加する共通ヘルパー
-- `cleanup_files(*paths)`: 一時ファイルを背景タスクで削除するユーティリティ
-- 起動時に `init_db()` を呼んで SQLite を初期化
+- `lifespan`: 起動時に `db/songs.py` の `init_db()` を呼んで SQLite を初期化
+- CORS: `ALLOWED_ORIGINS` 環境変数でカンマ区切り指定（未設定時は `localhost:3000`）
+- アップロード上限: 50MB（Content-Length + 実測サイズの両方でチェック）
+- ルーター登録: `auth.router`, `users.router`, `songs.router`, `analysis.router`
 
-### `analyzer.py` — 音声解析
+### `analysis/pipeline.py` — 音声解析（旧 `analyzer.py`）
 
-- **`analyze(wav_path, already_separated, no_falsetto)`**: オーケストレータ。内部を7ステップの関数で構成
-- **`fix_octave_errors(f0, conf)`**: CREPE がオクターブ誤検出したフレームを中央値基準で修正。ただし高信頼度の高音跳躍フレームは補正しない
-- **`remove_unrealistic_range(f0, conf)`**: 中央値から 1.5oct 下 / 1.75oct 上を外れたフレームを除去（非対称：下は厳格、上は緩和）
-- **`remove_isolated_extremes(notes)`**: 1 半音以内の隣接フレーム数が一定数未満の孤立した高音フレームを除去
-- **`remove_statistical_outliers(notes, percentile, max_semitones_gap)`**: P{percentile} から max_semitones_gap 半音以上離れたフレームを外れ値として除去
-- **`check_octave_by_spectrum(y_seg, sr, candidate_hz)`**: FFT でスペクトルエネルギーを比較し、CREPE が 1 オクターブ低く推定した最高音を修正
-- **`filter_falsetto_consecutive/rms/min_ratio`**: Demucs 残留楽器を裏声と誤認しないための3段階ノイズフィルタ
+- **`analyze(wav_path, already_separated, no_falsetto)`**: オーケストレータ。7ステップの関数で構成
+- **`fix_octave_errors(f0, conf)`**: CREPE がオクターブ誤検出したフレームを中央値基準で修正
+- **`remove_unrealistic_range(f0, conf)`**: 中央値から 1.5oct 下 / 1.75oct 上を外れたフレームを除去
+- **`remove_isolated_extremes(notes)`**: 隣接フレーム数が不足する孤立した高音フレームを除去
+- **`remove_statistical_outliers(notes, percentile, max_semitones_gap)`**: パーセンタイル外れ値除去
 
-### `register_classifier.py` — 声区判定
+### `analysis/classifier.py` — 声区判定（旧 `register_classifier.py`）
 
-- **`classify_register(frame, sr, f0, median_freq, already_separated, crepe_conf)`**: 1フレームを地声 / 裏声 / unknown に分類するメイン関数
+- **`classify_register(frame, sr, f0, median_freq, already_separated, crepe_conf)`**: 1フレームを地声 / 裏声 / unknown に分類
 - **ハイブリッド判定構造**:
-  1. ハード下限チェック (FALSETTO_HARD_MIN_HZ = 270Hz): これ以下は無条件で地声
+  1. ハード下限チェック (`FALSETTO_HARD_MIN_HZ=270Hz`): これ以下は無条件で地声
   2. CREPE 信頼度チェック: ノイズゲート（0.35未満）は unknown
-  3. ML モデル推論: `extract_features()` で6特徴量抽出 → sklearn モデルで確率計算
-  4. ML 信頼度チェック: 信頼度が閾値未満なら次へ
-  5. ルールベースフォールバック: H1-H2 差 + HNR + スペクトル重心 + 倍音比率 で判定
-- **MLモデル**: `ml/models/register_model.joblib` (joblib 形式)。起動時ロード・ファイル変更時ホットリロード対応
+  3. ML モデル推論: `analysis/features.py` で6特徴量抽出 → scikit-learn モデルで確率計算
+  4. ML 信頼度が閾値未満ならルールベースフォールバック
+- **ML モデル**: `ml/models/register_model.joblib`。起動時ロード・ファイル変更時ホットリロード対応
 
-### `feature_extractor.py` — 特徴量抽出
+### `analysis/features.py` — 特徴量抽出（旧 `feature_extractor.py`）
 
 | 特徴量 | 内容 |
 |--------|------|
@@ -248,106 +272,135 @@ convert_to_wav()            convert_to_wav_hq()
 | `centroid_r` | スペクトル重心 / f0。高 ≈ 裏声（高調波成分が多い） |
 | `f0` | 基本周波数 (Hz)。高 ≈ 裏声の可能性が上がる |
 
-### `recommender.py` — 推薦エンジン
+### `analysis/scoring.py` — 歌唱力スコア（旧 `recommender.py` から分離）
 
-- **`recommend_songs(chest_min_hz, chest_max_hz, chest_avg_hz, falsetto_max_hz, limit, favorite_artist_ids)`**:
-  全楽曲を走査してスコアリング。スコア = 100 - 低音ペナルティ - 高音ペナルティ - 中心音ずれ。
-  お気に入りアーティスト登録がある場合: DISCOVERY_SLOTS(4曲)は必ずお気に入り以外から選ぶ
-- **`find_similar_artists(chest_min_hz, chest_max_hz, chest_avg_hz, limit)`**:
-  アーティストごとに全楽曲の最低音・最高音の中央値を計算して比較
-- **`classify_voice_type(chest_min_hz, chest_max_hz, chest_avg_hz, falsetto_max_hz, chest_ratio)`**:
-  平均声域 Hz でレンジクラス（バス / バリトン / テノール / ハイテノール）を決定。
-  高音有無・裏声使用度の組み合わせで7種類の声質タイプを返す
-- **`recommend_key_for_song(song_lowest_note, song_highest_note, user_min_hz, user_max_hz)`**:
-  -7〜+7 半音シフトで最適キー（ペナルティ最小）を探索。fit = perfect / good / ok / hard
+| 指標 | 重み | 算出方法 |
+|------|------|---------|
+| `range_score` | 30% | `range_semitones / 30 × 100`（30半音=2.5oct で満点） |
+| `stability_score` | 45% | 持続音セグメント内のピッチ標準偏差（セント）から逆算 |
+| `expression_score` | 25% | 地声・裏声の使い分け多様性 + 音域活用度 (IQR) |
+| `overall_score` | — | 上3指標の加重平均 |
 
-### `audio_converter.py` — 音声変換
+安定性の目安: 10 cents → 約 92 点（プロ相当）/ 25 cents → 約 80 点 / 40 cents → 約 68 点
 
-- **`convert_to_wav(input_path, output_dir)`**: マイク録音 / アカペラ用。**16kHz・モノラル**に変換
-  CREPE のサンプリングレート (16kHz) に合わせるため。Demucs 前処理には使わない
-- **`convert_to_wav_hq(input_path, output_dir)`**: Demucs 前処理用。**44.1kHz・ステレオ・16bit PCM**
-  Demucs は 44.1kHz ステレオで学習されており、低品質音声だと分離精度が大幅低下する
+### `audio/converter.py` — 音声変換（旧 `audio_converter.py`）
+
+- **`convert_to_wav(input_path, output_dir)`**: マイク/アカペラ用。**16kHz・モノラル**（CREPE の入力仕様に合わせる）
+- **`convert_to_wav_hq(input_path, output_dir)`**: Demucs 前処理用。**44.1kHz・ステレオ・16bit PCM**（Demucs の学習仕様に合わせる）
 - ffmpeg の実行パスは `find_ffmpeg()` で自動探索（PATH → Homebrew → 固定パス候補）
 
-### `vocal_separator.py` — ボーカル分離
+### `audio/separator.py` — ボーカル分離（旧 `vocal_separator.py`）
 
 - **`separate_vocals(input_wav_path, output_dir, ultra_fast_mode)`**: Demucs を subprocess で呼び出す
-- `ultra_fast_mode=True` 時は `htdemucs_6s` を使用（デフォルト）。`--two-stems=vocals` でボーカルと BGM のみ分離
+- `htdemucs_6s` モデル、`--two-stems=vocals` でボーカルと BGM のみ分離
 - 出力パス: `{output_dir}/{model_name}/{stem_name}/vocals.wav`
 - ファイルが見つからない場合は glob で再帰検索してフォールバック
 
-### `database.py` — SQLite（楽曲データ）
+### `recommender.py` — 推薦エンジン
 
-- `songs.db` は起動時読み取り専用で運用（本番時は scraper.py で再構築）
-- **テーブル構造**:
-  - `artists(id, name, slug, song_count, reading)` — 約850アーティスト
-  - `songs(id, title, artist_id, lowest_note, highest_note, falsetto_note, note, source)` — 約5000曲
-- **検索ロジック**: クエリがひらがな / カタカナのみなら `reading` 列（読み仮名）で検索（`_query_mode`）。
-  それ以外は楽曲名・アーティスト名のテキスト検索
-- カタカナをひらがなに正規化（`_hiragana_normalize`）して混在検索に対応
+- **`recommend_songs(..., favorite_artist_ids)`**: 全楽曲をスコアリング。
+  - `DISCOVERY_SLOTS=4`: お気に入り以外のアーティストから必ず確保
+  - `FAV_MAX_SLOTS=6`: お気に入りアーティスト優先枠
+  - `MAX_PER_ARTIST=2`: 同一アーティスト最大 2 曲（多様性確保）
+- **`find_similar_artists(...)`**: アーティスト最低音・最高音の中央値で比較
+- **`classify_voice_type(...)`**: 平均声域と裏声使用度で7種類の声質タイプを返す
+- **`recommend_key_for_song(...)`**: -7〜+7 半音シフトで最適キーを探索。fit = perfect / good / ok / hard
+- **`aggregate_vocal_range(records, favorite_artist_ids)`**: 分析履歴複数件から統合音域を計算
 
-### `database_supabase.py` — Supabase（ユーザーデータ）
+**音階表記の互換処理（DB の表記揺れ対策）:**
+- `mid1A/A#/B` → `mid2A/A#/B` と同周波数にマッピング
+- `loX` → `lowX` の表記揺れを吸収（`_NOTE_ALIASES` 辞書）
 
-- `supabase` クライアントを環境変数から初期化。`SUPABASE_URL` または `SUPABASE_KEY` が未設定なら `None` を返す（認証なしでもアプリが動作するよう設計）
-- **主な関数**:
+### `db/songs.py` — SQLite 楽曲カタログ（旧 `database.py`）
+
+- `songs.db` は起動時読み取り専用で運用
+- **検索ロジック**: クエリがひらがな/カタカナのみなら `reading` 列（読み仮名）で検索。それ以外は楽曲名・アーティスト名のテキスト検索
+- カタカナをひらがなに正規化して混在検索に対応
+
+### `db/users.py` — Supabase ユーザーデータ（旧 `database_supabase.py`）
 
 | 関数 | 説明 |
 |------|------|
-| `get_user_profile(user_id)` | ユーザープロファイル取得 |
+| `get_user_profile(user_id)` | プロファイル取得 |
 | `update_user_profile(user_id, data)` | プロファイル更新 |
 | `update_vocal_range(user_id, min, max, falsetto)` | 声域情報更新 |
 | `create_analysis_record(user_id, ...)` | 分析履歴保存（result_json も格納） |
-| `get_analysis_history(user_id, limit)` | 分析履歴取得 |
-| `get_integrated_vocal_range(user_id, limit)` | 直近N件の最低音・最高音の統合音域計算 |
-| `add_favorite_song(user_id, song_id)` | お気に入り楽曲追加 |
-| `remove_favorite_song(user_id, song_id)` | お気に入り楽曲削除 |
-| `get_favorite_songs(user_id, limit)` | お気に入り楽曲一覧（songs.db と JOIN して曲情報を付加） |
-| `add_favorite_artist(user_id, artist_id, artist_name)` | お気に入りアーティスト追加（上限10組） |
-| `get_favorite_artist_ids(user_id)` | お気に入りアーティスト ID 一覧（recommend_songs 用） |
+| `get_analysis_history(user_id, limit)` | 分析履歴取得（新しい順） |
+| `get_analysis_timeline(user_id, limit)` | 分析タイムライン取得（**古い順**・成長グラフ用） |
+| `delete_analysis_record(user_id, record_id)` | 分析履歴削除 |
+| `update_analysis_record(user_id, record_id, data)` | 分析履歴更新 |
+| `add_favorite_song / remove_favorite_song / get_favorite_songs / is_favorite` | お気に入り楽曲 CRUD |
+| `add_favorite_artist / remove_favorite_artist / get_favorite_artists / is_favorite_artist` | お気に入りアーティスト CRUD（上限 10 組） |
+| `get_favorite_artist_ids(user_id)` | アーティスト ID リスト取得（recommend_songs 用） |
 
 ### `auth.py` — 認証
 
-- **`get_current_user(credentials)`**: `Authorization: Bearer {token}` から JWT を取得し、Supabase で検証。失敗時は HTTP 401
-- **`get_optional_user(credentials)`**: 認証ヘッダーがなければ `None` を返す（未ログインユーザーも利用可能なエンドポイント用）
-- Supabase の `auth.get_user(token)` でサーバー側トークン検証
+- **`get_current_user(credentials)`**: JWT を Supabase で検証。`Depends(get_current_user)` で保護エンドポイントに使用
+- **`get_optional_user(credentials)`**: 未ログインなら `None` を返す。`Depends(get_optional_user)` で任意認証エンドポイントに使用
+- Supabase が `None`（環境変数未設定）の場合は `_ensure_auth_available()` が HTTP 503 を返す
 
-### `models.py` — Pydantic モデル
+### `note_converter.py` — 音程変換
 
-| モデル | 用途 |
-|--------|------|
-| `SignUpRequest` | メール登録（email, password, display_name） |
-| `SignInRequest` | ログイン（email, password） |
-| `UserProfileUpdate` | プロファイル更新（display_name, avatar_url, dam_account_id） |
-| `VocalRangeUpdate` | 声域更新（vocal_range_min, vocal_range_max, falsetto_max — 日本式表記） |
-| `AnalysisCreate` | 分析履歴手動保存（vocal_range_min/max, falsetto_max, source_type, file_name） |
-| `AnalysisUpdate` | 履歴更新（file_name のみ） |
-| `FavoriteSongAdd` | お気に入り楽曲追加（song_id） |
-| `FavoriteArtistAdd` | お気に入りアーティスト追加（artist_id, artist_name） |
+- A4 = **442Hz**（日本カラオケ標準）基準の対応表 `NOTE_TABLE`（C1〜E7、77エントリ）
+- **`hz_to_label_and_hz(hz)`**: 対数スケールで最近傍を検索して日本式表記に変換
+- **`label_to_rank(label)`**: ラベル → NOTE_TABLE インデックス（音高順位）。安定音域計算で使用
+- **`to_japanese_notation(note)`**: 後方互換。"C4" 等の文字列 → 日本語ラベル
+
+**オクターブ対応（日本語ラベル体系）:**
+
+| NOTE_TABLE 範囲 | プレフィックス | 例 |
+|----------------|---------------|----|
+| C1〜G#1 | `lowlow` | `lowlowC` |
+| A1〜B1 | `low` | `lowA`, `lowB` |
+| C2〜G#2 | `low` | `lowC` |
+| A2〜B2 | `mid1` | `mid1A`, `mid1B` |
+| C3〜G#3 | `mid1` | `mid1C` |
+| A3〜B3 | `mid2` | `mid2A`, `mid2B` |
+| C4〜G#4 | `mid2` | `mid2C` |
+| A4〜B4 | `hi` | `hiA`, `hiB` |
+| C5〜G#5 | `hi` | `hiC` |
+| A5〜B5 | `hihi` | `hihiA`, `hihiB` |
+| C6〜G#6 | `hihi` | `hihiC` |
+| A6〜B6 | `hihihi` | `hihihiA`, `hihihiB` |
+| C7〜E7 | `hihihi` | `hihihiC` |
 
 ### `config.py` — 定数管理
 
-解析に関わる全閾値をこのファイルに集約。チューニング時はここだけ変更する。
+解析に関わる全閾値をこのファイルに集約。**他ファイルへのハードコードは禁止**。
 
 | カテゴリ | 主要定数 |
 |----------|---------|
 | ピッチ検出 | `VOICE_MIN_HZ=65`, `VOICE_MAX_HZ=1324`, `CREPE_SR=16000`, `CREPE_HOP_LENGTH=160` |
 | 信頼度フィルタ | `CONF_THRESHOLDS=[0.5,0.35,0.2,0.1,0.05,0.01]`, `CONF_MIN_FRAMES=5` |
-| 外れ値除去 | `CHEST_OUTLIER_PERCENTILE=97`, `FALSETTO_OUTLIER_PERCENTILE=75` |
+| 外れ値除去 | `CHEST_OUTLIER_PERCENTILE=97`, `CHEST_OUTLIER_GAP_ST=3`, `FALSETTO_OUTLIER_PERCENTILE=95` |
 | 裏声ノイズ | `FALSETTO_MIN_CONSECUTIVE=5`, `FALSETTO_MIN_RATIO=0.05`, `FALSETTO_RMS_RATIO=0.15` |
-| 声区 ML 判定 | `FALSETTO_HARD_MIN_HZ=270`, `ML_CONF_THRESHOLD_LOW_F0=0.75` |
+| 声区 ML 判定 | `FALSETTO_HARD_MIN_HZ=270`, `ML_CONF_THRESHOLD_LOW_F0=0.75`, `CREPE_NOISE_GATE=0.35` |
+| 最高音堅牢化 | `MIN_SUSTAIN_FRAMES=3` |
 | 安定性スコア | `STABILITY_MIN_SEGMENT=3`, `STABILITY_SCALING=0.8` |
 | ログ制御 | `REGISTER_LOG_LEVEL=1`（env で上書き可。0=なし / 1=サマリー / 2=間引き / 3=全て） |
 
-### `note_converter.py` — 音程変換
+---
 
-- A4 = **442Hz**（日本カラオケ標準）基準の対応表 (`NOTE_TABLE`)
-- オクターブ表記: `lowlow` / `low` / `mid1` / `mid2` / `hi` / `hihi` / `hihihi`
-- **`hz_to_label_and_hz(hz)`**: 対数スケールで最近傍を検索して日本式表記に変換
-- DB 側の表記ゆれ（`mid1A/B` = `mid2A/B` 相当、`loX` = `lowX`）は `recommender.py` 側の `_NOTE_ALIASES` で吸収
+## 7. 安定音域アルゴリズム（成長グラフ機能）
+
+`GET /analysis/timeline` が実装。直近 N 件の分析履歴から安定した音域を判定する。
+
+```python
+STABLE_THRESHOLD = 4  # 直近N件中4回以上出現したラベルを「安定」とみなす
+
+chest_max_counts = Counter(r.get("vocal_range_max") for r in records if r.get("vocal_range_max"))
+# ...同様に chest_min, falsetto_max も集計
+
+stable_chest_max = max(candidates, key=label_to_rank)   # 最高音を選択
+stable_chest_min = min(candidates, key=label_to_rank)   # 最低音を選択
+stable_falsetto  = max(candidates, key=label_to_rank)   # 最高音を選択
+```
+
+`label_to_rank()` は `NOTE_TABLE` のインデックス（0 = lowlowC）を音高順位として使用。
 
 ---
 
-## 6. データベース設計
+## 8. データベース設計
 
 ### SQLite (`songs.db`) — 楽曲データ
 
@@ -361,19 +414,18 @@ CREATE TABLE artists (
 );
 
 CREATE TABLE songs (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    title        TEXT NOT NULL,
-    artist_id    INTEGER NOT NULL REFERENCES artists(id),
-    lowest_note  TEXT,                -- 最低音（日本式表記 例: mid1C）
-    highest_note TEXT,                -- 最高音
-    falsetto_note TEXT,               -- 裏声最高音
-    note         TEXT,                -- 補足メモ
-    source       TEXT DEFAULT 'voice-key.news'
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    title         TEXT NOT NULL,
+    artist_id     INTEGER NOT NULL REFERENCES artists(id),
+    lowest_note   TEXT,                -- 最低音（日本式表記 例: mid1C）
+    highest_note  TEXT,                -- 最高音
+    falsetto_note TEXT,                -- 裏声最高音
+    note          TEXT,                -- 補足メモ
+    source        TEXT DEFAULT 'voice-key.news'
 );
 ```
 
-- 実行時は**読み取り専用**。書き込みは `scraper.py` 実行時のみ
-- 再構築: `rm -f songs.db && python scraper.py`
+- 実行時は**読み取り専用**。再構築: `rm -f songs.db && python scraper.py`
 
 ### Supabase (PostgreSQL) — ユーザーデータ
 
@@ -381,34 +433,14 @@ CREATE TABLE songs (
 
 | テーブル | 説明 |
 |----------|------|
-| `profiles` | ユーザープロファイル（display_name, vocal_range_min/max, falsetto_max） |
-| `analysis_records` | 分析履歴（声域・source_type・ファイル名・result_json） |
-| `favorite_songs` | お気に入り楽曲（user_id + song_id） |
-| `favorite_artists` | お気に入りアーティスト（user_id + artist_id + artist_name、上限10組） |
+| `user_profiles` | display_name, current_vocal_range_min/max, current_falsetto_max, avatar_url |
+| `analysis_history` | vocal_range_min/max, falsetto_max, source_type, file_name, result_json (JSONB) |
+| `favorite_songs` | user_id + song_id |
+| `favorite_artists` | user_id + artist_id + artist_name（上限 10 組） |
 
 ---
 
-## 7. 歌唱力スコア計算
-
-`recommender.py` の `analyze_singing_ability()` が算出する4指標:
-
-| 指標 | 重み | 算出方法 |
-|------|------|---------|
-| 音域スコア (`range_score`) | 30% | `range_semitones / 30 × 100`（30半音=2.5oct で満点） |
-| 安定性スコア (`stability_score`) | 45% | 持続音セグメント内のピッチ標準偏差（セント）から逆算 |
-| 表現力スコア (`expression_score`) | 25% | 地声・裏声の使い分け多様性 + 音域活用度 (IQR) |
-| 総合スコア (`overall_score`) | — | 上3指標の加重平均 |
-
-安定性の目安:
-- 10 cents 偏差 → 約 92 点（プロレベル）
-- 25 cents → 約 80 点（上手い素人）
-- 40 cents → 約 68 点（普通のカラオケ）
-
----
-
-## 8. ログ規約
-
-バックエンドのログ接頭辞:
+## 9. ログ規約
 
 | 接頭辞 | 用途 |
 |--------|------|
@@ -418,52 +450,52 @@ CREATE TABLE songs (
 | `[DEBUG]` | 詳細なデバッグ情報 |
 | `[WARN]` | 非致命的な警告（処理は継続） |
 | `[ERROR]` | エラー（処理中断の可能性） |
-| `[FILTER]` | 裏声ノイズフィルタの適用ログ |
 
 声区判定のログ量は `REGISTER_LOG_LEVEL` 環境変数で制御（本番では 1 推奨）。
 
 ---
 
-## 9. セキュリティ・運用上の注意
+## 10. セキュリティ・運用上の注意
 
-- CORS は現在 `allow_origins=["*"]`。本番では必要最小オリジンに限定すること
-- `.env` ファイル（SUPABASE_URL / SUPABASE_KEY / JWT_SECRET）は絶対にコミットしない
-- 一時ファイル (`uploads/`, `separated/`) は `BackgroundTasks` で解析後即削除
-- Supabase の service_role キー (`SUPABASE_KEY`) はバックエンド専用。フロントエンドには anon キーのみ使う
+- CORS は `ALLOWED_ORIGINS` 環境変数で制御。本番では必要最小オリジンに限定すること
+- `.env`（SUPABASE_URL / SUPABASE_KEY / JWT_SECRET）は絶対にコミットしない
+- 一時ファイル（`uploads/`, `separated/`）は `BackgroundTasks` で解析後即削除
+- Supabase の `SUPABASE_KEY`（anon or service_role）はバックエンド専用。フロントエンドには別途 anon キーのみ使う
 - 解析閾値は `config.py` 以外にハードコードしない
 
 ---
 
-## 10. 開発セットアップ
+## 11. 開発セットアップ
 
 ```bash
 cd backend
 
-# 1. 仮想環境の作成と有効化
+# 1. 仮想環境の作成と有効化（必須）
 python3 -m venv venv
-source venv/bin/activate          # macOS / Linux
-# venv\Scripts\activate           # Windows
+source venv/bin/activate   # macOS / Linux
+# venv\Scripts\activate    # Windows
 
 # 2. 依存パッケージのインストール
 pip install -r requirements.txt
 
 # 3. 環境変数の設定
-cp .env.example .env              # SUPABASE_URL / SUPABASE_KEY を記入
+cp .env.example .env       # SUPABASE_URL / SUPABASE_KEY を記入
 
 # 4. 開発サーバー起動
-uvicorn main:app --reload         # http://localhost:8000
+uvicorn main:app --reload  # http://localhost:8000
 
-# 5. ヘルスチェック
-curl http://localhost:8000/docs   # Swagger UI
+# 5. 動作確認
+curl http://localhost:8000/health  # ヘルスチェック
+# http://localhost:8000/docs       # Swagger UI
 
 # songs.db の再構築（必要な場合のみ）
 rm -f songs.db && python scraper.py
 ```
 
-**重要**: 必ず `source venv/bin/activate` を先に実行すること。
-Homebrew のグローバル uvicorn と venv の依存パッケージが競合する。
+> **重要**: 必ず `source venv/bin/activate` を先に実行すること。
+> Homebrew のグローバル uvicorn と venv の依存パッケージが競合する。
 
 ### システム依存
 
-- `ffmpeg` — 音声変換に必須 (`brew install ffmpeg`)
+- `ffmpeg` — 音声変換に必須（`brew install ffmpeg`）
 - GPU (CUDA) — CREPE・Demucs が自動認識。なければ CPU で動作（低速）

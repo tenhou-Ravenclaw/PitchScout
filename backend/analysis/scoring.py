@@ -113,7 +113,9 @@ def _compute_stability(f0: np.ndarray, conf: np.ndarray) -> float:
 
     avg_std = weighted_sum / total_frames
     # 目安: 10cents=プロ(92), 25cents=上手い素人(80), 40cents=普通のカラオケ(68), 75+=40以下
-    return max(0.0, min(100.0, 100.0 - avg_std * STABILITY_SCALING))
+    # STABILITY_SCALING は config.py で管理。0 を下限クランプして常に 100 になる誤設定を防ぐ。
+    scaling = max(STABILITY_SCALING, 0.01)
+    return max(0.0, min(100.0, 100.0 - avg_std * scaling))
 
 
 def _compute_expression(

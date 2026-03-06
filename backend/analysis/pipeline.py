@@ -5,6 +5,7 @@ import torchcrepe
 import librosa
 from analysis.classifier import classify_register, new_register_stats, print_register_summary
 from analysis.scoring import analyze_singing_ability
+from audio.noise import score_frame_vad
 from note_converter import hz_to_label_and_hz
 from config import (
     VOICE_MIN_HZ, VOICE_MAX_HZ, CREPE_SR, CREPE_HOP_LENGTH,
@@ -18,6 +19,9 @@ from config import (
     MIN_SUSTAIN_FRAMES,
     FALSETTO_MIN_CONSECUTIVE, FALSETTO_MIN_RATIO, FALSETTO_RMS_RATIO,
     FALSETTO_RESCUE_SEMITONES,
+    SILERO_VAD_THRESHOLD,
+    FFT_SPECTRUM_SIZE,
+    CREPE_MAX_CONF_THRESHOLDS,
 )
 
 
@@ -150,7 +154,7 @@ def check_octave_by_spectrum(y_seg: np.ndarray, sr: int, candidate_hz: float) ->
     if doubled > sr / 2 * 0.9 or doubled > VOICE_MAX_HZ or len(y_seg) < 512:
         return candidate_hz
 
-    n_fft = 8192
+    n_fft = FFT_SPECTRUM_SIZE
     win   = np.hanning(min(len(y_seg), n_fft))
     y_w   = np.zeros(n_fft)
     n     = min(len(y_seg), n_fft)
@@ -197,10 +201,12 @@ def get_min_max_from_crepe(f0: np.ndarray, conf: np.ndarray,
     if len(f0) == 0:
         return 0.0, 0.0
 
-    # ---- 最高音: conf >= 0.3 の最大値 ----
-    for max_th in [0.3, 0.15, 0.05]:
+    # ---- 最高音: CREPE_MAX_CONF_THRESHOLDS の順に閾値を下げて最大値を探す ----
+    # MIN_SUSTAIN_FRAMES フレーム以上存在しないと孤立ノイズを最高音として誤採用するため
+    # フレーム数要件を課す。全閾値で不足する場合は最後の mask_max をそのまま使う。
+    for max_th in CREPE_MAX_CONF_THRESHOLDS:
         mask_max = conf >= max_th
-        if mask_max.sum() >= 1:
+        if mask_max.sum() >= MIN_SUSTAIN_FRAMES:
             break
     raw_max = float(np.max(f0[mask_max]))
 
@@ -248,10 +254,10 @@ def run_crepe(audio_tensor, sr, hop_length, device, model_size='tiny'):
             print(f"[DEBUG] デコーダー '{name}' で試行中...")
             kw = {**common, "decoder": get_dec()} if get_dec else common
             f0, conf = torchcrepe.predict(**kw)
-            print(f"[INFO] ✅ CREPE ({model_size}, {name}) 成功")
+            print(f"[INFO] CREPE ({model_size}, {name}) 成功")
             return f0, conf
         except (AttributeError, TypeError) as e:
-            print(f"[WARN] ⚠️ decoder={name} 失敗: {e}")
+            print(f"[WARN] decoder={name} 失敗: {e}")
         except Exception:
             raise
     raise RuntimeError("torchcrepe: 全デコーダーで失敗")
@@ -264,10 +270,10 @@ def run_crepe(audio_tensor, sr, hop_length, device, model_size='tiny'):
 def _load_audio(wav_path: str) -> dict:
     """WAV読込+バリデーション → dict(y, sr) or dict(error)"""
     print(f"\n{'='*60}")
-    print(f"[INFO] 🎵 分析開始: {wav_path}")
+    print(f"[INFO] 分析開始: {wav_path}")
     print(f"{'='*60}")
 
-    print(f"[STEP 1/7] 📁 WAVファイル読み込み中...")
+    print(f"[STEP 1/7] WAVファイル読み込み中...")
     try:
         y, sr = sf.read(wav_path)
         if len(y.shape) > 1:
@@ -278,7 +284,7 @@ def _load_audio(wav_path: str) -> dict:
         return {"error": f"WAVファイルの読み込みに失敗しました: {str(e)}"}
 
     duration = len(y) / sr
-    print(f"[DEBUG] ✅ 読込完了: SR={sr}, duration={duration:.2f}s, max={np.max(np.abs(y)):.4f}")
+    print(f"[DEBUG] 読込完了: SR={sr}, duration={duration:.2f}s, max={np.max(np.abs(y)):.4f}")
 
     if duration < 0.3:
         return {"error": "音声が短すぎます（0.3秒以上必要）。"}
@@ -290,7 +296,7 @@ def _load_audio(wav_path: str) -> dict:
 
 def _preprocess(y: np.ndarray, sr: int) -> dict:
     """正規化+リサンプル+テンソル → dict(y_16k, sr_crepe, hop_length, device, audio_tensor)"""
-    print(f"\n[STEP 2/7] 🔧 音声前処理中...")
+    print(f"\n[STEP 2/7] 音声前処理中...")
     print(f"[INFO] 音量正規化中... (目標: 0.95)")
     y = y / (np.max(np.abs(y)) + 1e-8) * 0.95
 
@@ -298,10 +304,16 @@ def _preprocess(y: np.ndarray, sr: int) -> dict:
     print(f"[INFO] リサンプリング中: {sr}Hz → {sr_crepe}Hz")
     y_16k      = librosa.resample(y, orig_sr=sr, target_sr=sr_crepe) if sr != sr_crepe else y.copy()
     hop_length = CREPE_HOP_LENGTH
-    device     = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # GPU優先: CUDA → MPS（Apple Silicon）→ CPU の順にフォールバック
+    if torch.cuda.is_available():
+        device = 'cuda'
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = 'mps'
+    else:
+        device = 'cpu'
     print(f"[INFO] デバイス: {device.upper()} (hop_length={hop_length})")
     audio_tensor = torch.tensor(np.copy(y_16k)).unsqueeze(0)
-    print(f"[DEBUG] ✅ 前処理完了: tensor shape={audio_tensor.shape}")
+    print(f"[DEBUG] 前処理完了: tensor shape={audio_tensor.shape}")
 
     return {
         "y_16k": y_16k, "sr_crepe": sr_crepe,
@@ -312,16 +324,16 @@ def _preprocess(y: np.ndarray, sr: int) -> dict:
 
 def _run_pitch_detection(audio_tensor, sr: int, hop_length: int, device: str) -> dict:
     """CREPE実行 → dict(f0, conf) or dict(error)"""
-    print(f"\n[STEP 3/7] 🎼 CREPE音高推定中...")
+    print(f"\n[STEP 3/7] CREPE音高推定中...")
     f0_raw = conf_raw = None
     for model_size in ['tiny', 'small']:
         try:
             print(f"[INFO] CREPEモデル '{model_size}' で試行中... (device={device})")
             f0_raw, conf_raw = run_crepe(audio_tensor, sr, hop_length, device, model_size)
-            print(f"[DEBUG] ✅ CREPE ({model_size}) 成功")
+            print(f"[DEBUG] CREPE ({model_size}) 成功")
             break
         except Exception as e:
-            print(f"[ERROR] ❌ CREPE ({model_size}) 失敗: {type(e).__name__}: {e}")
+            print(f"[ERROR] CREPE ({model_size}) 失敗: {type(e).__name__}: {e}")
 
     if f0_raw is None:
         return {"error": "解析エンジン(CREPE)の実行に失敗しました。"}
@@ -335,14 +347,14 @@ def _run_pitch_detection(audio_tensor, sr: int, hop_length: int, device: str) ->
 
 def _filter_frames(f0_np: np.ndarray, conf_np: np.ndarray) -> dict:
     """フィルタリング+オクターブ補正+中央値 → dict or dict(error)"""
-    print(f"\n[STEP 4/7] 🎯 信頼度フィルタリング中...")
+    print(f"\n[STEP 4/7] 信頼度フィルタリング中...")
 
     # --- confidence フィルタ ---
     for th in CONF_THRESHOLDS:
         idx = np.where(conf_np >= th)[0]
         if len(idx) >= CONF_MIN_FRAMES:
             valid_indices = idx
-            print(f"[INFO] ✅ 有効フレーム検出: {len(idx)}個 (confidence threshold={th:.2f})")
+            print(f"[INFO] 有効フレーム検出: {len(idx)}個 (confidence threshold={th:.2f})")
             break
     else:
         return {"error": f"歌声が検出できませんでした。(conf_max={np.max(conf_np):.4f})"}
@@ -356,18 +368,23 @@ def _filter_frames(f0_np: np.ndarray, conf_np: np.ndarray) -> dict:
     f0_v   = f0_v[mask]
     conf_v = conf_v[mask]
     valid_indices_filtered = valid_indices[mask]
-    print(f"[DEBUG] ✅ 人声範囲内: {len(f0_v)}フレーム")
+    print(f"[DEBUG] 人声範囲内: {len(f0_v)}フレーム")
 
     if len(f0_v) == 0:
-        return {"error": "人声の音域範囲内の音が検出できませんでした。"}
+        return {
+            "error": (
+                f"人声の音域範囲（{VOICE_MIN_HZ:.0f}Hz〜{VOICE_MAX_HZ:.0f}Hz）内の音が検出できませんでした。"
+                "声が小さすぎるか、音域が極端に高低すぎる可能性があります。"
+            )
+        }
 
-    print(f"\n[STEP 5/7] 📊 音域データ処理中...")
+    print(f"\n[STEP 5/7] 音域データ処理中...")
     # --- レジスター判定用フィルタ（min/maxとは独立） ---
     print(f"[INFO] 異常値除去中 (下{UNREALISTIC_LOWER_OCT}oct / 上{UNREALISTIC_UPPER_OCT}oct)...")
     f0_reg, conf_reg = remove_unrealistic_range(f0_v, conf_v)
     if len(f0_reg) == 0:
         return {"error": "有効な音域データが残りませんでした。"}
-    print(f"[DEBUG] ✅ 残留フレーム: {len(f0_reg)}個")
+    print(f"[DEBUG] 残留フレーム: {len(f0_reg)}個")
 
     # remove_unrealistic_range後もvalid_indicesを対応させる
     # ★ 同じ定数を使って再導出（旧コードの 2.0 vs 1.75 不一致を修正）
@@ -387,7 +404,7 @@ def _filter_frames(f0_np: np.ndarray, conf_np: np.ndarray) -> dict:
     cum_conf    = np.cumsum(conf_reg[sort_idx])
     mid_idx     = np.searchsorted(cum_conf, cum_conf[-1] / 2)
     median_freq = f0_reg_fixed[sort_idx[mid_idx]]
-    print(f"[DEBUG] ✅ 中央値={median_freq:.1f} Hz, レジスター判定フレーム数={len(f0_reg_fixed)}")
+    print(f"[DEBUG] 中央値={median_freq:.1f} Hz, レジスター判定フレーム数={len(f0_reg_fixed)}")
 
     return {
         "f0_reg": f0_reg, "f0_reg_fixed": f0_reg_fixed,
@@ -473,6 +490,60 @@ def filter_falsetto_rms(falsetto_data, chest_rms_values, rms_ratio):
     return result
 
 
+def filter_falsetto_vad(
+    falsetto_data: list,
+    y_16k: np.ndarray,
+    valid_indices_reg: np.ndarray,
+    hop_length: int,
+    threshold: float,
+    frame_len: int = 2048,
+) -> list:
+    """
+    フィルタ3: Silero VAD フレームスコアフィルタ
+    各フレームの VAD スコアが threshold 未満のものを楽器リークとして除去する。
+
+    区間ベース（「歌声区間に含まれるか」）ではなくフレーム単位でスコアを付与する。
+    楽器ハーモニクスは歌声と異なる音響特徴を持つため、個別スコアで区別できる。
+
+    モデル未初期化の場合は score_frame_vad が 1.0 を返すため
+    全フレームが threshold を超えてフィルタは無効になる（フォールバック）。
+
+    Args:
+        falsetto_data: list of (local_index, freq, rms) タプル。
+        y_16k: 16kHz モノラル音声の numpy 配列。
+        valid_indices_reg: CREPE フレームインデックスの配列。
+        hop_length: CREPE のホップ長（サンプル数）。
+        threshold: VAD スコアの閾値。これ未満を楽器リークと判定。
+                   config.SILERO_VAD_THRESHOLD を渡す。
+        frame_len: フレームのサンプル数（デフォルト 2048 = 128ms at 16kHz）。
+
+    Returns:
+        フィルタ後の falsetto_data。
+    """
+    if not falsetto_data:
+        return falsetto_data
+
+    result = []
+    low_score_count = 0
+    for item in falsetto_data:
+        center = int(valid_indices_reg[item[0]]) * hop_length
+        frame = y_16k[max(0, center - frame_len // 2):
+                      min(len(y_16k), center + frame_len // 2)]
+        vad_score = score_frame_vad(frame)
+        if vad_score >= threshold:
+            result.append(item)
+        else:
+            low_score_count += 1
+
+    removed = len(falsetto_data) - len(result)
+    if removed > 0:
+        print(f"[FILTER] VADフィルタ: {removed}フレーム除外 "
+              f"(VADスコア<{threshold:.2f}の楽器リーク, 残{len(result)}フレーム)")
+    elif low_score_count == 0 and falsetto_data:
+        print(f"[DEBUG] VADフィルタ: 全{len(falsetto_data)}フレームが閾値({threshold:.2f})を超え除外なし")
+    return result
+
+
 def filter_falsetto_min_ratio(falsetto_notes, chest_notes, min_ratio):
     """
     フィルタ3: 最小比率フィルタ
@@ -526,7 +597,7 @@ def _classify_frames(filtered: dict, y_16k: np.ndarray, sr_crepe: int,
     valid_indices_reg = filtered["valid_indices_reg"]
     median_freq      = filtered["median_freq"]
 
-    print(f"\n[STEP 6/7] 🎤 レジスター判定中...")
+    print(f"\n[STEP 6/7] レジスター判定中...")
 
     if no_falsetto:
         # === no_falsetto モード: 全フレームを地声として扱う ===
@@ -622,6 +693,10 @@ def _classify_frames(filtered: dict, y_16k: np.ndarray, sr_crepe: int,
         falsetto_data = filter_falsetto_rms(
             falsetto_data, chest_rms, FALSETTO_RMS_RATIO)
 
+        # フィルタ3: Silero VAD - フレーム単位で音声スコアを評価し楽器リークを除去
+        falsetto_data = filter_falsetto_vad(
+            falsetto_data, y_16k, valid_indices_reg, hop_length, SILERO_VAD_THRESHOLD)
+
     # falsetto_data → falsetto_notes に変換（周波数リストに戻す）
     falsetto_notes = [item[1] for item in falsetto_data]
 
@@ -634,7 +709,7 @@ def _classify_frames(filtered: dict, y_16k: np.ndarray, sr_crepe: int,
         print(f"[DEBUG] {len(low_falsetto)}フレームを裏声→地声に再分類")
 
     if not chest_notes and not falsetto_notes:
-        print(f"[WARN] ⚠️ レジスター判定結果なし。全フレームを地声として処理")
+        print(f"[WARN] レジスター判定結果なし。全フレームを地声として処理")
         chest_notes = f0_reg_fixed.tolist()
     else:
         print(f"[DEBUG] レジスター判定直後: 地声={len(chest_notes)}フレーム, 裏声={len(falsetto_notes)}フレーム")
@@ -720,7 +795,7 @@ def _classify_frames(filtered: dict, y_16k: np.ndarray, sr_crepe: int,
 def _build_result(chest_notes: list, falsetto_notes: list,
                   f0_reg_fixed: np.ndarray, conf_reg: np.ndarray) -> dict:
     """結果dict構築 → result"""
-    print(f"\n[STEP 7/7] 📋 結果集計中...")
+    print(f"\n[STEP 7/7] 結果集計中...")
 
     all_notes   = chest_notes + falsetto_notes
     overall_min = float(np.min(all_notes))
@@ -755,7 +830,7 @@ def _build_result(chest_notes: list, falsetto_notes: list,
         falsetto_max_hz = float(np.max(falsetto_notes))
         print(f"[DEBUG] 地声最高音: {chest_max_hz:.1f}Hz, 裏声最高音: {falsetto_max_hz:.1f}Hz")
         if abs(chest_max_hz - falsetto_max_hz) < 5:
-            print(f"[WARN] ⚠️ 地声と裏声の最高音が近い（差: {abs(chest_max_hz - falsetto_max_hz):.1f}Hz）")
+            print(f"[WARN] 地声と裏声の最高音が近い（差: {abs(chest_max_hz - falsetto_max_hz):.1f}Hz）")
 
     ovr_min_label, ovr_min_hz = hz_to_label_and_hz(overall_min)
     ovr_max_label, ovr_max_hz = hz_to_label_and_hz(overall_max)
@@ -789,9 +864,9 @@ def _build_result(chest_notes: list, falsetto_notes: list,
         print(f"[WARN] 歌唱力分析スキップ: {e}")
 
     print(f"\n{'='*60}")
-    print(f"[INFO] ✅ 解析完了!")
+    print(f"[INFO] 解析完了!")
     print(f"{'='*60}")
-    print(f"📊 最終結果:")
+    print(f"[INFO] 最終結果:")
     print(f"  全体音域: {result.get('overall_min', 'N/A')} - {result.get('overall_max', 'N/A')}")
     if 'chest_min' in result:
         print(f"  地声音域: {result.get('chest_min', 'N/A')} - {result.get('chest_max', 'N/A')} ({result.get('chest_ratio', 0)}%)")

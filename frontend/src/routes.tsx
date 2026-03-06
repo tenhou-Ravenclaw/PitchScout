@@ -21,6 +21,8 @@ const SongListRoute = lazy(() => import("./routeWrappers/SongListRoute").then(m 
 const FavoritesRoute = lazy(() => import("./routeWrappers/FavoritesRoute").then(m => ({ default: m.FavoritesRoute })));
 const HistoryRoute  = lazy(() => import("./routeWrappers/HistoryRoute").then(m => ({ default: m.HistoryRoute })));
 const LoginRoute    = lazy(() => import("./routeWrappers/LoginRoute").then(m => ({ default: m.LoginRoute })));
+const PasswordResetRoute = lazy(() => import("./routeWrappers/PasswordResetRoute").then(m => ({ default: m.PasswordResetRoute })));
+const PasswordChangeRoute = lazy(() => import("./routeWrappers/PasswordChangeRoute").then(m => ({ default: m.PasswordChangeRoute })));
 const GuidePage     = lazy(() => import("./pages/GuidePage"));
 
 export const routes: RouteObject[] = [
@@ -39,6 +41,8 @@ export const routes: RouteObject[] = [
       { path: "/history",   element: <HistoryRoute /> },
       { path: "/guide",     element: <GuidePage /> },
       { path: "/login",     element: <LoginRoute /> },
+      { path: "/reset-password", element: <PasswordResetRoute /> },
+      { path: "/change-password", element: <PasswordChangeRoute /> },
     ],
   },
 ];

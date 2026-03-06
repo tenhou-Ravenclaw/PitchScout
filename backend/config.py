@@ -9,7 +9,7 @@ analyzer.py と register_classifier.py で使用する閾値・パラメータ�
 VOICE_MIN_HZ = 65.0       # 人声の絶対下限 (C2付近)
 VOICE_MAX_HZ = 1324.0     # 人声の絶対上限 (E6付近)
 CREPE_SR = 16000           # CREPEのサンプリングレート
-CREPE_HOP_LENGTH = 160     # 10ms (高速化: フレーム数半減)
+CREPE_HOP_LENGTH = 320     # 20ms (高速化: フレーム数を1/4に削減)
 
 # === フィルタリング ===
 UNREALISTIC_LOWER_OCT = 1.5    # 下限: medianから1.5オクターブ下
@@ -32,6 +32,10 @@ NO_FALSETTO_OUTLIER_GAP_ST = 3
 CLEANUP_SEMITONES = 2  # 2半音分の幅で地声/裏声の混在を解消
 
 # === 段階的信頼度要求 ===
+# 中央値から遠い音程ほどノイズリスクが高いため、より高い信頼度を要求する。
+# 1.5oct 以上離れた音(GRADUATED_CONF_FAR=0.65): 誤検出リスク大。CREPEの高信頼閾値。
+# 1.0oct 以上(GRADUATED_CONF_MID=0.50): 中リスク。
+# その他(GRADUATED_CONF_NEAR=0.35): CREPEのデフォルト信頼度ゲート。
 GRADUATED_CONF_FAR = 0.65    # medianから1.5oct以上
 GRADUATED_CONF_MID = 0.50    # medianから1.0oct以上
 GRADUATED_CONF_NEAR = 0.35   # その他
@@ -52,22 +56,61 @@ STABILITY_SCALING = 0.8         # スコア変換係数 (avg_std * scaling を10
 MIN_SUSTAIN_FRAMES = 3          # 最高音として認定する最小フレーム数
 
 # === ルールベース判定 ===
+# _classify_rules で falsetto_score/(chest+falsetto) がこの値を超えたら裏声と判定。
+# 高音域(f0>500Hz)では裏声の発生確率が高いため判定閾値を低めに設定:
+#   FALSETTO_RATIO_HIGH=0.42: 42%以上で裏声。倍音構造が変質しやすいDemucs出力対策。
+#   FALSETTO_RATIO_MID=0.48:  遷移帯域。
+#   FALSETTO_RATIO_DEFAULT=0.58: 低音域では誤判定防止のため高めに設定。
 FALSETTO_RATIO_HIGH = 0.42    # f0 > 500Hz
 FALSETTO_RATIO_MID = 0.48     # f0 > 400Hz
 FALSETTO_RATIO_DEFAULT = 0.58 # その他
 
 # === 裏声ノイズフィルタ（demucs残留楽器対策） ===
 # フィルタ1: 連続フレーム要件 - 孤立した裏声フレームはノイズ
+# 5フレーム(=100ms@20ms/frame)未満の連続群は楽器の一時的な倍音と判断して除外。
 FALSETTO_MIN_CONSECUTIVE = 5     # 連続5フレーム未満の裏声群は除外
 # フィルタ2: 最小比率 - 裏声が少なすぎる場合は全て地声に再分類
-FALSETTO_MIN_RATIO = 0.05        # 裏声が全体の5%未満なら全て地声扱い
+# 1%は VAD(閾値0.3)で既にノイズ除去済みを前提とした緩い閾値。
+# Demucs分離後でも楽器が2-5%残留するため、1%では不足する場合がある。
+FALSETTO_MIN_RATIO = 0.01        # 裏声が全体の1%未満なら全て地声扱い（VAD0.3で厳選済みのため緩和）
 # フィルタ3: RMSパワー - 残留楽器はボーカルより音量が小さい
+# 地声RMS中央値の15%未満 = 歌声の音量に対して極端に小さいフレームは楽器リークと判断。
 FALSETTO_RMS_RATIO = 0.15        # 地声RMS中央値の15%未満の裏声フレームは除外
 # フィルタ3-b: 最小比率フィルタで除外する際、地声P97から何半音以内なら地声に戻すか
+# 4半音=短三度。これより広くすると正当な高音地声が裏声に誤判定される。
 FALSETTO_RESCUE_SEMITONES = 4    # P97+4半音以内は高音地声として救済
+
+# === Silero VAD フィルタ ===
+# 歌声検出の信頼度閾値 (0.0-1.0)。小さいほど感度高（歌声を残しやすい）。
+# デフォルト0.5は話し声向けで歌声を落とし過ぎるため、0.3に設定。
+# 0.25未満は楽器リークを通し過ぎ、0.35超は正当な裏声を落とすリスクあり。
+SILERO_VAD_THRESHOLD: float = 0.3
+
+# === DeepFilterNet ノイズ除去 ===
+# ノイズ減衰上限 (dB)。値が小さいほど音質保護優先。
+# 20dB: 残留楽器音を除去しつつボーカルへの影響を最小化するデフォルト値。
+DFN_ATTENUATION_LIMIT_DB: int = 20
+
+# === スペクトル解析 FFT ===
+# classifier.py の _classify_rules / check_octave_by_spectrum が共用する FFT サイズ。
+# 変更時は両方の関数の動作に影響するため慎重に。
+FFT_SPECTRUM_SIZE = 8192
+
+# === 最高音推定 最大信頼度フォールバック閾値 ===
+# get_min_max_from_crepe で conf>=閾値 の最大音を求める際のフォールバック順序。
+# どの閾値でも 1 フレーム以上見つかれば処理を続行する。
+CREPE_MAX_CONF_THRESHOLDS: list[float] = [0.3, 0.15, 0.05]
+
+# === お気に入りアーティスト上限 ===
+# db/users.py の add_favorite_artist と routers/users.py のエラーメッセージで使用。
+FAVORITE_ARTIST_LIMIT = 10
 
 # === ログ制御 ===
 import os
-# REGISTER_LOG_LEVEL: 0=なし, 1=サマリーのみ, 2=間引き(デフォルト), 3=全て
+# REGISTER_LOG_LEVEL: 0=なし, 1=サマリーのみ(デフォルト), 2=間引き, 3=全て
+# ※ サマリーは print_register_summary() が出力。フレームログは level 2/3 のみ。
 REGISTER_LOG_LEVEL = int(os.getenv("REGISTER_LOG_LEVEL", "1"))
-REGISTER_LOG_INTERVAL = int(os.getenv("REGISTER_LOG_INTERVAL", "100"))  # 間引き間隔
+# REGISTER_LOG_INTERVAL: 間引きモード(level=2)でログを出力するフレーム間隔。
+# CREPE_HOP_LENGTH=320 / CREPE_SR=16000 より 1フレーム = 20ms。
+# デフォルト100フレーム = 約2秒ごとにログ出力。
+REGISTER_LOG_INTERVAL = int(os.getenv("REGISTER_LOG_INTERVAL", "100"))

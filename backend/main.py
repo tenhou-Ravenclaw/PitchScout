@@ -14,10 +14,17 @@ from routers import auth, users, songs, analysis
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
+class RequestBodyTooLargeError(Exception):
+    """リクエストボディサイズ超過を示す例外。"""
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """サーバー起動時に SQLite を初期化する"""
+    """サーバー起動時に SQLite と DeepFilterNet モデルを初期化する"""
     init_db()
+    from audio.noise import init_deepfilter, init_silero_vad
+    init_deepfilter()
+    init_silero_vad()
     yield
 
 
@@ -42,14 +49,42 @@ app.add_middleware(
 # ── アップロードサイズ制限ミドルウェア ────────────────────────
 @app.middleware("http")
 async def limit_upload_size(request: Request, call_next):
-    """Content-Length ヘッダーで上限（50MB）を超えるリクエストを早期拒否する"""
+    """Content-Length と実測サイズの両方で上限（50MB）を超えるリクエストを拒否する。"""
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_UPLOAD_BYTES:
         return JSONResponse(
             status_code=413,
             content={"error": f"ファイルサイズが上限（{MAX_UPLOAD_BYTES // (1024 * 1024)}MB）を超えています"},
         )
-    return await call_next(request)
+
+    received_size = 0
+    original_receive = request.receive
+
+    async def limited_receive() -> dict:
+        nonlocal received_size
+        message = await original_receive()
+        if message.get("type") == "http.request":
+            body = message.get("body", b"")
+            received_size += len(body)
+            if received_size > MAX_UPLOAD_BYTES:
+                raise RequestBodyTooLargeError()
+        return message
+
+    wrapped_request = Request(request.scope, limited_receive)
+    try:
+        return await call_next(wrapped_request)
+    except RequestBodyTooLargeError:
+        return JSONResponse(
+            status_code=413,
+            content={"error": f"ファイルサイズが上限（{MAX_UPLOAD_BYTES // (1024 * 1024)}MB）を超えています"},
+        )
+
+# ── ヘルスチェック ─────────────────────────────────────────────
+@app.get("/health", tags=["health"])
+def health_check() -> dict:
+    """サーバーの死活監視エンドポイント。ロードバランサー・監視ツール向け。"""
+    return {"status": "ok"}
+
 
 # ── ルーター登録 ──────────────────────────────────────────────
 app.include_router(auth.router)

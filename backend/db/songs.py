@@ -367,6 +367,57 @@ def get_artist_songs(artist_id: int) -> list[dict]:
         conn.close()
 
 
+def get_all_songs_raw(query: str = "") -> list[dict]:
+    """
+    音域フィルタ用に楽曲を全件取得する（ページネーションなし）。
+
+    通常の get_all_songs / search_songs はページネーション前提のため、
+    フィルタ後にページネーションしたい場合にこちらを使用する。
+    全件取得後にルーター側で Python フィルタを適用し、
+    その後 offset/limit でスライスすること。
+
+    Args:
+        query: 楽曲名・アーティスト名での絞り込み文字列。空文字なら全件返す。
+
+    Returns:
+        楽曲情報の辞書リスト（アーティスト50音順 → 曲名順）。
+    """
+    conn = get_connection()
+    try:
+        if query:
+            nfkc_query = unicodedata.normalize('NFKC', query)
+            normalized_query = _hiragana_normalize(query)
+            escaped_nfkc = f"%{_escape_like(nfkc_query)}%"
+            escaped_normalized = f"%{_escape_like(normalized_query)}%"
+            rows = conn.execute("""
+                SELECT s.id, s.title, a.name as artist,
+                       s.artist_id, a.slug as artist_slug,
+                       a.reading as artist_reading,
+                       s.lowest_note, s.highest_note, s.falsetto_note, s.note,
+                       s.source
+                FROM songs s
+                JOIN artists a ON s.artist_id = a.id
+                WHERE s.title LIKE ? ESCAPE '\\'
+                   OR a.name LIKE ? ESCAPE '\\'
+                   OR a.reading LIKE ? ESCAPE '\\'
+                ORDER BY a.reading, s.title COLLATE NOCASE
+            """, (escaped_nfkc, escaped_nfkc, escaped_normalized)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT s.id, s.title, a.name as artist,
+                       s.artist_id, a.slug as artist_slug,
+                       a.reading as artist_reading,
+                       s.lowest_note, s.highest_note, s.falsetto_note, s.note,
+                       s.source
+                FROM songs s
+                JOIN artists a ON s.artist_id = a.id
+                ORDER BY a.reading, s.title COLLATE NOCASE
+            """).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def get_all_songs(limit: int = 20, offset: int = 0) -> list[dict]:
     """全曲を取得（アーティスト名50音順 → 曲名順）"""
     conn = get_connection()

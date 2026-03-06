@@ -15,6 +15,7 @@ register_classifier.py の既存ロジックから6特徴量を抽出する共�
 
 import numpy as np
 import librosa
+from config import FFT_SPECTRUM_SIZE
 
 FEATURE_NAMES = ["h1_h2", "hcount", "slope", "hnr", "centroid_r", "f0"]
 N_FEATURES = len(FEATURE_NAMES)
@@ -54,7 +55,8 @@ def compute_hnr(y: np.ndarray, sr: int, f0: float) -> float:
         if lag < 5 or lag >= len(ac) - 5:
             return 0.5
         return float(np.clip(np.max(ac[lag - 3: lag + 4]), 0.0, 1.0))
-    except Exception:
+    except Exception as e:
+        print(f"[WARN] HNR計算失敗 (f0={f0:.1f}Hz): {e}")
         return 0.5
 
 
@@ -73,8 +75,8 @@ def extract_features(y: np.ndarray, sr: int, f0: float) -> np.ndarray | None:
     if f0 <= 0 or len(y) < 512:
         return None
 
-    # FFT
-    n_fft = 8192
+    # FFT（classifier.py の _classify_rules と同じ FFT_SPECTRUM_SIZE を使用して解像度を統一）
+    n_fft = FFT_SPECTRUM_SIZE
     win = np.hanning(len(y))
     y_pad = np.zeros(n_fft)
     y_pad[:len(y)] = y * win

@@ -6,6 +6,7 @@
  */
 
 import React from "react";
+import { Link } from "react-router-dom";
 import CenteredCardShell from "../components/ui/cards/CenteredCardShell";
 
 /** LoginPage が受け取るプロパティ */
@@ -63,6 +64,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       <p className="text-xs text-slate-400 mt-6">
         ログインなしでも録音・分析・楽曲検索は利用できます
       </p>
+
+      <div className="mt-4 flex items-center justify-between text-xs">
+        <Link to="/reset-password" className="text-cyan-400 hover:text-cyan-300 transition-colors">
+          パスワードを忘れた場合
+        </Link>
+        <Link to="/change-password" className="text-cyan-400 hover:text-cyan-300 transition-colors">
+          パスワード変更
+        </Link>
+      </div>
     </CenteredCardShell>
   );
 };

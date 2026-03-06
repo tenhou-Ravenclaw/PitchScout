@@ -105,6 +105,27 @@ NOTE_TABLE = [
 
 _FREQS = [row[2] for row in NOTE_TABLE]
 
+# label → NOTE_TABLE インデックス（音高順位）のキャッシュ
+# NOTE_TABLE は低音から高音順なのでインデックス = 音高順位
+_LABEL_TO_RANK: dict[str, int] = {row[1]: i for i, row in enumerate(NOTE_TABLE)}
+
+
+def label_to_rank(label: str) -> int:
+    """
+    音階ラベル（例: "mid2C"）を音高順位（0始まり）に変換する。
+
+    NOTE_TABLE の先頭が最低音（lowlowC）であるため、
+    インデックスをそのまま音高順位として使用できる。
+    未知ラベルは -1 を返す（比較時に最低音扱い）。
+
+    Args:
+        label: 音階ラベル文字列（例: "mid2C", "hiA", "lowlowG"）
+
+    Returns:
+        NOTE_TABLE 上のインデックス（0 = 最低音）。未知ラベルは -1。
+    """
+    return _LABEL_TO_RANK.get(label, -1)
+
 
 def hz_to_label_and_hz(hz: float) -> tuple:
     """

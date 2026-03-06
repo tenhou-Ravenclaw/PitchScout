@@ -2,16 +2,28 @@ import os
 import shutil
 import subprocess
 import uuid
+from functools import lru_cache
 
-def find_ffmpeg():
-    """ffmpegの実行パスを探す"""
+
+@lru_cache(maxsize=1)
+def find_ffmpeg() -> str | None:
+    """
+    ffmpeg の実行パスを探してキャッシュする。
+
+    起動後にインストール先が変わることはほぼないため、
+    lru_cache で初回検索結果を永続キャッシュする（I/O 削減）。
+
+    Returns:
+        ffmpeg の絶対パス。見つからなければ None。
+    """
     path = shutil.which("ffmpeg")
-    if path: return path
+    if path:
+        return path
 
     candidates = [
         "/opt/homebrew/bin/ffmpeg",
         "/usr/local/bin/ffmpeg",
-        "/usr/bin/ffmpeg"
+        "/usr/bin/ffmpeg",
     ]
     for p in candidates:
         if os.path.exists(p) and os.access(p, os.X_OK):
@@ -47,8 +59,10 @@ def convert_to_wav(input_path: str, output_dir: str = "uploads") -> str:
     (CREPE解析専用。Demucsには使わないこと)
     """
     ffmpeg_bin = find_ffmpeg()
-    filename = os.path.basename(input_path)
-    name_without_ext = os.path.splitext(filename)[0]
+    if not ffmpeg_bin:
+        raise RuntimeError("ffmpegが見つかりません。brew install ffmpegを実行してください。")
+    input_basename = os.path.basename(input_path)
+    name_without_ext = os.path.splitext(input_basename)[0]
     output_filename = f"{name_without_ext}_{uuid.uuid4().hex[:8]}.wav"
     output_path = os.path.join(output_dir, output_filename)
 
@@ -70,8 +84,10 @@ def convert_to_wav_hq(input_path: str, output_dir: str = "uploads") -> str:
     16kHz/モノラルだとボーカル分離の精度が大幅に低下する。
     """
     ffmpeg_bin = find_ffmpeg()
-    filename = os.path.basename(input_path)
-    name_without_ext = os.path.splitext(filename)[0]
+    if not ffmpeg_bin:
+        raise RuntimeError("ffmpegが見つかりません。brew install ffmpegを実行してください。")
+    input_basename = os.path.basename(input_path)
+    name_without_ext = os.path.splitext(input_basename)[0]
     output_filename = f"{name_without_ext}_hq_{uuid.uuid4().hex[:8]}.wav"
     output_path = os.path.join(output_dir, output_filename)
 

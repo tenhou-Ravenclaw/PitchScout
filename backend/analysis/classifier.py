@@ -4,6 +4,7 @@ classifier.py  —  地声 / 裏声 判定
 """
 
 import os
+import time
 from dataclasses import dataclass
 import numpy as np
 import librosa
@@ -15,6 +16,7 @@ from config import (
     CREPE_NOISE_GATE,
     FALSETTO_RATIO_HIGH, FALSETTO_RATIO_MID, FALSETTO_RATIO_DEFAULT,
     REGISTER_LOG_LEVEL, REGISTER_LOG_INTERVAL,
+    FFT_SPECTRUM_SIZE,
 )
 
 # ============================================================
@@ -22,8 +24,12 @@ from config import (
 # ============================================================
 _ML_MODEL = None
 _MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "ml", "models", "register_model.joblib")
-_MODEL_MTIME = 0.0  # モデルファイルの更新日時を記録
+_MODEL_MTIME = 0.0       # モデルファイルの更新日時を記録
 _ML_STATUS_LOGGED = False  # MLモデルの初回状態ログ出力済みフラグ
+_last_check_time: float = 0.0   # 最終ディスクチェック時刻（time.monotonic）
+_CHECK_INTERVAL: float = 30.0   # モデル更新チェックの最小間隔（秒）
+# フレームごとに os.path.exists / os.path.getmtime を呼ぶとI/O回数が多いため、
+# モデルがロード済みの場合は _CHECK_INTERVAL 秒間チェックをスキップする。
 
 @dataclass
 class RegisterStats:
@@ -41,7 +47,16 @@ def new_register_stats() -> "RegisterStats":
 
 def _load_model_if_needed():
     """モデルファイルが更新されていたら再ロード（学習後にサーバー再起動不要）"""
-    global _ML_MODEL, _MODEL_MTIME
+    global _ML_MODEL, _MODEL_MTIME, _last_check_time
+
+    # 時間ベーススロットリング: モデルがロード済みで前回チェックから _CHECK_INTERVAL 秒未満なら
+    # os.path.exists / os.path.getmtime の syscall をスキップする。
+    # フレームごとに呼ばれるため数千回/解析ファイルになる可能性があり、I/O負荷を抑える。
+    now = time.monotonic()
+    if _ML_MODEL is not None and (now - _last_check_time) < _CHECK_INTERVAL:
+        return
+
+    _last_check_time = now
 
     if not os.path.exists(_MODEL_PATH):
         if _ML_MODEL is not None:
@@ -57,14 +72,22 @@ def _load_model_if_needed():
         import joblib
         _ML_MODEL = joblib.load(_MODEL_PATH)
         _MODEL_MTIME = current_mtime
-        print(_MODEL_PATH)
+        print(f"[INFO] MLモデルをロードしました: {_MODEL_PATH}")
     except Exception as e:
-        print( e)
+        print(f"[ERROR] MLモデルのロードに失敗しました ({_MODEL_PATH}): {e}")
         _ML_MODEL = None
 
 
 # 起動時に1回チェック
 _load_model_if_needed()
+
+
+def _should_log_verbose(stats: "RegisterStats") -> bool:
+    """詳細ログを出力すべきかを判定するヘルパー。
+    繰り返し使われる条件式を 1 箇所に集約する。"""
+    return REGISTER_LOG_LEVEL >= 3 or (
+        REGISTER_LOG_LEVEL == 2 and stats.log_counter % REGISTER_LOG_INTERVAL == 0
+    )
 
 
 # ============================================================
@@ -118,7 +141,7 @@ def _classify_ml(y: np.ndarray, sr: int, f0: float,
 
         if confidence < threshold:
             stats.ml_fallback += 1
-            if REGISTER_LOG_LEVEL >= 3 or (REGISTER_LOG_LEVEL == 2 and stats.log_counter % REGISTER_LOG_INTERVAL == 0):
+            if _should_log_verbose(stats):
                 print(f"[REGISTER/ML→RULE] f0={f0:.0f}Hz ML={label}({confidence:.3f}) < thresh={threshold:.2f} ")
             return None
 
@@ -127,7 +150,7 @@ def _classify_ml(y: np.ndarray, sr: int, f0: float,
             stats.chest += 1
         else:
             stats.falsetto += 1
-        if REGISTER_LOG_LEVEL >= 3 or (REGISTER_LOG_LEVEL == 2 and stats.log_counter % REGISTER_LOG_INTERVAL == 0):
+        if _should_log_verbose(stats):
             print(f"[REGISTER/ML] f0={f0:.0f}Hz label={label} conf={confidence:.3f} thresh={threshold:.2f} crepe={crepe_conf:.2f}")
         return label
     except Exception as e:
@@ -138,8 +161,8 @@ def _classify_ml(y: np.ndarray, sr: int, f0: float,
 def _classify_rules(y: np.ndarray, sr: int, f0: float, median_freq: float,
                     stats: RegisterStats,
                     crepe_conf: float = 1.0) -> str:
-    # FFT
-    n_fft    = 8192
+    # FFT（config.FFT_SPECTRUM_SIZE を使用）
+    n_fft    = FFT_SPECTRUM_SIZE
     win      = np.hanning(len(y))
     y_pad    = np.zeros(n_fft)
     y_pad[:len(y)] = y * win
@@ -162,7 +185,7 @@ def _classify_rules(y: np.ndarray, sr: int, f0: float, median_freq: float,
     if h1_h2 < -2.0 and f0 <= 400:
         stats.rule_only += 1
         stats.chest += 1
-        if REGISTER_LOG_LEVEL >= 3 or (REGISTER_LOG_LEVEL == 2 and stats.log_counter % REGISTER_LOG_INTERVAL == 0):
+        if _should_log_verbose(stats):
             print(f"[REGISTER/RULE] f0={f0:.0f}Hz H1-H2={h1_h2:.1f}dB → 地声確定(即決)")
         return "chest"
 
@@ -278,7 +301,7 @@ def _classify_rules(y: np.ndarray, sr: int, f0: float, median_freq: float,
         stats.chest += 1
     else:
         stats.falsetto += 1
-    if REGISTER_LOG_LEVEL >= 3 or (REGISTER_LOG_LEVEL == 2 and stats.log_counter % REGISTER_LOG_INTERVAL == 0):
+    if _should_log_verbose(stats):
         print(
             f"[REGISTER/RULE] f0={f0:.0f}Hz "
             f"H1-H2={h1_h2:.1f} hcount={hcount} "
@@ -309,11 +332,12 @@ def classify_register(y: np.ndarray, sr: int, f0: float, median_freq: float = 0,
     if not _ML_STATUS_LOGGED:
         _load_model_if_needed()
         if _ML_MODEL is not None and extract_features is not None:
-            print(_MODEL_PATH)
+            print(f"[INFO] MLモデル使用中: {_MODEL_PATH}")
         else:
             if not os.path.exists(_MODEL_PATH):
-                print(_MODEL_PATH)
-
+                print(f"[WARN] MLモデルファイルが見つかりません: {_MODEL_PATH} → ルールベース判定にフォールバック")
+            else:
+                print(f"[WARN] MLモデルのロードに失敗しました: {_MODEL_PATH} → ルールベース判定にフォールバック")
         _ML_STATUS_LOGGED = True
 
     if f0 <= 0 or len(y) < 512:

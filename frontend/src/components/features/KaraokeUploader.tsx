@@ -211,7 +211,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
                     )}
                   </p>
                   <p className="text-xs text-fuchsia-300/60 font-medium tracking-widest">
-                    MAX SIZE: UNLIMITED
+                    MAX SIZE: 50MB
                   </p>
                 </div>
               </div>

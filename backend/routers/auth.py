@@ -30,7 +30,7 @@ def signin(data: SignInRequest):
 @router.post("/signout")
 def signout_endpoint(user: dict = Depends(get_current_user)):
     """ログアウト"""
-    sign_out(user.get("id"))
+    sign_out()
     return {"message": "ログアウトしました"}
 
 

@@ -27,3 +27,7 @@ ml/vocalset_data/
 
 # データディレクトリ
 data/
+
+# デバッグ用スクリプト・出力（コミット不要）
+debug_falsetto/
+debug_falsetto_audio.py

@@ -2,7 +2,7 @@
 FastAPI用のPydanticモデル
 """
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 
 
@@ -12,7 +12,7 @@ from datetime import datetime
 
 class SignUpRequest(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=6, description="パスワード（6文字以上）")
+    password: str = Field(..., min_length=8, description="パスワード（8文字以上）")
     display_name: Optional[str] = Field(None, max_length=100)
 
 
@@ -30,7 +30,7 @@ class PasswordResetRequest(BaseModel):
 
 
 class PasswordUpdateRequest(BaseModel):
-    new_password: str = Field(..., min_length=6)
+    new_password: str = Field(..., min_length=8)
 
 
 # ============================================================
@@ -57,7 +57,7 @@ class AnalysisCreate(BaseModel):
     vocal_range_min: Optional[str] = None
     vocal_range_max: Optional[str] = None
     falsetto_max: Optional[str] = None
-    source_type: str = Field(..., description="microphone, karaoke, file のいずれか")
+    source_type: Literal["microphone", "karaoke", "file"] = Field(..., description="音声ソース種別")
     file_name: Optional[str] = None
 
 
@@ -82,6 +82,15 @@ class AnalysisResponse(BaseModel):
 
 class FavoriteSongAdd(BaseModel):
     song_id: int
+
+
+class BatchFavoriteCheckRequest(BaseModel):
+    """複数楽曲のお気に入り状態を一括確認するリクエスト。"""
+    song_ids: list[int] = Field(
+        ...,
+        max_length=100,
+        description="確認する楽曲 ID のリスト（最大100件）",
+    )
 
 
 class FavoriteSongResponse(BaseModel):

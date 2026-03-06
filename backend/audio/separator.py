@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -9,12 +10,22 @@ def separate_vocals(input_wav_path: str, output_dir: str = "separated",
 
     Args:
         input_wav_path: 入力WAVファイルのパス
-        output_dir: 出力ディレクトリ
+        output_dir: 出力ディレクトリ（リクエストごとに一意なパスを渡すことを推奨）
         fast_mode: True時は軽量モデル(htdemucs)を使用 (約2-3倍高速)
         ultra_fast_mode: True時は超軽量モデル(htdemucs_6s)を使用 (約3-5倍高速)
 
     戻り値: 分離されたボーカル(wav)のパス
+
+    Raises:
+        FileNotFoundError: 入力ファイルが存在しない場合。
+        RuntimeError: demucs コマンドが PATH にない、または分離に失敗した場合。
     """
+    # demucs コマンドの存在を事前確認
+    if shutil.which("demucs") is None:
+        raise RuntimeError(
+            "demucsコマンドが見つかりません。'pip install demucs' を実行してください。"
+        )
+
     input_file = Path(input_wav_path)
     if not input_file.exists():
         raise FileNotFoundError(f"Input file not found: {input_wav_path}")
@@ -22,13 +33,13 @@ def separate_vocals(input_wav_path: str, output_dir: str = "separated",
     # モデル選択: ultra_fast > fast > default
     if ultra_fast_mode:
         model_name = "htdemucs_6s"
-        mode_label = "⚡ ULTRA FAST MODE (3-5x faster)"
+        mode_label = "ULTRA FAST MODE (3-5x faster)"
     elif fast_mode:
         model_name = "htdemucs"
-        mode_label = "🚀 FAST MODE (2-3x faster)"
+        mode_label = "FAST MODE (2-3x faster)"
     else:
         model_name = "htdemucs_ft"
-        mode_label = "💎 HIGH QUALITY"
+        mode_label = "HIGH QUALITY"
 
     cmd = [
         "demucs",
@@ -47,9 +58,8 @@ def separate_vocals(input_wav_path: str, output_dir: str = "separated",
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"ボーカル分離に失敗しました (Demucs error): {e.stderr.decode()}")
-    except FileNotFoundError:
-        raise RuntimeError("demucsコマンドが見つかりません。'pip install demucs' を実行してください。")
+        stderr_msg = e.stderr.decode(errors="replace") if e.stderr else "（エラー詳細なし）"
+        raise RuntimeError(f"ボーカル分離に失敗しました (Demucs error): {stderr_msg}")
 
     # 出力パスの特定 ({model_name}/input_filename/vocals.wav)
     stem_name = input_file.stem
@@ -58,23 +68,30 @@ def separate_vocals(input_wav_path: str, output_dir: str = "separated",
     if not expected_path.exists():
         # ファイル名によってはフォルダ名が変わる可能性があるため、フォルダ内を検索
         search_dir = Path(output_dir) / model_name
+        search_dir_ft = Path(output_dir) / "htdemucs_ft"
+        searched_paths: list[str] = [str(expected_path)]
+
         found = list(search_dir.glob(f"**/{stem_name}/vocals.wav"))
         if not found:
             # 旧モデル名でも検索（互換性のため）
-            search_dir_ft = Path(output_dir) / "htdemucs_ft"
             if search_dir_ft.exists():
                 found = list(search_dir_ft.glob(f"**/{stem_name}/vocals.wav"))
+                searched_paths.append(str(search_dir_ft / stem_name / "vocals.wav"))
             if not found:
                 # さらに緩く検索
                 found = list(search_dir.glob("**/vocals.wav"))
+                searched_paths.append(str(search_dir / "**" / "vocals.wav"))
                 if not found and search_dir_ft.exists():
                     found = list(search_dir_ft.glob("**/vocals.wav"))
+                    searched_paths.append(str(search_dir_ft / "**" / "vocals.wav"))
             if not found:
-                 raise RuntimeError(f"分離後のファイルが見つかりません: {expected_path}")
+                raise RuntimeError(
+                    f"分離後のファイルが見つかりません。検索パス: {', '.join(searched_paths)}"
+                )
             # 最新のものを採用
             expected_path = max(found, key=os.path.getctime)
         else:
-             expected_path = found[0]
+            expected_path = found[0]
 
     print(f"[INFO] Separation complete: {expected_path}")
     return str(expected_path)
