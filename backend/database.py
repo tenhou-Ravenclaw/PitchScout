@@ -123,6 +123,9 @@ def init_db(db_path: str = DB_PATH):
 
         -- テキスト値 → NULL
         UPDATE songs SET falsetto_note = NULL WHERE falsetto_note = '裏声あり';
+
+        -- タイプミス修正: loG# → lowG#
+        UPDATE songs SET lowest_note = 'lowG#' WHERE lowest_note = 'loG#';
     """)
     conn.commit()
 
