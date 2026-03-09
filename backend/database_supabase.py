@@ -1,10 +1,13 @@
 """
 Supabaseデータベースの接続管理とクエリ関数
+
+楽曲・アーティスト検索とユーザーデータ（プロファイル、分析履歴、お気に入り）を提供。
 """
 import os
+import re
+import unicodedata
 from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
-from database import get_song
 from dotenv import load_dotenv
 
 # 環境変数をロード
@@ -21,111 +24,226 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 # ============================================================
+# 共通ヘルパー
+# ============================================================
+
+# songs テーブルの標準SELECTカラム（artists JOINつき）
+_SONG_FIELDS = (
+    "id, title, artist_id, lowest_note, highest_note, "
+    "falsetto_note, note, source, artists(name, slug, reading)"
+)
+
+
+def _hiragana_normalize(text: str) -> str:
+    """カタカナをひらがなに変換して正規化"""
+    text = unicodedata.normalize('NFKC', text)
+    result = []
+    for char in text:
+        code = ord(char)
+        if 0x30A1 <= code <= 0x30F6:
+            result.append(chr(code - 0x60))
+        else:
+            result.append(char)
+    return ''.join(result)
+
+
+def _query_mode(query: str) -> str:
+    """ひらがな/カタカナだけなら kana、それ以外は name 検索"""
+    if not query:
+        return "name"
+    nfkc = unicodedata.normalize('NFKC', query)
+    return "kana" if re.fullmatch(r"[ぁ-ゖァ-ヺーﾞﾟ]+", nfkc) else "name"
+
+
+def _flatten_song(song: Dict[str, Any]) -> Dict[str, Any]:
+    """Supabaseの songs(artists(...)) レスポンスをフラットに変換
+
+    SQLite版 database.py と同じフィールド名で返す。
+    """
+    artists_data = song.get("artists") or {}
+    return {
+        **{k: v for k, v in song.items() if k != "artists"},
+        "artist": artists_data.get("name"),
+        "artist_slug": artists_data.get("slug"),
+        "artist_reading": artists_data.get("reading"),
+    }
+
+
+# ============================================================
 # 楽曲関連のクエリ関数
 # ============================================================
 
 def search_songs(query: str, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
     """
-    曲名またはアーティスト名であいまい検索。
+    曲名またはアーティスト名・ふりがなであいまい検索。
 
-    [FIX] PostgRESTはJOINテーブルに対して or_().ilike() が使えない。
-          タイトル検索とアーティスト検索を分けて実行し、重複をIDで除外する。
+    PostgRESTの制限により、タイトル検索とアーティスト検索を分けて実行し、
+    重複をIDで除外する。
     """
     # 曲名で検索
     title_resp = supabase.table("songs").select(
-        "id, title, lowest_note, highest_note, falsetto_note, note, source, artists(name)"
+        _SONG_FIELDS
     ).ilike("title", f"%{query}%").range(offset, offset + limit - 1).execute()
 
-    # アーティスト名で検索（artists テーブルで一致するIDを取得）
-    artist_resp = supabase.table("artists").select("id").ilike(
+    # アーティスト名・ふりがなで検索
+    normalized = _hiragana_normalize(query)
+    name_artists = supabase.table("artists").select("id").ilike(
         "name", f"%{query}%"
     ).execute()
+    reading_artists = supabase.table("artists").select("id").ilike(
+        "reading", f"%{normalized}%"
+    ).execute()
+
+    artist_ids: set[int] = set()
+    for a in (name_artists.data or []) + (reading_artists.data or []):
+        artist_ids.add(a["id"])
 
     artist_songs: List[Dict[str, Any]] = []
-    if artist_resp.data:
-        artist_ids = [a["id"] for a in artist_resp.data]
-        for artist_id in artist_ids:
-            resp = supabase.table("songs").select(
-                "id, title, lowest_note, highest_note, falsetto_note, note, source, artists(name)"
-            ).eq("artist_id", artist_id).range(0, limit - 1).execute()
-            artist_songs.extend(resp.data or [])
+    for artist_id in artist_ids:
+        resp = supabase.table("songs").select(
+            _SONG_FIELDS
+        ).eq("artist_id", artist_id).range(0, limit - 1).execute()
+        artist_songs.extend(resp.data or [])
 
     # 重複除去（IDベース）
-    seen_ids: set = set()
+    seen_ids: set[int] = set()
     merged: List[Dict[str, Any]] = []
     for song in (title_resp.data or []) + artist_songs:
         if song["id"] not in seen_ids:
             seen_ids.add(song["id"])
             merged.append(song)
 
-    # artistsをフラットに変換
-    result = []
-    for song in merged[:limit]:
-        result.append({
-            **{k: v for k, v in song.items() if k != "artists"},
-            "artist": song["artists"]["name"] if song.get("artists") else None,
-        })
-    return result
+    return [_flatten_song(s) for s in merged[:limit]]
+
+
+def count_songs(query: str = "") -> int:
+    """楽曲総数を取得（検索クエリ対応）"""
+    if not query:
+        resp = supabase.table("songs").select(
+            "id", count="exact"
+        ).limit(0).execute()
+        return resp.count or 0
+
+    # クエリあり: タイトル + アーティスト名 + ふりがなで検索しIDを集める
+    title_resp = supabase.table("songs").select("id").ilike(
+        "title", f"%{query}%"
+    ).execute()
+
+    normalized = _hiragana_normalize(query)
+    name_artists = supabase.table("artists").select("id").ilike(
+        "name", f"%{query}%"
+    ).execute()
+    reading_artists = supabase.table("artists").select("id").ilike(
+        "reading", f"%{normalized}%"
+    ).execute()
+
+    artist_ids: set[int] = set()
+    for a in (name_artists.data or []) + (reading_artists.data or []):
+        artist_ids.add(a["id"])
+
+    song_ids: set[int] = {s["id"] for s in (title_resp.data or [])}
+    for artist_id in artist_ids:
+        resp = supabase.table("songs").select("id").eq(
+            "artist_id", artist_id
+        ).execute()
+        for s in (resp.data or []):
+            song_ids.add(s["id"])
+
+    return len(song_ids)
 
 
 def get_song(song_id: int) -> Optional[Dict[str, Any]]:
     """IDで楽曲を取得"""
     response = supabase.table("songs").select(
-        "id, title, lowest_note, highest_note, falsetto_note, note, source, artists(name)"
+        _SONG_FIELDS
     ).eq("id", song_id).single().execute()
 
     if response.data:
-        return {
-            **{k: v for k, v in response.data.items() if k != "artists"},
-            "artist": response.data["artists"]["name"] if response.data.get("artists") else None,
-        }
+        return _flatten_song(response.data)
     return None
 
 
 def get_all_songs(limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
     """全曲を取得（ページネーション対応）"""
     response = supabase.table("songs").select(
-        "id, title, lowest_note, highest_note, falsetto_note, note, source, artists(name)"
+        _SONG_FIELDS
     ).range(offset, offset + limit - 1).execute()
 
-    songs = []
-    for song in response.data:
-        songs.append({
-            **{k: v for k, v in song.items() if k != "artists"},
-            "artist": song["artists"]["name"] if song.get("artists") else None,
-        })
-    return songs
+    return [_flatten_song(s) for s in response.data]
 
 
 def get_artist(artist_id: int) -> Optional[Dict[str, Any]]:
     """IDでアーティストを取得"""
     response = supabase.table("artists").select(
-        "id, name, slug, song_count"
+        "id, name, slug, song_count, reading"
     ).eq("id", artist_id).single().execute()
     return response.data
 
 
 def get_artists(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
-    """アーティスト一覧を取得"""
+    """アーティスト一覧を取得（song_count > 0、reading順）"""
     response = supabase.table("artists").select(
-        "id, name, slug, song_count"
-    ).order("name").range(offset, offset + limit - 1).execute()
+        "id, name, slug, song_count, reading"
+    ).gt("song_count", 0).order("reading").range(
+        offset, offset + limit - 1
+    ).execute()
     return response.data
 
 
 def get_artist_songs(artist_id: int) -> List[Dict[str, Any]]:
     """アーティストの全曲を取得"""
     response = supabase.table("songs").select(
-        "id, title, lowest_note, highest_note, falsetto_note, note, source, artists(name)"
+        _SONG_FIELDS
     ).eq("artist_id", artist_id).order("title").execute()
 
-    songs = []
-    for song in response.data:
-        songs.append({
-            **{k: v for k, v in song.items() if k != "artists"},
-            "artist": song["artists"]["name"] if song.get("artists") else None,
-        })
-    return songs
+    return [_flatten_song(s) for s in response.data]
+
+
+def count_artists(query: str = "") -> int:
+    """アーティスト総数を取得（検索クエリ対応）"""
+    if not query:
+        resp = supabase.table("artists").select(
+            "id", count="exact"
+        ).gt("song_count", 0).limit(0).execute()
+        return resp.count or 0
+
+    mode = _query_mode(query)
+    if mode == "kana":
+        normalized = _hiragana_normalize(query)
+        resp = supabase.table("artists").select(
+            "id", count="exact"
+        ).gt("song_count", 0).ilike(
+            "reading", f"{normalized}%"
+        ).limit(0).execute()
+    else:
+        resp = supabase.table("artists").select(
+            "id", count="exact"
+        ).gt("song_count", 0).ilike(
+            "name", f"%{query}%"
+        ).limit(0).execute()
+
+    return resp.count or 0
+
+
+def search_artists(query: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+    """アーティスト検索: かな入力なら reading 前方一致、その他は name 部分一致"""
+    mode = _query_mode(query)
+
+    if mode == "kana":
+        normalized = _hiragana_normalize(query)
+        response = supabase.table("artists").select(
+            "id, name, slug, song_count, reading"
+        ).gt("song_count", 0).ilike(
+            "reading", f"{normalized}%"
+        ).order("reading").range(offset, offset + limit - 1).execute()
+    else:
+        response = supabase.table("artists").select(
+            "id, name, slug, song_count, reading"
+        ).gt("song_count", 0).ilike(
+            "name", f"%{query}%"
+        ).order("reading").range(offset, offset + limit - 1).execute()
+
+    return response.data
 
 
 # ============================================================
@@ -222,29 +340,28 @@ def remove_favorite_song(user_id: str, song_id: int) -> bool:
 
 
 def get_favorite_songs(user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
-    """ユーザーのお気に入り楽曲一覧を取得"""
+    """ユーザーのお気に入り楽曲一覧を取得（Supabaseから楽曲詳細をJOIN）"""
     response = supabase.table("favorite_songs").select(
-        "id, song_id, created_at"
+        "id, song_id, created_at, songs(id, title, lowest_note, highest_note, falsetto_note, artists(name))"
     ).eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
 
     favorites = []
-    import database
     for fav in response.data:
-        song = database.get_song(fav["song_id"])
-        
-        # SQLite側に曲が存在すればリストに追加
-        if song:
-            favorites.append({
-                "favorite_id": fav["id"],
-                "created_at": fav["created_at"],
-                "song_id": song.get("id"),
-                "title": song.get("title"),
-                "artist": song.get("artist"),
-                "lowest_note": song.get("lowest_note"),
-                "highest_note": song.get("highest_note"),
-                "falsetto_note": song.get("falsetto_note"),
-            })
-            
+        song = fav.get("songs")
+        if not song:
+            continue
+        artists_data = song.get("artists") or {}
+        favorites.append({
+            "favorite_id": fav["id"],
+            "created_at": fav["created_at"],
+            "song_id": song["id"],
+            "title": song["title"],
+            "artist": artists_data.get("name"),
+            "lowest_note": song.get("lowest_note"),
+            "highest_note": song.get("highest_note"),
+            "falsetto_note": song.get("falsetto_note"),
+        })
+
     return favorites
 
 
@@ -352,11 +469,11 @@ def update_analysis_record(user_id: str, record_id: str, data: Dict[str, Any]) -
 def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[str, Any]]:
     """
     直近N件の分析履歴から統合音域と総合分析を計算
-    
+
     Args:
         user_id: ユーザーID
         limit: 統合する履歴の件数（デフォルト20件）
-    
+
     Returns:
         統合音域・タイプ・おすすめ曲・アーティスト・歌唱力指標を含む辞書
         データがない場合はNone
@@ -364,13 +481,13 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
     try:
         from note_converter import hz_to_label_and_hz
         from recommender import recommend_songs, find_similar_artists, classify_voice_type
-        
+
         # 直近N件の履歴を取得
         history = get_analysis_history(user_id, limit=limit)
-        
+
         if not history:
             return None
-        
+
         # Hz値のリストを収集
         chest_min_values = []
         chest_max_values = []
@@ -378,13 +495,13 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
         overall_min_values = []
         overall_max_values = []
         chest_ratio_values = []
-        
+
         # 歌唱力指標の収集
         range_scores = []
         stability_scores = []
         expression_scores = []
         overall_scores = []
-        
+
         valid_count = 0
         for record in history:
             # result_jsonがある場合はそこから取得
@@ -402,7 +519,7 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
                     overall_max_values.append(result["overall_max_hz"])
                 if result.get("chest_ratio") is not None:
                     chest_ratio_values.append(result["chest_ratio"])
-                
+
                 # 歌唱力指標
                 if result.get("singing_analysis"):
                     sa = result["singing_analysis"]
@@ -414,7 +531,7 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
                         expression_scores.append(sa["expression_score"])
                     if sa.get("overall_score") is not None:
                         overall_scores.append(sa["overall_score"])
-                
+
                 valid_count += 1
             # 古い形式の場合は直接取得
             elif record.get("vocal_range_min_hz") or record.get("vocal_range_max_hz"):
@@ -427,55 +544,55 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
                 if record.get("falsetto_max_hz"):
                     falsetto_max_values.append(record["falsetto_max_hz"])
                 valid_count += 1
-        
+
         if valid_count == 0:
             return None
-        
+
         # 統合値を計算（最小値と最大値を採用）
         result = {
             "data_count": valid_count,
             "limit": limit
         }
-        
+
         # 音域情報
         if overall_min_values:
             overall_min_hz = min(overall_min_values)
             overall_min_label, overall_min_hz_defined = hz_to_label_and_hz(overall_min_hz)
             result["overall_min"] = overall_min_label
             result["overall_min_hz"] = overall_min_hz_defined
-        
+
         if overall_max_values:
             overall_max_hz = max(overall_max_values)
             overall_max_label, overall_max_hz_defined = hz_to_label_and_hz(overall_max_hz)
             result["overall_max"] = overall_max_label
             result["overall_max_hz"] = overall_max_hz_defined
-        
+
         chest_min_hz_defined = None
         if chest_min_values:
             chest_min_hz = min(chest_min_values)
             chest_min_label, chest_min_hz_defined = hz_to_label_and_hz(chest_min_hz)
             result["chest_min"] = chest_min_label
             result["chest_min_hz"] = chest_min_hz_defined
-        
+
         chest_max_hz_defined = None
         if chest_max_values:
             chest_max_hz = max(chest_max_values)
             chest_max_label, chest_max_hz_defined = hz_to_label_and_hz(chest_max_hz)
             result["chest_max"] = chest_max_label
             result["chest_max_hz"] = chest_max_hz_defined
-        
+
         falsetto_max_hz_defined = None
         if falsetto_max_values:
             falsetto_max_hz = max(falsetto_max_values)
             falsetto_max_label, falsetto_max_hz_defined = hz_to_label_and_hz(falsetto_max_hz)
             result["falsetto_max"] = falsetto_max_label
             result["falsetto_max_hz"] = falsetto_max_hz_defined
-        
+
         # 地声比率の平均
         avg_chest_ratio = sum(chest_ratio_values) / len(chest_ratio_values) if chest_ratio_values else 0.8
         result["chest_ratio"] = avg_chest_ratio
         result["falsetto_ratio"] = 1.0 - avg_chest_ratio
-        
+
         # 歌唱力指標の平均
         if range_scores or stability_scores or expression_scores or overall_scores:
             result["singing_analysis"] = {}
@@ -487,19 +604,19 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
                 result["singing_analysis"]["expression_score"] = sum(expression_scores) / len(expression_scores)
             if overall_scores:
                 result["singing_analysis"]["overall_score"] = sum(overall_scores) / len(overall_scores)
-            
+
             # 音域の半音数を計算
             if chest_min_hz_defined and chest_max_hz_defined:
                 import math
                 result["singing_analysis"]["range_semitones"] = round(
                     12 * math.log2(chest_max_hz_defined / chest_min_hz_defined)
                 )
-        
+
         # 声質タイプを判定（chest_avg_hzを計算）
         if chest_min_hz_defined and chest_max_hz_defined:
             import math
             chest_avg_hz = math.sqrt(chest_min_hz_defined * chest_max_hz_defined)  # 幾何平均
-            
+
             # voice_typeを分類
             voice_type_data = classify_voice_type(
                 chest_min_hz_defined,
@@ -509,7 +626,7 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
                 avg_chest_ratio
             )
             result["voice_type"] = voice_type_data
-            
+
             # 似ているアーティストを取得
             similar_artists = find_similar_artists(
                 chest_min_hz_defined,
@@ -518,7 +635,7 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
                 limit=5
             )
             result["similar_artists"] = similar_artists
-            
+
             # おすすめ曲を取得
             fav_artist_ids = get_favorite_artist_ids(user_id)
             recommended_songs = recommend_songs(
@@ -530,9 +647,9 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
                 favorite_artist_ids=fav_artist_ids
             )
             result["recommended_songs"] = recommended_songs
-        
+
         return result
-        
+
     except Exception as e:
         print(f"統合音域計算エラー: {e}")
         import traceback

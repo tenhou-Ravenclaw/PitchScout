@@ -19,8 +19,8 @@ from recommender import (
     find_similar_artists, classify_voice_type,
 )
 
-# 楽曲データはローカル SQLite（songs.db に5000曲入ってる）
-from database import get_all_songs, search_songs, count_songs, init_db, get_artists, get_artist_songs, count_artists, search_artists
+# 楽曲データは Supabase（マージ済み834アーティスト、5,341曲）
+from database_supabase import get_all_songs, search_songs, count_songs, get_artists, get_artist_songs, count_artists, search_artists
 
 # 認証・ユーザー系は Supabase
 from database_supabase import (
@@ -51,11 +51,6 @@ from models import (
 )
 
 app = FastAPI(title="Voice Range Analysis API")
-
-# 【修正】DB初期化をサーバー起動時に実行するように変更
-@app.on_event("startup")
-def on_startup():
-    init_db()
 
 app.add_middleware(
     CORSMiddleware,
