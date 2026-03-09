@@ -129,14 +129,17 @@ def init_db(db_path: str = DB_PATH):
     """)
     conn.commit()
 
-    # マイグレーション: クロスソース重複の削除（voice-key.news を優先）
-    # 同一アーティスト・同一タイトルが両ソースに存在する場合、vocal-range.com 側を削除
+    # マイグレーション: クロスソース重複の削除（vocal-range.com を優先）
+    # 同一アーティスト・同一タイトルが両ソースに存在する場合、voice-key.news 側を削除
     conn.execute("""
         DELETE FROM songs WHERE id IN (
-            SELECT s2.id
-            FROM songs s1
-            JOIN songs s2 ON s1.artist_id = s2.artist_id AND s1.title = s2.title
-            WHERE s1.source = 'voice-key.news' AND s2.source = 'vocal-range.com'
+            SELECT s_vk.id
+            FROM songs s_vk
+            JOIN songs s_vr
+                ON s_vk.artist_id = s_vr.artist_id
+                AND s_vk.title = s_vr.title
+            WHERE s_vk.source = 'voice-key.news'
+              AND s_vr.source = 'vocal-range.com'
         )
     """)
     conn.commit()
