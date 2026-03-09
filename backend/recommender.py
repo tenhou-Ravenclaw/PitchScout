@@ -16,6 +16,10 @@ analyzeの結果とSupabase楽曲データを照合して:
 import math
 import numpy as np
 from note_converter import NOTE_TABLE, hz_to_label_and_hz
+# 【移行】from database import get_connection → from database_supabase import supabase
+# SQLite版ではget_connection()でコネクションを取得し生SQLを実行していたが、
+# Supabase版ではPostgREST APIクライアント経由でテーブルにアクセスする。
+# HTTPベースのAPIのため、try/finally conn.close() のようなコネクション管理が不要。
 from database_supabase import supabase
 
 # ============================================================
@@ -106,6 +110,9 @@ def analyze_singing_ability(
     result["expression_score"] = round(expression_score, 1)
 
     # --- 総合スコア ---
+    # 重み設計: 安定性(0.45)を最重視 — カラオケでは音程の正確さが聴感上の印象を最も左右する。
+    # 音域(0.30)は広いほど選曲幅が広がるため次点。表現力(0.25)は声区の使い分けで、
+    # 初心者でも裏声を使えばある程度出るため最も軽い。
     overall = range_score * 0.30 + stability_score * 0.45 + expression_score * 0.25
     result["overall_score"] = round(overall, 1)
 
@@ -119,9 +126,14 @@ def _compute_stability(f0: np.ndarray, conf: np.ndarray) -> float:
     隣接フレーム間のピッチ差が1半音以内なら同一音符とみなし、
     3フレーム以上続くセグメントごとにセント標準偏差を算出、
     セグメント長で重み付き平均 → スコア化。
+
+    スコア目安: 92=プロ(偏差10cents), 80=上手い素人(25cents),
+    68=普通のカラオケ(40cents), 40以下=かなり不安定(75cents+)
     """
     from config import STABILITY_MIN_SEGMENT, STABILITY_SCALING
 
+    # 信頼度0.3以上のフレームのみ使用（analyzer.pyの最低閾値0.01より厳しい）
+    # 安定性評価にはノイズの少ないフレームだけを使いたいため独自閾値を設定
     mask = (conf >= 0.3) & (f0 > 0)
     f0_valid = f0[mask]
     if len(f0_valid) < 10:
@@ -165,18 +177,29 @@ def _compute_expression(
     overall_min_hz: float,
     overall_max_hz: float,
 ) -> float:
-    """表現力スコア (0-100)"""
+    """表現力スコア (0-100)
+
+    地声/裏声の使い分け(声区多様性)と音域の活用度(IQR)の2軸で評価。
+    スコア目安: 30=声を出しただけ, 50=片方の声区のみ, 70=適度に使い分け,
+    85+=広い音域で地声/裏声を巧みに切り替え。
+    """
     total = len(chest_notes) + len(falsetto_notes)
     if total == 0:
         return 0.0
 
-    score = 30.0  # ベース
+    # ベーススコア30: 声を出しているだけで最低限の表現力がある前提
+    score = 30.0
 
+    # 声区多様性 (最大+80): 地声と裏声の使い分けが多いほど表現豊か。
+    # diversity = 少数派の声区 / 全体 → 50:50なら0.5で最大40点。
+    # 80.0の係数は diversity=0.5 で40点、0.3で24点になるよう調整。
     if len(falsetto_notes) > 0 and len(chest_notes) > 0:
         minor = min(len(falsetto_notes), len(chest_notes))
         diversity = minor / total
         score += diversity * 80.0
 
+    # 音域活用度 (最大+30): IQR(四分位範囲)が広いほど多様な音高を使っている。
+    # 3.0の係数は IQR=10半音(≈短7度)で満点30になるよう設定。
     all_notes = chest_notes + falsetto_notes
     if len(all_notes) >= 5:
         arr = np.array(all_notes)
@@ -222,7 +245,11 @@ def recommend_songs(
     """
     fav_ids: set[int] = set(favorite_artist_ids) if favorite_artist_ids else set()
 
-    # Supabaseから全曲取得（5,400件程度、メモリ内処理で十分）
+    # 【移行前】conn = get_connection(); conn.execute("SELECT s.id, s.title, ... FROM songs s JOIN artists a ...")
+    # 【移行後】Supabase PostgREST API でテーブルにアクセス
+    #   - artists(id, name) はPostgRESTのネストJOIN記法（SQLの JOIN artists a ON ... に相当）
+    #   - .not_.is_("lowest_note", "null") は SQL の WHERE lowest_note IS NOT NULL に相当
+    #   - try/finally conn.close() が不要に（HTTPベースのAPIなのでコネクション管理不要）
     resp = supabase.table("songs").select(
         "id, title, artist_id, lowest_note, highest_note, falsetto_note, source, artists(id, name)"
     ).not_.is_("lowest_note", "null").not_.is_("highest_note", "null").execute()
@@ -242,11 +269,14 @@ def recommend_songs(
         if not lo_hz or not hi_hz or lo_hz > hi_hz:
             continue
 
+        # 【移行による参照方法の変更】
+        # SQLite版: dict(row) でフラットに row["name"] で取得できた
+        # Supabase版: ネストJOINのため {"artists": {"name": "...", "id": ...}} の形式
         artists_data = row.get("artists") or {}
         artist_name = artists_data.get("name", "")
         artist_id = row["artist_id"]
 
-        # ペナルティ（半音単位）
+        # ペナルティ（半音単位）: ユーザー音域からはみ出た分を減点
         low_penalty = 0.0
         high_penalty = 0.0
 
@@ -255,19 +285,24 @@ def recommend_songs(
         if hi_hz > effective_max:
             high_penalty = _semitones(effective_max, hi_hz)
 
-        # 中心音のずれ
+        # 中心音のずれ（幾何平均 = 対数空間の中央）
         song_center = math.sqrt(lo_hz * hi_hz)
         center_diff = abs(_semitones(chest_avg_hz, song_center)) if chest_avg_hz > 0 else 0.0
 
-        # スコア計算
+        # スコア計算:
+        #   low_penalty * 6.0  — 低音不足は発声法で補いやすいので軽め
+        #   high_penalty * 8.0 — 高音不足は歌唱困難に直結するので重め
+        #   center_diff * 2.0  — 中心のずれは快適さに影響するが致命的ではない
         score = 100.0
         score -= low_penalty * 6.0
         score -= high_penalty * 8.0
         score -= center_diff * 2.0
 
+        # 完全収まりボーナス: 音域内に完全に収まる曲を優遇
         if low_penalty == 0 and high_penalty == 0:
             score += 5.0
 
+        # 足切り: スコア30以下は推薦に値しない（大幅にはみ出した曲）
         if score <= 30:
             continue
 
@@ -364,7 +399,11 @@ def find_similar_artists(
     ユーザーの音域に最も近いアーティストを返す。
     各アーティストの全楽曲の中央値(最低音/最高音)で比較。
     """
-    # Supabaseから全曲取得（アーティスト情報つき）
+    # 【移行前】conn.execute("SELECT a.id, a.name, a.song_count, s.lowest_note, ... FROM songs s JOIN artists a ...")
+    # 【移行後】Supabase PostgREST API でネストJOIN
+    #   SQLite版ではJOINでフラットに a.id, a.name, a.song_count を取得できたが、
+    #   Supabase版では artists(id, name, song_count) というネスト形式になるため、
+    #   r["name"] → artists_data.get("name", "") という参照方法の変更が必要。
     resp = supabase.table("songs").select(
         "artist_id, lowest_note, highest_note, artists(id, name, song_count)"
     ).not_.is_("lowest_note", "null").not_.is_("highest_note", "null").execute()
@@ -403,6 +442,9 @@ def find_similar_artists(
             abs(_semitones(med_center, chest_avg_hz)) if chest_avg_hz > 0 else 99.0
         )
 
+        # 類似度スコア: 100点満点から差分を減点。
+        # center_diff(4.0) を最重視 — 音域の中心が近いアーティストほど声質が似ている。
+        # low_diff/high_diff(各3.0) は上下端のずれで、中心ほど重要ではない。
         similarity = 100.0 - (low_diff * 3.0 + high_diff * 3.0 + center_diff * 4.0)
 
         if similarity > 20:
@@ -441,6 +483,11 @@ def classify_voice_type(
             "range_class":  "テノール" etc,
         }
     """
+    # 声域分類の Hz 境界 — カラオケ標準音域(A4=442Hz)に基づく:
+    #   350Hz ≈ mid2F  : テノール上限付近
+    #   280Hz ≈ mid2C# : テノールの典型的な中心
+    #   220Hz ≈ mid1A  : バリトンの典型的な中心
+    #   160Hz ≈ mid1E  : バス・バリトンの下限付近
     if chest_avg_hz >= 350:
         range_class = "ハイテノール"
     elif chest_avg_hz >= 280:
@@ -453,9 +500,9 @@ def classify_voice_type(
         range_class = "バス"
 
     range_st = _semitones(chest_min_hz, chest_max_hz) if chest_min_hz > 0 and chest_max_hz > 0 else 0
-    has_wide_range = range_st >= 15
-    uses_falsetto = chest_ratio < 85
-    high_voice = chest_max_hz >= 400
+    has_wide_range = range_st >= 15       # 15半音 = 1.25オクターブ以上で「広い」
+    uses_falsetto = chest_ratio < 85      # 地声比率85%未満 = 裏声を有意に使用
+    high_voice = chest_max_hz >= 400      # 400Hz ≈ hiA付近、ハイトーンの境界
 
     if high_voice and uses_falsetto:
         voice_type = "ハイトーン・ミックス"
@@ -520,14 +567,22 @@ def recommend_key_for_song(
 
         low_pen = _semitones(lo, user_min_hz) if lo < user_min_hz else 0.0
         high_pen = _semitones(user_max_hz, hi) if hi > user_max_hz else 0.0
+        # キー変更量へのペナルティ: 原曲キーに近いほど自然に歌える
         shift_pen = abs(shift) * 2.0
 
+        # high_pen(10.0) > low_pen(6.0): 高音はみ出しは歌唱困難に直結
+        # shift_pen: キー変更が大きいと伴奏の印象が変わるため軽くペナルティ
         score = 100.0 - low_pen * 6.0 - high_pen * 10.0 - shift_pen
 
         if score > best_score:
             best_score = score
             best_shift = shift
 
+    # fitカテゴリ: ユーザーに直感的な難易度を伝える
+    #   perfect(90+): 音域内に完全に収まり、キー変更も少ない
+    #   good(70+):    少しはみ出るが無理なく歌える
+    #   ok(50+):      頑張れば歌えるが一部きつい箇所あり
+    #   hard(<50):    かなりの音域差があり、歌唱困難
     if best_score >= 90:
         fit = "perfect"
     elif best_score >= 70:

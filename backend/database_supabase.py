@@ -2,6 +2,14 @@
 Supabaseデータベースの接続管理とクエリ関数
 
 楽曲・アーティスト検索とユーザーデータ（プロファイル、分析履歴、お気に入り）を提供。
+
+【移行経緯】
+旧 database.py（SQLite版）から移行。SQLite版は songs.db に対して生SQLを発行していたが、
+Supabase移行により PostgREST API 経由のクエリに全面書き換え。
+移行に伴い以下が変更された:
+  - お気に入り楽曲: SQLite の database.get_song() で1件ずつ取得 → Supabase JOINで一括取得
+  - アーティスト検索: 漢字名の部分一致のみ → ふりがな(reading)前方一致を追加
+  - from database import get_song の削除: お気に入りがSupabase JOINに変わり不要に
 """
 import os
 import re
@@ -28,6 +36,9 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ============================================================
 
 # songs テーブルの標準SELECTカラム（artists JOINつき）
+# 移行前は各関数でSELECT文字列をベタ書きしていた → DRY化のため定数化。
+# reading カラムはSupabase移行時に追加（ふりがな検索を可能にするため）。
+# artists(...) はPostgREST独自の外部キーJOIN記法で、SQL の JOIN ... ON に相当する。
 _SONG_FIELDS = (
     "id, title, artist_id, lowest_note, highest_note, "
     "falsetto_note, note, source, artists(name, slug, reading)"
@@ -35,11 +46,17 @@ _SONG_FIELDS = (
 
 
 def _hiragana_normalize(text: str) -> str:
-    """カタカナをひらがなに変換して正規化"""
+    """カタカナをひらがなに変換して正規化
+
+    Unicodeではカタカナ(ァ=0x30A1〜ヶ=0x30F6)とひらがな(ぁ=0x3041〜ゖ=0x3096)が
+    0x60のオフセットで対応している。NFKC正規化で半角カナも全角に統一してから変換。
+    用途: ユーザーのかな入力(ひらがな/カタカナ混在)をDBのreadingカラム(ひらがな)と照合。
+    """
     text = unicodedata.normalize('NFKC', text)
     result = []
     for char in text:
         code = ord(char)
+        # カタカナ範囲(ァ〜ヶ)をひらがなに変換
         if 0x30A1 <= code <= 0x30F6:
             result.append(chr(code - 0x60))
         else:
@@ -48,7 +65,12 @@ def _hiragana_normalize(text: str) -> str:
 
 
 def _query_mode(query: str) -> str:
-    """ひらがな/カタカナだけなら kana、それ以外は name 検索"""
+    """検索モードを判定: かな文字のみなら reading 前方一致、それ以外は name 部分一致
+
+    かな入力の場合は五十音インデックスやふりがな検索に使われるため、
+    artists.reading カラムに対する前方一致(prefix match)で高速検索する。
+    漢字・英字を含む場合はアーティスト名の部分一致で検索する。
+    """
     if not query:
         return "name"
     nfkc = unicodedata.normalize('NFKC', query)
@@ -58,7 +80,9 @@ def _query_mode(query: str) -> str:
 def _flatten_song(song: Dict[str, Any]) -> Dict[str, Any]:
     """Supabaseの songs(artists(...)) レスポンスをフラットに変換
 
-    SQLite版 database.py と同じフィールド名で返す。
+    PostgRESTのJOINレスポンスは {"artists": {"name": "...", "slug": "..."}} のように
+    ネストされるが、フロントエンドはフラットな {"artist": "...", "artist_slug": "..."} を
+    期待する。SQLite版 database.py との後方互換性を維持するための変換レイヤー。
     """
     artists_data = song.get("artists") or {}
     return {
@@ -77,15 +101,20 @@ def search_songs(query: str, limit: int = 20, offset: int = 0) -> List[Dict[str,
     """
     曲名またはアーティスト名・ふりがなであいまい検索。
 
-    PostgRESTの制限により、タイトル検索とアーティスト検索を分けて実行し、
-    重複をIDで除外する。
+    PostgRESTの制限により、外部キー先(artists)のカラムでフィルタしつつ
+    songs側のカラムもSELECTする単一クエリが書けない。そのため:
+      1. songs.title で直接 ILIKE 検索
+      2. artists.name / artists.reading で該当アーティストIDを取得
+      3. そのIDで songs を引き直す
+      4. ID単位で重複除去して統合
+    という3段階の検索を行っている。
     """
-    # 曲名で検索
+    # (1) 曲名で直接検索
     title_resp = supabase.table("songs").select(
         _SONG_FIELDS
     ).ilike("title", f"%{query}%").range(offset, offset + limit - 1).execute()
 
-    # アーティスト名・ふりがなで検索
+    # (2) アーティスト名・ふりがなで該当アーティストIDを取得
     normalized = _hiragana_normalize(query)
     name_artists = supabase.table("artists").select("id").ilike(
         "name", f"%{query}%"
@@ -98,6 +127,7 @@ def search_songs(query: str, limit: int = 20, offset: int = 0) -> List[Dict[str,
     for a in (name_artists.data or []) + (reading_artists.data or []):
         artist_ids.add(a["id"])
 
+    # (3) 該当アーティストの曲を取得（PostgRESTの .in_() は1000件制限があるためループ）
     artist_songs: List[Dict[str, Any]] = []
     for artist_id in artist_ids:
         resp = supabase.table("songs").select(
@@ -105,7 +135,7 @@ def search_songs(query: str, limit: int = 20, offset: int = 0) -> List[Dict[str,
         ).eq("artist_id", artist_id).range(0, limit - 1).execute()
         artist_songs.extend(resp.data or [])
 
-    # 重複除去（IDベース）
+    # (4) 重複除去: タイトル検索とアーティスト検索で同じ曲がヒットする場合がある
     seen_ids: set[int] = set()
     merged: List[Dict[str, Any]] = []
     for song in (title_resp.data or []) + artist_songs:
@@ -117,7 +147,12 @@ def search_songs(query: str, limit: int = 20, offset: int = 0) -> List[Dict[str,
 
 
 def count_songs(query: str = "") -> int:
-    """楽曲総数を取得（検索クエリ対応）"""
+    """楽曲総数を取得（検索クエリ対応）
+
+    SQLite版では SELECT COUNT(*) 一発だったが、Supabaseでは count="exact" パラメータで
+    レスポンスヘッダから件数を取得する。検索クエリありの場合はsearch_songs()と同じ
+    多段検索（タイトル＋アーティスト名＋ふりがな）でIDを集めてlen()で返す。
+    """
     if not query:
         resp = supabase.table("songs").select(
             "id", count="exact"
@@ -173,7 +208,10 @@ def get_all_songs(limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
 
 
 def get_artist(artist_id: int) -> Optional[Dict[str, Any]]:
-    """IDでアーティストを取得"""
+    """IDでアーティストを取得
+
+    SELECT句にreadingを追加（Supabase移行時）: ふりがな情報をフロントエンドに返すため。
+    """
     response = supabase.table("artists").select(
         "id, name, slug, song_count, reading"
     ).eq("id", artist_id).single().execute()
@@ -181,7 +219,14 @@ def get_artist(artist_id: int) -> Optional[Dict[str, Any]]:
 
 
 def get_artists(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
-    """アーティスト一覧を取得（song_count > 0、reading順）"""
+    """アーティスト一覧を取得（song_count > 0、reading順）
+
+    Supabase移行に伴う変更点:
+      - order("name") → order("reading"): 五十音順で並べるため。
+        漢字名ソートでは「米津玄師」が「あ行」に来ないが、reading(よねづけんし)なら正しい。
+      - .gt("song_count", 0) を追加: 楽曲が0件のアーティストをフィルタ。
+        データクレンジング漏れで楽曲紐づけのないアーティストが残っている場合の対策。
+    """
     response = supabase.table("artists").select(
         "id, name, slug, song_count, reading"
     ).gt("song_count", 0).order("reading").range(
@@ -200,7 +245,10 @@ def get_artist_songs(artist_id: int) -> List[Dict[str, Any]]:
 
 
 def count_artists(query: str = "") -> int:
-    """アーティスト総数を取得（検索クエリ対応）"""
+    """アーティスト総数を取得（検索クエリ対応）
+
+    SQLite版には存在しなかった関数。Supabase移行でページネーション対応のため新規追加。
+    """
     if not query:
         resp = supabase.table("artists").select(
             "id", count="exact"
@@ -226,7 +274,11 @@ def count_artists(query: str = "") -> int:
 
 
 def search_artists(query: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
-    """アーティスト検索: かな入力なら reading 前方一致、その他は name 部分一致"""
+    """アーティスト検索: かな入力なら reading 前方一致、その他は name 部分一致
+
+    SQLite版には存在しなかった関数。Supabase移行でふりがな検索を実現するために新規追加。
+    フロントエンドの五十音インデックス（あ行/か行/...）からのアーティスト絞り込みに使用。
+    """
     mode = _query_mode(query)
 
     if mode == "kana":
@@ -340,7 +392,14 @@ def remove_favorite_song(user_id: str, song_id: int) -> bool:
 
 
 def get_favorite_songs(user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
-    """ユーザーのお気に入り楽曲一覧を取得（Supabaseから楽曲詳細をJOIN）"""
+    """ユーザーのお気に入り楽曲一覧を取得（Supabaseから楽曲詳細をJOIN）
+
+    【移行前】from database import get_song → favorite_songs から song_id を取得後、
+    SQLite の database.get_song(song_id) で1件ずつ楽曲詳細を引く二段階方式（N+1問題）。
+    【移行後】songs(id, title, ..., artists(name)) のPostgRESTネストJOINで1クエリに統合。
+    これにより SQLite(database.py) への依存が完全に除去された。
+    """
+    # PostgREST ネストJOIN: favorite_songs → songs → artists を1クエリで取得
     response = supabase.table("favorite_songs").select(
         "id, song_id, created_at, songs(id, title, lowest_note, highest_note, falsetto_note, artists(name))"
     ).eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
@@ -387,6 +446,7 @@ def add_favorite_artist(user_id: str, artist_id: int, artist_name: str) -> Optio
         count_resp = supabase.table("favorite_artists").select(
             "id", count="exact"
         ).eq("user_id", user_id).execute()
+        # お気に入りアーティスト上限: 10組（推薦アルゴリズムの枠配分に影響するため制限）
         if (count_resp.count or 0) >= 10:
             return None  # 上限超過
 
@@ -502,9 +562,20 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
         expression_scores = []
         overall_scores = []
 
+        # result_json の想定スキーマ（analyzeエンドポイントが保存する形式）:
+        # {
+        #   "chest_min_hz": float, "chest_max_hz": float,
+        #   "falsetto_max_hz": float | None,
+        #   "overall_min_hz": float, "overall_max_hz": float,
+        #   "chest_ratio": float (0.0-1.0),
+        #   "singing_analysis": {
+        #     "range_score": float, "stability_score": float,
+        #     "expression_score": float, "overall_score": float
+        #   }
+        # }
         valid_count = 0
         for record in history:
-            # result_jsonがある場合はそこから取得
+            # 新形式: result_jsonにすべての解析結果が格納されている
             if record.get("result_json"):
                 result = record["result_json"]
                 if result.get("chest_min_hz"):
@@ -533,7 +604,9 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
                         overall_scores.append(sa["overall_score"])
 
                 valid_count += 1
-            # 古い形式の場合は直接取得
+            # 古い形式（初期実装時のレコード）: result_json がなく、
+            # vocal_range_min_hz/max_hz が直接カラムに保存されていた。
+            # 既存ユーザーの過去データとの互換性のため残している。
             elif record.get("vocal_range_min_hz") or record.get("vocal_range_max_hz"):
                 if record.get("vocal_range_min_hz"):
                     overall_min_values.append(record["vocal_range_min_hz"])
@@ -548,7 +621,9 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
         if valid_count == 0:
             return None
 
-        # 統合値を計算（最小値と最大値を採用）
+        # 統合値を計算: 複数回の解析結果からmin/maxを採用し、最大音域を推定する。
+        # 平均ではなくmin/maxを使う理由: ユーザーの「出せる音域」の上下限を把握するため。
+        # 1回だけ高音が出た場合でもそれは実力として反映する設計。
         result = {
             "data_count": valid_count,
             "limit": limit
@@ -588,7 +663,8 @@ def get_integrated_vocal_range(user_id: str, limit: int = 20) -> Optional[Dict[s
             result["falsetto_max"] = falsetto_max_label
             result["falsetto_max_hz"] = falsetto_max_hz_defined
 
-        # 地声比率の平均
+        # 地声比率の平均（声質タイプ判定に使用）
+        # デフォルト0.8: データがない場合は「主に地声」と仮定（日本人男性の典型的な歌唱スタイル）
         avg_chest_ratio = sum(chest_ratio_values) / len(chest_ratio_values) if chest_ratio_values else 0.8
         result["chest_ratio"] = avg_chest_ratio
         result["falsetto_ratio"] = 1.0 - avg_chest_ratio

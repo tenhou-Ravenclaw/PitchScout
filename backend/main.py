@@ -19,10 +19,13 @@ from recommender import (
     find_similar_artists, classify_voice_type,
 )
 
+# 【移行】from database import ... → from database_supabase import ...
+# 楽曲検索系の関数をすべてSupabase版に切り替え。
+# SQLite版(database.py)の init_db は不要になったためimportから除外。
 # 楽曲データは Supabase（マージ済み834アーティスト、5,341曲）
 from database_supabase import get_all_songs, search_songs, count_songs, get_artists, get_artist_songs, count_artists, search_artists
 
-# 認証・ユーザー系は Supabase
+# 認証・ユーザー系は Supabase（移行前から変更なし）
 from database_supabase import (
     get_user_profile, update_user_profile, update_vocal_range,
     create_analysis_record, get_analysis_history,delete_analysis_record,
@@ -49,6 +52,10 @@ from models import (
     AnalysisCreate, AnalysisUpdate, FavoriteSongAdd,
     FavoriteArtistAdd,
 )
+
+# 【移行で削除】旧: @app.on_event("startup") def on_startup(): init_db()
+# SQLiteの init_db() はテーブル作成やコネクションプール初期化を行っていたが、
+# Supabaseはクラウドサービスなので起動時の初期化が不要。
 
 app = FastAPI(title="Voice Range Analysis API")
 
