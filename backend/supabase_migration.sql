@@ -111,7 +111,8 @@ CREATE TABLE IF NOT EXISTS artists (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     slug TEXT NOT NULL UNIQUE,
-    song_count INTEGER DEFAULT 0
+    song_count INTEGER DEFAULT 0,
+    reading TEXT  -- ふりがな検索用
 );
 
 -- 楽曲テーブル
@@ -125,8 +126,8 @@ CREATE TABLE IF NOT EXISTS songs (
     note TEXT,
     source TEXT DEFAULT 'voice-key.news',
     
-    -- 重複防止
-    UNIQUE(artist_id, title, source)
+    -- 重複防止（マージ済みデータはソースに関係なくアーティスト+タイトルで一意）
+    UNIQUE(artist_id, title)
 );
 
 -- インデックス
@@ -191,8 +192,9 @@ CREATE TABLE IF NOT EXISTS favorite_artists (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
     artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+    artist_name TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
+
     -- 同じアーティストを重複してお気に入り登録できないように
     UNIQUE(user_id, artist_id)
 );
