@@ -15,3 +15,5 @@ frontend/build/
 .env
 node_modules
 frontend/.env.production
+.serena/
+.playwright-mcp/
