@@ -230,3 +230,26 @@ CREATE TRIGGER update_user_profiles_updated_at
     BEFORE UPDATE ON user_profiles
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================
+-- 7. 既存テーブルへのカラム追加・制約変更（冪等）
+--    CREATE TABLE IF NOT EXISTS では既存テーブルに新カラムが追加されないため、
+--    ALTER TABLE で明示的に追加する。
+-- ============================================================
+
+-- artists.reading: ふりがな検索用カラム（Supabase移行時に追加）
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS reading TEXT;
+
+-- favorite_artists.artist_name: 表示用アーティスト名
+ALTER TABLE favorite_artists ADD COLUMN IF NOT EXISTS artist_name TEXT;
+
+-- songs の UNIQUE 制約を (artist_id, title, source) → (artist_id, title) に変更
+-- マージ済みデータではソースに関係なくアーティスト+タイトルで一意
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'songs_artist_id_title_source_key') THEN
+        ALTER TABLE songs DROP CONSTRAINT songs_artist_id_title_source_key;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'songs_artist_id_title_key') THEN
+        ALTER TABLE songs ADD CONSTRAINT songs_artist_id_title_key UNIQUE (artist_id, title);
+    END IF;
+END $$;

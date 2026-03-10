@@ -22,6 +22,33 @@ from note_converter import NOTE_TABLE, hz_to_label_and_hz
 # HTTPベースのAPIのため、try/finally conn.close() のようなコネクション管理が不要。
 from database_supabase import supabase
 
+
+def _fetch_all_pages(query_builder, page_size: int = 1000) -> list[dict]:
+    """PostgREST の max_rows 制限を回避して全件取得する。
+
+    Supabase の config.toml で max_rows=1000 が設定されているため、
+    .execute() だけでは ~5000曲のうち1000件で打ち切られる。
+    range() で offset/limit を指定しながらページングすることで全件取得する。
+
+    Args:
+        query_builder: supabase.table(...).select(...) 等のクエリビルダー
+        page_size: 1ページあたりの取得件数（max_rows以下にする）
+
+    Returns:
+        全レコードのリスト
+    """
+    all_rows: list[dict] = []
+    offset = 0
+    while True:
+        resp = query_builder.range(offset, offset + page_size - 1).execute()
+        batch = resp.data or []
+        all_rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return all_rows
+
+
 # ============================================================
 # カラオケ表記 ↔ Hz 変換
 # ============================================================
@@ -250,10 +277,11 @@ def recommend_songs(
     #   - artists(id, name) はPostgRESTのネストJOIN記法（SQLの JOIN artists a ON ... に相当）
     #   - .not_.is_("lowest_note", "null") は SQL の WHERE lowest_note IS NOT NULL に相当
     #   - try/finally conn.close() が不要に（HTTPベースのAPIなのでコネクション管理不要）
-    resp = supabase.table("songs").select(
+    #   - _fetch_all_pages() で max_rows=1000 制限を回避し全 ~5000曲を取得
+    query = supabase.table("songs").select(
         "id, title, artist_id, lowest_note, highest_note, falsetto_note, source, artists(id, name)"
-    ).not_.is_("lowest_note", "null").not_.is_("highest_note", "null").execute()
-    rows = resp.data or []
+    ).not_.is_("lowest_note", "null").not_.is_("highest_note", "null")
+    rows = _fetch_all_pages(query)
 
     # 裏声があればそこまで上限を広げる
     effective_max = chest_max_hz
@@ -404,12 +432,14 @@ def find_similar_artists(
     #   SQLite版ではJOINでフラットに a.id, a.name, a.song_count を取得できたが、
     #   Supabase版では artists(id, name, song_count) というネスト形式になるため、
     #   r["name"] → artists_data.get("name", "") という参照方法の変更が必要。
-    resp = supabase.table("songs").select(
+    # _fetch_all_pages() で max_rows=1000 制限を回避し全曲を取得
+    query = supabase.table("songs").select(
         "artist_id, lowest_note, highest_note, artists(id, name, song_count)"
-    ).not_.is_("lowest_note", "null").not_.is_("highest_note", "null").execute()
+    ).not_.is_("lowest_note", "null").not_.is_("highest_note", "null")
+    all_rows = _fetch_all_pages(query)
 
     artists: dict[int, dict] = {}
-    for row in (resp.data or []):
+    for row in all_rows:
         artists_data = row.get("artists") or {}
         aid = row["artist_id"]
         lo_hz = label_to_hz(row["lowest_note"])

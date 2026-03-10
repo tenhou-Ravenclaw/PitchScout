@@ -127,13 +127,14 @@ def search_songs(query: str, limit: int = 20, offset: int = 0) -> List[Dict[str,
     for a in (name_artists.data or []) + (reading_artists.data or []):
         artist_ids.add(a["id"])
 
-    # (3) 該当アーティストの曲を取得（PostgRESTの .in_() は1000件制限があるためループ）
+    # (3) 該当アーティストの曲をバッチ取得
+    #   N+1問題の修正: artist_id ごとに1クエリ → .in_() で一括取得
     artist_songs: List[Dict[str, Any]] = []
-    for artist_id in artist_ids:
+    if artist_ids:
         resp = supabase.table("songs").select(
             _SONG_FIELDS
-        ).eq("artist_id", artist_id).range(0, limit - 1).execute()
-        artist_songs.extend(resp.data or [])
+        ).in_("artist_id", list(artist_ids)).execute()
+        artist_songs = resp.data or []
 
     # (4) 重複除去: タイトル検索とアーティスト検索で同じ曲がヒットする場合がある
     seen_ids: set[int] = set()
@@ -177,9 +178,10 @@ def count_songs(query: str = "") -> int:
         artist_ids.add(a["id"])
 
     song_ids: set[int] = {s["id"] for s in (title_resp.data or [])}
-    for artist_id in artist_ids:
-        resp = supabase.table("songs").select("id").eq(
-            "artist_id", artist_id
+    # N+1問題の修正: artist_id ごとに1クエリ → .in_() で一括取得
+    if artist_ids:
+        resp = supabase.table("songs").select("id").in_(
+            "artist_id", list(artist_ids)
         ).execute()
         for s in (resp.data or []):
             song_ids.add(s["id"])
