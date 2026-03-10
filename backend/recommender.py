@@ -20,33 +20,7 @@ from note_converter import NOTE_TABLE, hz_to_label_and_hz
 # SQLite版ではget_connection()でコネクションを取得し生SQLを実行していたが、
 # Supabase版ではPostgREST APIクライアント経由でテーブルにアクセスする。
 # HTTPベースのAPIのため、try/finally conn.close() のようなコネクション管理が不要。
-from database_supabase import supabase
-
-
-def _fetch_all_pages(query_builder, page_size: int = 1000) -> list[dict]:
-    """PostgREST の max_rows 制限を回避して全件取得する。
-
-    Supabase の config.toml で max_rows=1000 が設定されているため、
-    .execute() だけでは ~5000曲のうち1000件で打ち切られる。
-    range() で offset/limit を指定しながらページングすることで全件取得する。
-
-    Args:
-        query_builder: supabase.table(...).select(...) 等のクエリビルダー
-        page_size: 1ページあたりの取得件数（max_rows以下にする）
-
-    Returns:
-        全レコードのリスト
-    """
-    all_rows: list[dict] = []
-    offset = 0
-    while True:
-        resp = query_builder.range(offset, offset + page_size - 1).execute()
-        batch = resp.data or []
-        all_rows.extend(batch)
-        if len(batch) < page_size:
-            break
-        offset += page_size
-    return all_rows
+from database_supabase import supabase, _fetch_all_pages
 
 
 # ============================================================

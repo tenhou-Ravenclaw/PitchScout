@@ -64,6 +64,32 @@ def _hiragana_normalize(text: str) -> str:
     return ''.join(result)
 
 
+def _fetch_all_pages(query_builder, page_size: int = 1000) -> list[dict]:
+    """PostgREST の max_rows 制限を回避して全件取得する。
+
+    Supabase の config.toml で max_rows=1000 が設定されているため、
+    .execute() だけでは ~5000曲のうち1000件で打ち切られる。
+    range() で offset/limit を指定しながらページングすることで全件取得する。
+
+    Args:
+        query_builder: supabase.table(...).select(...) 等のクエリビルダー
+        page_size: 1ページあたりの取得件数（max_rows以下にする）
+
+    Returns:
+        全レコードのリスト
+    """
+    all_rows: list[dict] = []
+    offset = 0
+    while True:
+        resp = query_builder.range(offset, offset + page_size - 1).execute()
+        batch = resp.data or []
+        all_rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return all_rows
+
+
 def _query_mode(query: str) -> str:
     """検索モードを判定: かな文字のみなら reading 前方一致、それ以外は name 部分一致
 
@@ -161,9 +187,11 @@ def count_songs(query: str = "") -> int:
         return resp.count or 0
 
     # クエリあり: タイトル + アーティスト名 + ふりがなで検索しIDを集める
-    title_resp = supabase.table("songs").select("id").ilike(
-        "title", f"%{query}%"
-    ).execute()
+    # _fetch_all_pages() を使って max_rows=1000 制限を回避
+    # （例: "a" で1645件、"い" で1311件ヒットするため .execute() だけでは打ち切られる）
+    title_rows = _fetch_all_pages(
+        supabase.table("songs").select("id").ilike("title", f"%{query}%")
+    )
 
     normalized = _hiragana_normalize(query)
     name_artists = supabase.table("artists").select("id").ilike(
@@ -177,13 +205,16 @@ def count_songs(query: str = "") -> int:
     for a in (name_artists.data or []) + (reading_artists.data or []):
         artist_ids.add(a["id"])
 
-    song_ids: set[int] = {s["id"] for s in (title_resp.data or [])}
+    song_ids: set[int] = {s["id"] for s in title_rows}
     # N+1問題の修正: artist_id ごとに1クエリ → .in_() で一括取得
+    # _fetch_all_pages() で max_rows 制限を回避
     if artist_ids:
-        resp = supabase.table("songs").select("id").in_(
-            "artist_id", list(artist_ids)
-        ).execute()
-        for s in (resp.data or []):
+        artist_songs = _fetch_all_pages(
+            supabase.table("songs").select("id").in_(
+                "artist_id", list(artist_ids)
+            )
+        )
+        for s in artist_songs:
             song_ids.add(s["id"])
 
     return len(song_ids)
