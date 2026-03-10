@@ -16,7 +16,7 @@ from vocal_separator import separate_vocals
 # recommender 関数群（おすすめ曲・キー・声質タイプ）
 from recommender import (
     recommend_songs, recommend_key_for_song,
-    find_similar_artists, classify_voice_type,
+    find_similar_artists, classify_voice_type, label_to_hz,
 )
 
 # 楽曲データはローカル SQLite（songs.db に5000曲入ってる）
@@ -225,7 +225,36 @@ def remove_favorite(song_id: int, user: dict = Depends(get_current_user)):
 @app.get("/favorites")
 def get_my_favorites(user: dict = Depends(get_current_user), limit: int = 100):
     """自分のお気に入り楽曲一覧を取得"""
-    return get_favorite_songs(user["id"], limit)
+    favorites = get_favorite_songs(user["id"], limit)
+    profile = get_user_profile(user["id"])
+
+    if not profile:
+        return favorites
+
+    chest_min_hz = label_to_hz(profile.get("current_vocal_range_min")) if profile.get("current_vocal_range_min") else None
+    chest_max_hz = label_to_hz(profile.get("current_vocal_range_max")) if profile.get("current_vocal_range_max") else None
+    falsetto_max_hz = label_to_hz(profile.get("current_falsetto_max")) if profile.get("current_falsetto_max") else None
+
+    if not chest_min_hz or not chest_max_hz:
+        return favorites
+
+    effective_max = chest_max_hz
+    if falsetto_max_hz and falsetto_max_hz > chest_max_hz:
+        effective_max = falsetto_max_hz
+
+    for song in favorites:
+        try:
+            key_info = recommend_key_for_song(
+                song.get("lowest_note"),
+                song.get("highest_note"),
+                chest_min_hz,
+                effective_max,
+            )
+            song.update(key_info)
+        except Exception:
+            song["recommended_key"] = 0
+
+    return favorites
 
 
 @app.get("/favorites/check/{song_id}")

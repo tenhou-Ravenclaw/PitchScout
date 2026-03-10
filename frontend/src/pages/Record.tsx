@@ -65,64 +65,64 @@ const Record: React.FC<RecordProps> = ({
 
         {/* ── メニューボタンのグリッド配置 ── */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 w-full max-w-6xl mx-auto transition-all duration-300">
-          {/* 1. 通常録音ボタン (大きなタイル) */}
+          {/* 1. カラオケモードボタン (大きなタイル) */}
           <button
             onClick={onNormalClick}
             disabled={isAnalyzing} // 解析中は無効化
-            className="group relative col-span-1 md:col-span-6 row-span-2 h-64 md:h-auto bg-slate-900/80 backdrop-blur-md border-4 border-cyan-400 transform -skew-x-3 hover:skew-x-0 transition-all duration-300 shadow-[8px_8px_0px_0px_rgba(6,182,212,0.6)] hover:shadow-[0px_0px_40px_rgba(6,182,212,1)]"
+            className="group relative col-span-1 md:col-span-6 row-span-2 h-64 md:h-auto bg-slate-900/80 backdrop-blur-md border-4 border-pink-500 transform -skew-x-3 hover:skew-x-0 transition-all duration-300 shadow-[8px_8px_0px_0px_rgba(236,72,153,0.6)] hover:shadow-[0px_0px_40px_rgba(236,72,153,1)]"
           >
             {/* 内部装飾の光の漏れ */}
-            <div className="absolute -top-1/2 -left-1/2 w-full h-full bg-cyan-400/20 blur-[60px] rounded-full pointer-events-none"></div>
+            <div className="absolute -top-1/2 -left-1/2 w-full h-full bg-pink-500/20 blur-[60px] rounded-full pointer-events-none"></div>
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 p-8">
-              <MicrophoneIcon className="w-24 h-24 md:w-32 md:h-32 text-cyan-400 group-hover:text-cyan-300 transition-colors duration-300 drop-shadow-[0_0_15px_rgba(6,182,212,0.8)] animate-pulse" />
-              <h2 className="text-3xl md:text-5xl font-black italic text-white mt-4 tracking-tighter uppercase transform -skew-x-6 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]">
-                Start
-                <br />
-                Recording
-              </h2>
-            </div>
-          </button>
-
-          {/* 2. カラオケモード (中サイズ) */}
-          <button
-            onClick={onKaraokeClick}
-            disabled={isAnalyzing}
-            className="group relative col-span-1 md:col-span-6 h-40 bg-slate-900/80 border-4 border-pink-500 transform -skew-x-3 hover:skew-x-0 transition-all duration-300 shadow-[8px_8px_0px_0px_rgba(236,72,153,0.6)] hover:shadow-[0px_0px_40px_rgba(236,72,153,1)]"
-          >
-            <div className="absolute inset-0 flex items-center justify-between px-8 z-10">
-              <h2 className="text-2xl md:text-3xl font-black italic text-white tracking-tighter uppercase transform -skew-x-6 drop-shadow-[0_0_10px_rgba(236,72,153,0.8)]">
+              <MusicalNoteIcon className="w-24 h-24 md:w-32 md:h-32 text-pink-500 group-hover:text-pink-400 transition-colors duration-300 drop-shadow-[0_0_15px_rgba(236,72,153,0.8)] animate-pulse" />
+              <h2 className="text-3xl md:text-5xl font-black italic text-white mt-4 tracking-tighter uppercase transform -skew-x-6 drop-shadow-[0_0_10px_rgba(236,72,153,0.8)]">
                 Karaoke
                 <br />
                 Mode
               </h2>
-              <MusicalNoteIcon className="w-16 h-16 text-pink-500 group-hover:text-pink-400 drop-shadow-[0_0_15px_rgba(236,72,153,0.8)]" />
             </div>
           </button>
 
-          {/* 3. アップロード (小サイズ) */}
+          {/* 2. 通常録音ボタン (中サイズ) */}
           <button
-            onClick={onUploadClick}
+            onClick={onKaraokeClick}
             disabled={isAnalyzing}
-            className="group relative col-span-1 md:col-span-3 h-40 bg-slate-900/80 border-4 border-yellow-400 transform -skew-x-3 hover:skew-x-0 transition-all duration-300 shadow-[8px_8px_0px_0px_rgba(250,204,21,0.6)]"
+            className="group relative col-span-1 md:col-span-6 h-40 bg-slate-900/80 border-4 border-cyan-400 transform -skew-x-3 hover:skew-x-0 transition-all duration-300 shadow-[8px_8px_0px_0px_rgba(6,182,212,0.6)] hover:shadow-[0px_0px_40px_rgba(6,182,212,1)]"
           >
-            <div className="absolute inset-0 flex flex-col items-center justify-center z-10 p-4">
-              <CloudArrowUpIcon className="w-10 h-10 text-yellow-400 group-hover:text-yellow-300 mb-2 drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
-              <h2 className="text-xl font-bold italic text-white tracking-tighter uppercase transform -skew-x-6">
-                Upload
+            <div className="absolute inset-0 flex items-center justify-between px-8 z-10">
+              <h2 className="text-2xl md:text-3xl font-black italic text-white tracking-tighter uppercase transform -skew-x-6 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]">
+                Gojitaku
+                <br />
+                Mode
               </h2>
+              <MicrophoneIcon className="w-16 h-16 text-cyan-400 group-hover:text-cyan-300 drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
             </div>
           </button>
 
-          {/* 4. 履歴ボタン (小サイズ) */}
+          {/* 3. 履歴ボタン (小サイズ) */}
           <button
             onClick={onHistoryClick}
             disabled={isAnalyzing}
-            className="group relative col-span-1 md:col-span-3 h-40 bg-slate-900/80 border-4 border-emerald-400 transform -skew-x-3 hover:skew-x-0 transition-all duration-300 shadow-[8px_8px_0px_0px_rgba(52,211,153,0.6)]"
+            className="group relative col-span-1 md:col-span-4 h-40 bg-slate-900/80 border-4 border-emerald-400 transform -skew-x-3 hover:skew-x-0 transition-all duration-300 shadow-[8px_8px_0px_0px_rgba(52,211,153,0.6)]"
           >
             <div className="absolute inset-0 flex flex-col items-center justify-center z-10 p-4">
               <ClockIcon className="w-10 h-10 text-emerald-400 group-hover:text-emerald-300 mb-2 drop-shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
               <h2 className="text-xl font-bold italic text-white tracking-tighter uppercase transform -skew-x-6">
                 History
+              </h2>
+            </div>
+          </button>
+
+          {/* 4. アップロード (小サイズ) */}
+          <button
+            onClick={onUploadClick}
+            disabled={isAnalyzing}
+            className="group relative col-span-1 md:col-span-2 h-40 bg-slate-900/80 border-4 border-yellow-400 transform -skew-x-3 hover:skew-x-0 transition-all duration-300 shadow-[8px_8px_0px_0px_rgba(250,204,21,0.6)]"
+          >
+            <div className="absolute inset-0 flex flex-col items-center justify-center z-10 p-4">
+              <CloudArrowUpIcon className="w-10 h-10 text-yellow-400 group-hover:text-yellow-300 mb-2 drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
+              <h2 className="text-xl font-bold italic text-white tracking-tighter uppercase transform -skew-x-6">
+                Upload
               </h2>
             </div>
           </button>

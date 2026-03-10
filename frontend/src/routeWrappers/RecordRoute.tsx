@@ -19,8 +19,8 @@ export const RecordRoute: React.FC = () => {
   const { isAnalyzing } = useAnalysis();
   return (
     <Record
-      onNormalClick={() => navigate("/record/normal")}
-      onKaraokeClick={() => navigate("/record/karaoke")}
+      onNormalClick={() => navigate("/record/karaoke")}
+      onKaraokeClick={() => navigate("/record/normal")}
       onUploadClick={() => navigate("/record/upload")}
       onHistoryClick={() => navigate("/history")}
       isAnalyzing={isAnalyzing}

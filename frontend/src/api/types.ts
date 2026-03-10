@@ -69,6 +69,7 @@ export interface FavoriteSong {
   lowest_note: string | null;
   highest_note: string | null;
   falsetto_note: string | null;
+  recommended_key?: number;
   created_at: string;
 }
 

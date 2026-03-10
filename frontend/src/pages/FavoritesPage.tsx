@@ -15,6 +15,7 @@ import LoadingState from '../components/ui/LoadingState';
 import PageStateContainer from '../components/ui/PageStateContainer';
 import Toast from '../components/ui/Toast';
 import AuthRequiredCard from '../components/ui/cards/AuthRequiredCard';
+import { keyBadge } from '../utils/keyBadge';
 
 /** FavoritesPage が受け取るプロパティ */
 interface FavoritesPageProps {
@@ -117,6 +118,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
                             <th className="py-3 px-4 font-medium hidden sm:table-cell">Lowest</th>
                             <th className="py-3 px-4 font-medium hidden sm:table-cell">Highest</th>
                             <th className="py-3 px-4 font-medium hidden sm:table-cell">Falsetto</th>
+                            <th className="py-3 px-4 font-medium hidden sm:table-cell">おすすめキー</th>
                             <th className="py-3 px-2 font-medium w-10"></th>
                         </tr>
                     </thead>
@@ -124,11 +126,23 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
                         {visibleFavorites.map((fav, i) => (
                             <tr key={fav.favorite_id} className="table-row group">
                                 <td className="py-3 px-5 text-slate-500 text-xs">{i + 1}</td>
-                                <td className="py-3 px-4 text-slate-200 font-medium group-hover:text-white transition-colors">{fav.title}</td>
-                                <td className="py-3 px-4 text-slate-400">{fav.artist || '-'}</td>
+                                <td className="py-3 px-4 text-slate-200 font-medium group-hover:text-white transition-colors">
+                                    {fav.title}
+                                </td>
+                                <td className="py-3 px-4 text-slate-400">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span>{fav.artist || '-'}</span>
+                                        <span className="sm:hidden">
+                                            {fav.recommended_key !== undefined ? keyBadge(fav.recommended_key) : '-'}
+                                        </span>
+                                    </div>
+                                </td>
                                 <td className="py-3 px-4 text-slate-400 whitespace-nowrap hidden sm:table-cell">{fav.lowest_note || '-'}</td>
                                 <td className="py-3 px-4 text-slate-400 whitespace-nowrap hidden sm:table-cell">{fav.highest_note || '-'}</td>
                                 <td className="py-3 px-4 text-slate-400 whitespace-nowrap hidden sm:table-cell">{fav.falsetto_note || '-'}</td>
+                                <td className="py-3 px-4 whitespace-nowrap hidden sm:table-cell">
+                                    {fav.recommended_key !== undefined ? keyBadge(fav.recommended_key) : '-'}
+                                </td>
                                 <td className="py-3 px-2 text-center">
                                     {/* お気に入り解除ボタン（ハート） */}
                                     <button
