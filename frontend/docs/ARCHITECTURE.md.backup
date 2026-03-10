@@ -87,7 +87,7 @@ src/
 │
 ├── pages/
 │   ├── Record.tsx              # メニュー画面 (録音方法選択グリッド)
-│   ├── Landing.tsx             # ランディング画面 (NEW RECORD / HISTORY)
+│   ├── Introduction.tsx        # ランディング画面 (NEW RECORD / HISTORY)
 │   ├── LoginPage.tsx           # ログイン画面 (Google OAuth ボタン)
 │   ├── AnalysisResultPage.tsx  # 分析結果ダッシュボード (レーダーチャート付き)
 │   ├── SongListPage.tsx        # 楽曲一覧 (アーティスト別グリッド + 曲テーブル)

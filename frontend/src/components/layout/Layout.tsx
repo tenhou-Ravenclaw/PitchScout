@@ -28,7 +28,8 @@ const Layout: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const showHeader = location.pathname !== "/";
+  const showHeader = true;
+  const showGlobalBackground = location.pathname !== "/";
 
   /** ── 検索実行時の処理 ──
    * ヘッダーの検索窓で Enter を押した際、検索ワードをセットして検索ページへ移動させます。
@@ -56,11 +57,13 @@ const Layout: React.FC = () => {
     <div className="pb-24 md:pb-0 min-h-[100dvh] relative bg-slate-900 overflow-hidden font-sans selection:bg-pink-500 selection:text-white text-slate-200">
       
       {/* ── 全画面共通の背景グラデーション装飾 ── */}
-      <div className="fixed inset-0 z-0 opacity-20 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[120%] h-[40%] bg-gradient-to-r from-red-600 to-transparent -skew-y-3 transform" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[120%] h-[40%] bg-gradient-to-l from-cyan-600 to-transparent skew-y-3 transform" />
-        <div className="absolute top-[20%] right-[-20%] w-[800px] h-[800px] border-[50px] border-white/5 rounded-full" />
-      </div>
+      {showGlobalBackground && (
+        <div className="fixed inset-0 z-0 opacity-20 pointer-events-none">
+          <div className="absolute top-[-10%] left-[-10%] w-[120%] h-[40%] bg-gradient-to-r from-red-600 to-transparent -skew-y-3 transform" />
+          <div className="absolute bottom-[-10%] right-[-10%] w-[120%] h-[40%] bg-gradient-to-l from-cyan-600 to-transparent skew-y-3 transform" />
+          <div className="absolute top-[20%] right-[-20%] w-[800px] h-[800px] border-[50px] border-white/5 rounded-full" />
+        </div>
+      )}
 
       <div className="relative z-10">
         {/* ── 共通ヘッダー (PC用) ── */}

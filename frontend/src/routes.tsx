@@ -2,7 +2,7 @@
 import Layout from "./components/layout/Layout";
 import { Navigate, RouteObject } from "react-router-dom";
 import GuidePage from "./pages/GuidePage";
-import { LandingRoute } from "./routeWrappers/LandingRoute";
+import { IntroductionRoute } from "./routeWrappers/IntroductionRoute";
 import { RecordRoute } from "./routeWrappers/RecordRoute";
 import { RecorderRoute } from "./routeWrappers/RecorderRoute";
 import { KaraokeRoute } from "./routeWrappers/KaraokeRoute";
@@ -18,7 +18,7 @@ export const routes: RouteObject[] = [
   {
     element: <Layout />,
     children: [
-      { path: "/", element: <LandingRoute /> },
+      { path: "/", element: <IntroductionRoute /> },
       { path: "/record", element: <RecordRoute /> },
       { path: "/record/normal", element: <RecorderRoute /> },
       { path: "/record/karaoke", element: <KaraokeRoute /> },
