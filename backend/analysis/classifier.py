@@ -133,10 +133,11 @@ def _classify_ml(y: np.ndarray, sr: int, f0: float,
         else:
             threshold = ML_CONF_THRESHOLD_HIGH
 
-        # 高音域で「地声」判定する場合は追加の信頼度要求
-        # f0>=400Hzは男声の地声域上限付近。MLが「地声」と判定するにはより強い根拠が必要。
+        # 全音域で「地声」判定する場合は追加の信頼度要求
+        # MLトレーニングデータは約95%が地声サンプルに偏っているため、
+        # f0に関わらず地声判定には高い信頼度（90%）を要求する。
         # 裏声判定は通常閾値のままにし、高音の裏声検出を阻害しない。
-        if label == "chest" and f0 >= 400:
+        if label == "chest":
             threshold = max(threshold, ML_CONF_CHEST_HIGH_F0)
 
         if confidence < threshold:
@@ -211,15 +212,23 @@ def _classify_rules(y: np.ndarray, sr: int, f0: float, median_freq: float,
         chest_score += 2.0
 
     # hcount
+    # ★ 倍音数が少ない(hcount<=2)は裏声の特徴だが、アーティファクト（残留楽器）も
+    # 倍音が少ない場合があるため、旧+6.0から+4.0に引き下げてアーティファクトを抑制。
+    # ★ 高音域(f0>400Hz)では Demucs 分離後に hcount が過剰になる（最大10になりやすい）。
+    # hcount≥8 の地声ボーナス(+6.0)が f0 バイアスを圧倒して裏声が地声に引き込まれるため
+    # f0 に応じて減衰係数を掛ける。実音声の地声判断は他の特徴量に任せる。
     hcount = sum(1 for db in H[:10] if db > noise_db + 8.0)
-    if hcount <= 2:
-        falsetto_score += 6.0
+    hcount_chest_mult = 0.35 if f0 > 500 else (0.60 if f0 > 400 else 1.0)
+    if hcount <= 1:
+        falsetto_score += 5.0
+    elif hcount <= 2:
+        falsetto_score += 4.0
     elif hcount <= 4:
-        falsetto_score += 3.0
+        falsetto_score += 2.0
     elif hcount >= 8:
-        chest_score += 6.0
+        chest_score += 6.0 * hcount_chest_mult
     elif hcount >= 6:
-        chest_score += 3.0
+        chest_score += 3.0 * hcount_chest_mult
 
     # slope
     slope_pts = [(i + 1, H[i]) for i in range(8) if H[i] > noise_db + 8.0]
@@ -262,14 +271,20 @@ def _classify_rules(y: np.ndarray, sr: int, f0: float, median_freq: float,
         chest_score += 1.5
 
     # f0補正: 高音域では強い裏声バイアスを適用
-    # demucs分離後の音源は倍音構造が変質しやすく、hcount=10が頻発するため
-    # 音響特徴だけでは不十分。f0>400のボーナスはhcount≥8(+6.0)に対抗する必要がある。
+    # Demucs分離後の音源は倍音構造が変質しやすく hcount=10 が頻発するが、
+    # 上の hcount_chest_mult 減衰と組み合わせることで正しい裏声判定を確保する。
+    # hcount≥8(最大+6.0*0.35=+2.1)に対して、f0 バイアスで十分な裏声スコアを与える。
     if f0 > 600:
-        falsetto_score += 5.0
+        falsetto_score += 8.0
     elif f0 > 500:
-        falsetto_score += 4.0
+        falsetto_score += 6.0
     elif f0 > 400:
-        falsetto_score += 3.0
+        falsetto_score += 4.0
+    elif f0 <= 400 and f0 >= 350:
+        # 遷移帯域上部（350-400Hz）: 裏声も十分あり得る音域のため弱い裏声バイアスを付与。
+        # 旧コードではこの帯域にバイアスなし + FALSETTO_RATIO_DEFAULT=0.58 の組み合わせで
+        # hcount≥8 など地声特徴1つで裏声が負けていた。
+        falsetto_score += 1.5
     elif f0 < 220:
         chest_score += 3.0
     elif f0 < 295:

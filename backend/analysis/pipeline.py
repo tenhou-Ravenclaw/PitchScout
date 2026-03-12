@@ -438,9 +438,9 @@ def filter_falsetto_consecutive(falsetto_data, min_consecutive):
     current_group = [sorted_data[0]]
 
     for item in sorted_data[1:]:
-        # 前のフレームとの間隔が2以下なら連続とみなす
-        # (途中にunknown判定が1つ挟まるケースを許容)
-        if item[0] - current_group[-1][0] <= 2:
+        # 前のフレームとの間隔が1以下なら連続とみなす（≒20ms以内）
+        # 旧: <= 2(40ms)。アーティファクトが断続的に混入するケースに対応するため厳化。
+        if item[0] - current_group[-1][0] <= 1:
             current_group.append(item)
         else:
             groups.append(current_group)
@@ -694,8 +694,14 @@ def _classify_frames(filtered: dict, y_16k: np.ndarray, sr_crepe: int,
             falsetto_data, chest_rms, FALSETTO_RMS_RATIO)
 
         # フィルタ3: Silero VAD - フレーム単位で音声スコアを評価し楽器リークを除去
-        falsetto_data = filter_falsetto_vad(
-            falsetto_data, y_16k, valid_indices_reg, hop_length, SILERO_VAD_THRESHOLD)
+        # ★ Demucs分離後（カラオケモード）のみ適用。
+        # マイク録音では除去対象の残留楽器が存在せず、Silero VAD が裏声を
+        # 「非音声」と誤判定して正当な裏声フレームを大量に除去してしまうため。
+        if already_separated:
+            falsetto_data = filter_falsetto_vad(
+                falsetto_data, y_16k, valid_indices_reg, hop_length, SILERO_VAD_THRESHOLD)
+        else:
+            print(f"[DEBUG] VADフィルタ: マイク録音モード（already_separated=False）のためスキップ")
 
     # falsetto_data → falsetto_notes に変換（周波数リストに戻す）
     falsetto_notes = [item[1] for item in falsetto_data]
@@ -759,6 +765,16 @@ def _classify_frames(filtered: dict, y_16k: np.ndarray, sr_crepe: int,
     if falsetto_pre_ratio_filter != len(falsetto_notes):
         print(f"[DEBUG] 最小比率フィルタ: 裏声 {falsetto_pre_ratio_filter} → {len(falsetto_notes)}フレーム "
               f"({falsetto_pre_ratio_filter - len(falsetto_notes)}フレーム除外)")
+
+    # === 救済フレームの後処理: 孤立フレーム除去を再適用 ===
+    # filter_falsetto_min_ratio の救済ロジックで地声に加えられたフレームは
+    # 前段の outlier/isolated 除去をスキップしているため、ここで再度適用する。
+    # (statistical_outliers の再適用は救済範囲が outlier 閾値内に収まるため不要)
+    chest_notes_before_isolated = len(chest_notes)
+    chest_notes = remove_isolated_extremes(chest_notes)
+    if len(chest_notes) < chest_notes_before_isolated:
+        print(f"[DEBUG] 救済後孤立フレーム除去: "
+              f"{chest_notes_before_isolated - len(chest_notes)}フレーム削除")
 
     # === 最高音付近の混在判定を解消 ===
     print(f"[DEBUG] 最高音付近の混在判定前: 地声={len(chest_notes)}, 裏声={len(falsetto_notes)}")

@@ -1,10 +1,19 @@
 import { API } from "./client";
 import type { AnalysisResult } from "./types";
 
-/** マイクで録音した音声を解析する関数 */
-export const analyzeVoice = async (blob: Blob, noFalsetto: boolean = false): Promise<AnalysisResult> => {
+/**
+ * マイクで録音した音声を解析する関数
+ * @param blob - 録音データ
+ * @param filename - サーバーに渡すファイル名（拡張子でフォーマット判定される）
+ * @param noFalsetto - 裏声除外フラグ
+ */
+export const analyzeVoice = async (
+  blob: Blob,
+  filename: string = "recording.webm",
+  noFalsetto: boolean = false,
+): Promise<AnalysisResult> => {
   const formData = new FormData();
-  formData.append("file", blob, "recording.webm");
+  formData.append("file", blob, filename);
   if (noFalsetto) formData.append("no_falsetto", "true");
   const res = await API.post<AnalysisResult>("/analyze", formData);
   return res.data;

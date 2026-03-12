@@ -104,6 +104,9 @@ export const AnalysisProvider: React.FC<{ children: ReactNode }> = ({ children }
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    setIsAnalyzing(false);
+    setProgress(0);
+    setStepLabel("");
   };
 
   React.useEffect(() => {
