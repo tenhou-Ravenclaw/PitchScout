@@ -19,7 +19,7 @@ from config import (
     MIN_SUSTAIN_FRAMES,
     FALSETTO_MIN_CONSECUTIVE, FALSETTO_MIN_RATIO, FALSETTO_RMS_RATIO,
     FALSETTO_RESCUE_SEMITONES,
-    SILERO_VAD_THRESHOLD,
+    SILERO_VAD_THRESHOLD, VAD_MAX_REMOVAL_RATIO, VAD_NARROW_CLUSTER_SEMITONES,
     FFT_SPECTRUM_SIZE,
     CREPE_MAX_CONF_THRESHOLDS,
 )
@@ -536,11 +536,34 @@ def filter_falsetto_vad(
             low_score_count += 1
 
     removed = len(falsetto_data) - len(result)
-    if removed > 0:
-        print(f"[FILTER] VADフィルタ: {removed}フレーム除外 "
-              f"(VADスコア<{threshold:.2f}の楽器リーク, 残{len(result)}フレーム)")
-    elif low_score_count == 0 and falsetto_data:
-        print(f"[DEBUG] VADフィルタ: 全{len(falsetto_data)}フレームが閾値({threshold:.2f})を超え除外なし")
+    removal_ratio = removed / len(falsetto_data) if falsetto_data else 0.0
+
+    # 安全弁: VAD_MAX_REMOVAL_RATIO 超の除去は Demucs後の裏声誤判定の可能性がある。
+    # ただし「楽器の持続音（単一音程に集中）」と「本物の裏声（複数音程に広がる）」は
+    # 音程の広がりで区別できる。
+    if removal_ratio > VAD_MAX_REMOVAL_RATIO:
+        falsetto_freqs = np.array([item[1] for item in falsetto_data])
+        # log2周波数の標準偏差を半音換算（広がり = 0 なら全フレームが同一音程）
+        semitone_spread = 12.0 * float(np.std(np.log2(falsetto_freqs + 1e-8)))
+
+        if semitone_spread < VAD_NARROW_CLUSTER_SEMITONES:
+            # 音程が単一付近 = 楽器の持続音。VADの判定を信頼してフィルタを適用する。
+            print(f"[FILTER] VADフィルタ: 除去率{removal_ratio*100:.0f}%, "
+                  f"音程広がり={semitone_spread:.2f}半音 < {VAD_NARROW_CLUSTER_SEMITONES}半音 "
+                  f"→ 楽器持続音と判定、{removed}フレーム除外 (残{len(result)}フレーム)")
+        else:
+            # 音程が広範囲 = 本物の裏声。Demucs後の誤判定としてスキップする。
+            print(f"[WARN] VADフィルタ: 除去率{removal_ratio*100:.0f}%, "
+                  f"音程広がり={semitone_spread:.2f}半音 ≥ {VAD_NARROW_CLUSTER_SEMITONES}半音 "
+                  f"→ Demucs後の裏声誤判定を検出、フィルタをスキップ ({len(falsetto_data)}フレームを保持)")
+            return falsetto_data
+
+    else:
+        if removed > 0:
+            print(f"[FILTER] VADフィルタ: {removed}フレーム除外 "
+                  f"(VADスコア<{threshold:.2f}の楽器リーク, 残{len(result)}フレーム)")
+        elif low_score_count == 0 and falsetto_data:
+            print(f"[DEBUG] VADフィルタ: 全{len(falsetto_data)}フレームが閾値({threshold:.2f})を超え除外なし")
     return result
 
 
