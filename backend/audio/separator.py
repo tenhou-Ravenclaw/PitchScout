@@ -1,97 +1,165 @@
+"""
+audio/separator.py — MelBandRoformers によるボーカル分離
+
+Demucs 依存を廃止し、MelBandRoformers (voc_fv6.ckpt) を利用する。
+"""
+
+from __future__ import annotations
+
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
-def separate_vocals(input_wav_path: str, output_dir: str = "separated",
-                    fast_mode: bool = False, ultra_fast_mode: bool = False) -> str:
+_MODEL_FILENAME_CANDIDATES: list[str] = [
+    # audio-separator 同梱モデル（取得先メタデータを内部管理）
+    "vocals_mel_band_roformer.ckpt",
+    # 互換候補
+    "mel_band_roformer_karaoke_gabox_v2.ckpt",
+    "mel_band_roformer_karaoke_gabox.ckpt",
+]
+_MELBAND_LOCAL_DIR = Path("melbandroformers")
+
+
+def _resolve_model_candidates() -> list[str]:
+    """環境変数オーバーライドを含む候補モデル名を返す。"""
+    override = os.getenv("MELBAND_MODEL_FILENAME", "").strip()
+    if override:
+        return [override, *_MODEL_FILENAME_CANDIDATES]
+    return list(_MODEL_FILENAME_CANDIDATES)
+
+
+def _load_separator(output_dir: str, model_file_dir: str):
     """
-    Demucsを使ってボーカル分離を行う
+    audio-separator の Separator をロードする。
+
+    Returns:
+        Separator インスタンス。
+
+    Raises:
+        RuntimeError: 依存が不足している場合。
+    """
+    try:
+        from audio_separator.separator import Separator
+    except Exception as exc:
+        raise RuntimeError(
+            "audio-separator が見つかりません。'pip install audio-separator[cpu]' を実行してください。"
+        ) from exc
+
+    return Separator(
+        output_dir=output_dir,
+        output_format="WAV",
+        output_single_stem="Vocals",
+        model_file_dir=model_file_dir,
+        sample_rate=44100,
+    )
+
+
+def _pick_vocals_file(output_files: list[str] | str) -> str:
+    """分離結果から Vocals トラックを優先的に選択する。"""
+    if isinstance(output_files, str):
+        return output_files
+
+    if not output_files:
+        raise RuntimeError("MelBandRoformers の出力ファイルが空です")
+
+    for path in output_files:
+        name = Path(path).name.lower()
+        if "vocal" in name:
+            return path
+
+    return output_files[0]
+
+
+def _resolve_output_path(vocal_path: str, output_dir: str) -> Path:
+    """audio-separator の返却値を実在する絶対パスへ解決する。"""
+    candidate = Path(vocal_path)
+    if candidate.exists():
+        return candidate
+
+    # audio-separator は相対ファイル名のみ返す場合があるため output_dir 基準で探索する。
+    in_output_dir = Path(output_dir) / candidate.name
+    if in_output_dir.exists():
+        return in_output_dir
+
+    # 念のため出力ディレクトリ配下を再帰検索する。
+    matches = list(Path(output_dir).glob(f"**/{candidate.name}"))
+    if matches:
+        return matches[0]
+
+    return candidate
+
+
+def separate_vocals(
+    input_wav_path: str,
+    output_dir: str = "separated",
+    fast_mode: bool = False,
+    ultra_fast_mode: bool = False,
+) -> str:
+    """
+    MelBandRoformers (voc_fv6.ckpt) を使ってボーカル分離を行う。
 
     Args:
-        input_wav_path: 入力WAVファイルのパス
-        output_dir: 出力ディレクトリ（リクエストごとに一意なパスを渡すことを推奨）
-        fast_mode: True時は軽量モデル(htdemucs)を使用 (約2-3倍高速)
-        ultra_fast_mode: True時は超軽量モデル(htdemucs_6s)を使用 (約3-5倍高速)
+        input_wav_path: 入力 WAV ファイルのパス。
+        output_dir: 出力ディレクトリ。
+        fast_mode: 互換引数（未使用）。
+        ultra_fast_mode: 互換引数（未使用）。
 
-    戻り値: 分離されたボーカル(wav)のパス
+    Returns:
+        分離後ボーカル WAV のパス。
 
     Raises:
         FileNotFoundError: 入力ファイルが存在しない場合。
-        RuntimeError: demucs コマンドが PATH にない、または分離に失敗した場合。
+        RuntimeError: モデル取得・分離処理に失敗した場合。
     """
-    # demucs コマンドの存在を事前確認
-    if shutil.which("demucs") is None:
-        raise RuntimeError(
-            "demucsコマンドが見つかりません。'pip install demucs' を実行してください。"
-        )
+    del fast_mode, ultra_fast_mode
 
     input_file = Path(input_wav_path)
     if not input_file.exists():
         raise FileNotFoundError(f"Input file not found: {input_wav_path}")
 
-    # モデル選択: ultra_fast > fast > default
-    if ultra_fast_mode:
-        model_name = "htdemucs_6s"
-        mode_label = "ULTRA FAST MODE (3-5x faster)"
-    elif fast_mode:
-        model_name = "htdemucs"
-        mode_label = "FAST MODE (2-3x faster)"
-    else:
-        model_name = "htdemucs_ft"
-        mode_label = "HIGH QUALITY"
+    os.makedirs(output_dir, exist_ok=True)
 
-    cmd = [
-        "demucs",
-        "-n", model_name,
-        "--two-stems=vocals",
-        "-o", output_dir,
-    ]
+    print(f"[INFO] Starting MelBandRoformers separation for: {input_wav_path}")
+    os.makedirs(_MELBAND_LOCAL_DIR, exist_ok=True)
+    model_file_dir = str(_MELBAND_LOCAL_DIR)
 
-    # GPUが使える場合は自動的に使用される（PyTorchのデフォルト動作）
-    # CPUを強制したい場合は --device cpu を追加
+    separator = _load_separator(output_dir=output_dir, model_file_dir=model_file_dir)
 
-    cmd.append(str(input_wav_path))
+    output_files: list[str] | str | None = None
+    last_error: Exception | None = None
 
-    print(f"[INFO] Starting Demucs separation for: {input_wav_path}")
-    print(f"[INFO] Model: {model_name} {mode_label}")
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError as e:
-        stderr_msg = e.stderr.decode(errors="replace") if e.stderr else "（エラー詳細なし）"
-        raise RuntimeError(f"ボーカル分離に失敗しました (Demucs error): {stderr_msg}")
+        for model_filename in _resolve_model_candidates():
+            try:
+                try:
+                    separator.load_model(model_filename=model_filename)
+                except TypeError:
+                    # audio-separator のバージョン差異でキーワード引数がない場合に備える。
+                    separator.load_model(model_filename)
 
-    # 出力パスの特定 ({model_name}/input_filename/vocals.wav)
-    stem_name = input_file.stem
-    expected_path = Path(output_dir) / model_name / stem_name / "vocals.wav"
+                print(f"[INFO] Loaded model: {model_filename}")
+                output_files = separator.separate(str(input_file))
+                break
+            except Exception as exc:
+                last_error = exc
+                print(f"[WARN] モデル読込失敗: {model_filename} ({exc})")
 
-    if not expected_path.exists():
-        # ファイル名によってはフォルダ名が変わる可能性があるため、フォルダ内を検索
-        search_dir = Path(output_dir) / model_name
-        search_dir_ft = Path(output_dir) / "htdemucs_ft"
-        searched_paths: list[str] = [str(expected_path)]
+        if output_files is None:
+            raise RuntimeError(f"利用可能モデルが見つかりません: {last_error}")
+    except Exception as exc:
+        raise RuntimeError(f"MelBandRoformers 分離に失敗しました: {exc}") from exc
 
-        found = list(search_dir.glob(f"**/{stem_name}/vocals.wav"))
-        if not found:
-            # 旧モデル名でも検索（互換性のため）
-            if search_dir_ft.exists():
-                found = list(search_dir_ft.glob(f"**/{stem_name}/vocals.wav"))
-                searched_paths.append(str(search_dir_ft / stem_name / "vocals.wav"))
-            if not found:
-                # さらに緩く検索
-                found = list(search_dir.glob("**/vocals.wav"))
-                searched_paths.append(str(search_dir / "**" / "vocals.wav"))
-                if not found and search_dir_ft.exists():
-                    found = list(search_dir_ft.glob("**/vocals.wav"))
-                    searched_paths.append(str(search_dir_ft / "**" / "vocals.wav"))
-            if not found:
-                raise RuntimeError(
-                    f"分離後のファイルが見つかりません。検索パス: {', '.join(searched_paths)}"
-                )
-            # 最新のものを採用
-            expected_path = max(found, key=os.path.getctime)
-        else:
-            expected_path = found[0]
+    vocal_path = _pick_vocals_file(output_files)
+    resolved_path = _resolve_output_path(vocal_path=vocal_path, output_dir=output_dir)
 
-    print(f"[INFO] Separation complete: {expected_path}")
-    return str(expected_path)
+    if not resolved_path.exists():
+        raise RuntimeError(f"分離後のボーカルファイルが見つかりません: {vocal_path}")
+
+    # 互換性のため、リクエストごとの output_dir 配下に必ず vocals.wav を用意する。
+    canonical_path = Path(output_dir) / "vocals.wav"
+    if resolved_path.resolve() != canonical_path.resolve():
+        shutil.copy2(resolved_path, canonical_path)
+        resolved_path = canonical_path
+
+    print(f"[INFO] Separation complete: {resolved_path}")
+    return str(resolved_path)

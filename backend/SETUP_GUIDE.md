@@ -53,8 +53,36 @@ JWT_SECRET=your-jwt-secret-here-change-in-production
 ### 4. 依存関係のインストール
 
 ```bash
+# 仮想環境を有効化した状態で実行
+python -m pip install --upgrade pip wheel
+
+# pyworld は環境依存で失敗する場合があるため先に導入
+python -m pip install "setuptools<81"
+pip install pyworld --no-build-isolation
+
+# その後に通常の依存を導入
 pip install -r requirements.txt
 ```
+
+補足:
+- `numpy` は `requirements.txt` で `2.2.0` に固定しています。
+- `pyworld` 導入時に `pkg_resources` エラーが出る場合、`setuptools` 再インストール後に再実行してください。
+
+### 4.1 声区分類モデルの再学習（必要時）
+
+音声解析パイプライン更新後は、学習済みモデルの再生成が必要です。
+
+```bash
+cd backend
+source venv/bin/activate
+python ml/train.py \
+  --dataset-root ml/vocalset_data/FULL \
+  --manifest ml/training_data/vocalset_manifest.csv
+```
+
+出力:
+- `ml/models/register_model.joblib`
+- `ml/training_data/world_dataset.npz`
 
 ### 5. サーバーの起動
 

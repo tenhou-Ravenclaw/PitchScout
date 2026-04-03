@@ -17,6 +17,7 @@ venv/
 # アップロードファイル
 uploads/
 separated/
+backend/debugfile/
 
 # OS
 .DS_Store

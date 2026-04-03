@@ -11,6 +11,13 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate
 
+# ビルド系ツール更新
+python -m pip install --upgrade pip wheel
+
+# pyworld は環境依存で build isolation 失敗があるため先に導入
+python -m pip install "setuptools<81"
+pip install pyworld --no-build-isolation
+
 # 依存関係インストール
 pip install -r requirements.txt
 
@@ -50,14 +57,32 @@ python scraper.py
 - **用途**: ボーカルのみの音源、マイク録音
 
 ### `/analyze-karaoke` (カラオケ音源)
-- **処理時間**: 約1〜3分 (高速モード)
-- **Demucsモデル**: `htdemucs_6s` (超軽量版、3〜5倍高速)
+- **処理時間**: 約1〜3分
+- **分離モデル**: MelBandRoformers (`voc_fv6.ckpt`)
 - **用途**: 伴奏付きの音源からボーカルを自動分離
 
 #### 高速化のポイント
-1. **軽量モデル使用**: `htdemucs` (高速) vs `htdemucs_ft` (高品質)
-2. **GPU自動検出**: CUDAが使える環境では自動的にGPU処理
-3. **最適化された音域分析**: 必要最小限の処理で高精度を維持
+1. **チェックポイント再利用**: 初回ダウンロード後はローカルキャッシュを再利用
+2. **CPU環境前提最適化**: `audio-separator[cpu]` を利用
+3. **最適化された音域分析**: WORLD 特徴ベースで推論
+
+---
+
+## モデル再学習（WORLD版）
+
+```bash
+cd backend
+source venv/bin/activate
+
+# 例: manifest を使った学習
+python ml/train.py \
+  --dataset-root ml/vocalset_data/FULL \
+  --manifest ml/training_data/vocalset_manifest.csv
+```
+
+学習後の出力:
+- `ml/models/register_model.joblib`
+- `ml/training_data/world_dataset.npz`
 
 ---
 

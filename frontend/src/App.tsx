@@ -19,13 +19,9 @@ function AppRoutes() {
 
 export default function App() {
   // アプリ起動時のアニメーション（スプラッシュ）を表示するかどうかの状態。
-  // useState の遅延初期化を利用し、AppRoutes が初回レンダリングされる前に
-  // URL を "/" へ同期リセットする。
-  // これにより、スプラッシュの裏でランディングページを事前描画できる。
-  const [showSplash, setShowSplash] = useState(() => {
-    window.history.replaceState(null, "", "/");
-    return true;
-  });
+  // OAuth リダイレクト時はURLのクエリ/ハッシュに認証情報が含まれるため、
+  // 初期レンダリング前にURLを書き換えるとログインセッションを失う。
+  const [showSplash, setShowSplash] = useState(true);
 
   // アニメーションが終わったら非表示にする関数
   const handleSplashEnd = () => {

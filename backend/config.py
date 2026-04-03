@@ -14,7 +14,7 @@ CREPE_HOP_LENGTH = 320     # 20ms (高速化: フレーム数を1/4に削減)
 # === フィルタリング ===
 UNREALISTIC_LOWER_OCT = 1.5    # 下限: medianから1.5オクターブ下
 UNREALISTIC_UPPER_OCT = 1.75   # 上限: medianから1.75オクターブ上
-FALSETTO_DISPLAY_MIN_HZ = 330.0  # mid2E: 裏声の生理的下限 (表示フィルタ)
+FALSETTO_DISPLAY_MIN_HZ = 330.0  # mid2E: 裏声の生理的下限 (表示/分離フィルタ)
 
 # === 信頼度フィルタリング ===
 CONF_THRESHOLDS = [0.5, 0.35, 0.2, 0.1, 0.05, 0.01]  # 有効フレーム検出の閾値候補
@@ -47,6 +47,10 @@ ML_CONF_THRESHOLD_HIGH = 0.75      # f0 >= 500Hz
 ML_CONF_THRESHOLD_NOISY = 0.80     # CREPE信頼度低 + 高f0
 ML_CONF_CHEST_HIGH_F0 = 0.90       # 地声確定の最低信頼度（f0問わず）: トレーニングデータが95%地声に偏っているため高めに設定
 CREPE_NOISE_GATE = 0.35            # ピッチ推定ノイズゲート
+# MLは地声補助用途に限定し、対象帯域のみ実行して負荷を抑える
+ML_CHEST_ASSIST_MIN_HZ = 270.0
+ML_CHEST_ASSIST_MAX_HZ = 430.0
+ML_CHEST_ASSIST_MIN_CREPE_CONF = 0.55
 
 # === ピッチ安定性 ===
 STABILITY_MIN_SEGMENT = 3       # 持続音セグメントの最小フレーム数
@@ -54,6 +58,9 @@ STABILITY_SCALING = 0.8         # スコア変換係数 (avg_std * scaling を10
 
 # === 最高音堅牢化 ===
 MIN_SUSTAIN_FRAMES = 5          # 最高音として認定する最小フレーム数 (3→5: 60ms→100ms、瞬間ノイズ除外強化)
+# 持続条件を満たす候補がない場合のフォールバック時に、上位ノイズを何%切るか。
+# 旧運用の1%相当より強めに、3%トリムで単発スパイクを抑制する。
+ROBUST_MAX_FALLBACK_TRIM_RATIO = 0.03
 
 # === ルールベース判定 ===
 # _classify_rules で falsetto_score/(chest+falsetto) がこの値を超えたら裏声と判定。
@@ -67,12 +74,17 @@ FALSETTO_RATIO_DEFAULT = 0.60 # その他
 
 # === 裏声ノイズフィルタ（demucs残留楽器対策） ===
 # フィルタ1: 連続フレーム要件 - 孤立した裏声フレームはノイズ
-# 8フレーム(=160ms@20ms/frame)未満の連続群は楽器の一時的な倍音と判断して除外。
-# 5フレーム(100ms)では楽器アーティファクトが通過しすぎるため強化。
-FALSETTO_MIN_CONSECUTIVE = 8     # 連続8フレーム未満の裏声群は除外
+# 10フレーム(=200ms@20ms/frame)未満の連続群は楽器の一時的な倍音と判断して除外。
+# 15フレームでも実音源で裏声が落ちる場合があるため、さらに緩和。
+FALSETTO_MIN_CONSECUTIVE = 10    # 連続10フレーム未満の裏声群は除外
 # フィルタ2: 最小比率 - 裏声が少なすぎる場合は全て地声に再分類
 # 4%未満を除外。アーティファクトは通常全体の1-3%程度しか残留しない。
 FALSETTO_MIN_RATIO = 0.04        # 裏声が全体の4%未満なら全て地声扱い
+# 浮動小数の丸め誤差で境界値が誤って全除外されるのを防ぐ
+FALSETTO_MIN_RATIO_EPSILON = 0.001
+# 最小比率フィルタの安全弁: 裏声音量が一定件数かつ十分な音程広がりなら全除外しない
+FALSETTO_KEEP_MIN_FRAMES = 240
+FALSETTO_KEEP_MIN_SPREAD_SEMITONES = 3.0
 # フィルタ3: RMSパワー - 残留楽器はボーカルより音量が小さい
 # 地声RMS中央値の25%未満 = 歌声の音量に対して極端に小さいフレームは楽器リークと判断。
 # 15%では残留楽器（地声の20-25%程度の音量）が通過してしまうため強化。

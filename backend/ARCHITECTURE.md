@@ -1,5 +1,16 @@
 # ピッチスカウト バックエンド アーキテクチャ
 
+## 0. 変更点まとめ（2026-03-24）
+
+- 分離器を Demucs から MelBandRoformers（`voc_fv6.ckpt`）へ移行
+- ピッチ推定を CREPE から WORLD（`pyworld`）へ移行
+- 新解析フローは MelBandRoformers → DeepFilterNet → WORLD → RandomForest
+- 追加: `analysis/feature_extractor.py`, `ml/train.py`
+- 置換: `audio/separator.py`, `analysis/pipeline.py`
+- 依存更新: `pyworld`, `huggingface_hub`, `audio-separator[cpu]`, `numpy==2.2.0`
+- API 互換性維持: `POST /analyze`, `POST /analyze-karaoke` の入出力仕様は据え置き
+- 備考: `pyworld` は環境により `pip install pyworld --no-build-isolation` が必要
+
 ## 1. 概要
 
 **ピッチスカウト バックエンド** は FastAPI (Python) で実装された音声解析・楽曲推薦 API サーバー。

@@ -13,8 +13,8 @@ from config import (
     FALSETTO_HARD_MIN_HZ,
     ML_CONF_THRESHOLD_LOW_F0, ML_CONF_THRESHOLD_HIGH,
     ML_CONF_THRESHOLD_NOISY, ML_CONF_CHEST_HIGH_F0,
+    ML_CHEST_ASSIST_MIN_HZ, ML_CHEST_ASSIST_MAX_HZ, ML_CHEST_ASSIST_MIN_CREPE_CONF,
     CREPE_NOISE_GATE,
-    FALSETTO_RATIO_HIGH, FALSETTO_RATIO_MID, FALSETTO_RATIO_DEFAULT,
     REGISTER_LOG_LEVEL, REGISTER_LOG_INTERVAL,
     FFT_SPECTRUM_SIZE,
 )
@@ -162,6 +162,13 @@ def _classify_ml(y: np.ndarray, sr: int, f0: float,
 def _classify_rules(y: np.ndarray, sr: int, f0: float, median_freq: float,
                     stats: RegisterStats,
                     crepe_conf: float = 1.0) -> str:
+    """基礎的な音楽ロジックで地声/裏声を判定する。
+
+    複雑な重み付けを避け、以下の原則で判定する:
+    1. 音高帯域（低音=地声寄り、高音=裏声寄り）
+    2. 基本スペクトル特徴（H1-H2、倍音本数、HNR、重心比）
+    3. 遷移帯域では特徴シグナルの多数決
+    """
     # FFT（config.FFT_SPECTRUM_SIZE を使用）
     n_fft    = FFT_SPECTRUM_SIZE
     win      = np.hanning(len(y))
@@ -182,134 +189,68 @@ def _classify_rules(y: np.ndarray, sr: int, f0: float, median_freq: float,
     if h1_h2 < -20.0:
         return "unknown"
 
-    # 地声即決（低音域のみ: f0>400ではdemucsによるH1-H2変質があるためスコア判定へ回す）
-    if h1_h2 < -2.0 and f0 <= 400:
-        stats.rule_only += 1
-        stats.chest += 1
-        if _should_log_verbose(stats):
-            print(f"[REGISTER/RULE] f0={f0:.0f}Hz H1-H2={h1_h2:.1f}dB → 地声確定(即決)")
-        return "chest"
-
-    # スコア判定
-    chest_score    = 0.0
-    falsetto_score = 0.0
-
-    # CREPE信頼度ペナルティ: 低信頼度フレームはノイズの可能性が高く、
-    # ノイズは裏声に偏りがち（低HNR、少ない倍音）なので地声方向に補正
-    if crepe_conf < 0.55:
-        chest_score += 1.5
-
-    # H1-H2
-    if h1_h2 >= 7:
-        falsetto_score += 5.0
-    elif h1_h2 >= 5:
-        falsetto_score += 3.0
-    elif h1_h2 >= 3:
-        falsetto_score += 1.0
-    elif h1_h2 <= 0:
-        chest_score += 4.0
-    elif h1_h2 <= 2:
-        chest_score += 2.0
-
-    # hcount
-    # ★ 倍音数が少ない(hcount<=2)は裏声の特徴だが、アーティファクト（残留楽器）も
-    # 倍音が少ない場合があるため、旧+6.0から+4.0に引き下げてアーティファクトを抑制。
-    # ★ 高音域(f0>400Hz)では Demucs 分離後に hcount が過剰になる（最大10になりやすい）。
-    # hcount≥8 の地声ボーナス(+6.0)が f0 バイアスを圧倒して裏声が地声に引き込まれるため
-    # f0 に応じて減衰係数を掛ける。実音声の地声判断は他の特徴量に任せる。
     hcount = sum(1 for db in H[:10] if db > noise_db + 8.0)
-    hcount_chest_mult = 0.35 if f0 > 500 else (0.60 if f0 > 400 else 1.0)
-    if hcount <= 1:
-        falsetto_score += 5.0
-    elif hcount <= 2:
-        falsetto_score += 4.0
-    elif hcount <= 4:
-        falsetto_score += 2.0
-    elif hcount >= 8:
-        chest_score += 6.0 * hcount_chest_mult
-    elif hcount >= 6:
-        chest_score += 3.0 * hcount_chest_mult
+    hnr = compute_hnr(y, sr, f0)
+    centroid = float(librosa.feature.spectral_centroid(y=y, sr=sr)[0, 0])
+    cr = centroid / f0
 
-    # slope
     slope_pts = [(i + 1, H[i]) for i in range(8) if H[i] > noise_db + 8.0]
     if len(slope_pts) >= 3:
-        xs    = np.array([p[0] for p in slope_pts], dtype=float)
-        ys    = np.array([p[1] for p in slope_pts], dtype=float)
+        xs = np.array([p[0] for p in slope_pts], dtype=float)
+        ys = np.array([p[1] for p in slope_pts], dtype=float)
         slope = float(np.polyfit(xs, ys, 1)[0])
-        if slope < -10:
-            falsetto_score += 3.0
-        elif slope < -7:
-            falsetto_score += 1.5
-        elif slope > -4:
-            chest_score += 3.0
-        elif slope > -6:
-            chest_score += 1.5
     else:
         slope = None
 
-    # HNR
-    hnr = compute_hnr(y, sr, f0)
-    if hnr < 0.35:
-        falsetto_score += 4.0
-    elif hnr < 0.50:
-        falsetto_score += 2.0
-    elif hnr > 0.80:
-        chest_score += 3.0
-    elif hnr > 0.65:
-        chest_score += 1.5
-
-    # centroid / f0
-    centroid = float(librosa.feature.spectral_centroid(y=y, sr=sr)[0, 0])
-    cr = centroid / f0
-    if cr < 2.5:
-        falsetto_score += 3.0
-    elif cr < 4.0:
-        falsetto_score += 1.5
-    elif cr > 9.0:
-        chest_score += 3.0
-    elif cr > 6.5:
-        chest_score += 1.5
-
-    # f0補正: 高音域では強い裏声バイアスを適用
-    # Demucs分離後の音源は倍音構造が変質しやすく hcount=10 が頻発するが、
-    # 上の hcount_chest_mult 減衰と組み合わせることで正しい裏声判定を確保する。
-    # hcount≥8(最大+6.0*0.35=+2.1)に対して、f0 バイアスで十分な裏声スコアを与える。
-    if f0 > 600:
-        falsetto_score += 8.0
-    elif f0 > 500:
-        falsetto_score += 6.0
-    elif f0 > 400:
-        falsetto_score += 4.0
-    elif f0 <= 400 and f0 >= 350:
-        # 遷移帯域上部（350-400Hz）: 裏声も十分あり得る音域のため弱い裏声バイアスを付与。
-        # 旧コードではこの帯域にバイアスなし + FALSETTO_RATIO_DEFAULT=0.58 の組み合わせで
-        # hcount≥8 など地声特徴1つで裏声が負けていた。
-        falsetto_score += 1.5
-    elif f0 < 220:
-        chest_score += 3.0
-    elif f0 < 295:
-        chest_score += 1.5
-    elif f0 < 350:
-        chest_score += 0.5      # 下位遷移帯域: 地声寄り
-
-    # 判定
-    total = chest_score + falsetto_score
-    if total < 1e-6:
-        return "chest"
-
-    falsetto_ratio = falsetto_score / total
-    # 高音域では裏声判定の閾値を下げる
-    # demucs分離後はhcount(倍音数)やslope(減衰)が常に地声寄りになるため、
-    # 音響特徴だけでは裏声を検出しづらい。f0が高いこと自体が裏声の強い証拠。
-    if f0 > 500:
-        ratio_threshold = FALSETTO_RATIO_HIGH
-    elif f0 > 400:
-        ratio_threshold = FALSETTO_RATIO_MID
+    # 低音域は地声を優先。複数の強い裏声根拠が揃う場合のみ裏声にする。
+    if f0 < 300:
+        strong_falsetto = (h1_h2 >= 8.0 and hcount <= 2 and hnr < 0.45)
+        result = "falsetto" if strong_falsetto else "chest"
+    # 高音域は裏声を優先。地声の根拠が強い場合のみ地声に戻す。
+    elif f0 >= 520:
+        strong_chest = (h1_h2 <= 0.5 and hcount >= 7 and hnr > 0.72 and cr > 6.5)
+        result = "chest" if strong_chest else "falsetto"
     else:
-        ratio_threshold = FALSETTO_RATIO_DEFAULT
-    result = "falsetto" if falsetto_ratio >= ratio_threshold else "chest"
+        # 遷移帯域(300-520Hz): 基本特徴の多数決
+        falsetto_signals = 0
+        chest_signals = 0
 
-    # [FIX] f-string内で条件式をフォーマット指定子に使うとValueError → 事前に文字列変換
+        if h1_h2 >= 5.0:
+            falsetto_signals += 1
+        elif h1_h2 <= 1.0:
+            chest_signals += 1
+
+        if hcount <= 3:
+            falsetto_signals += 1
+        elif hcount >= 7:
+            chest_signals += 1
+
+        if hnr < 0.50:
+            falsetto_signals += 1
+        elif hnr > 0.70:
+            chest_signals += 1
+
+        if cr < 3.5:
+            falsetto_signals += 1
+        elif cr > 6.5:
+            chest_signals += 1
+
+        if slope is not None:
+            if slope <= -8.0:
+                falsetto_signals += 1
+            elif slope >= -5.0:
+                chest_signals += 1
+
+        if crepe_conf < 0.55:
+            chest_signals += 1
+
+        if falsetto_signals > chest_signals:
+            result = "falsetto"
+        elif chest_signals > falsetto_signals:
+            result = "chest"
+        else:
+            result = "falsetto" if f0 >= 420 else "chest"
+
     slope_str = f"{slope:.1f}" if slope is not None else "N/A"
     stats.rule_only += 1
     if result == "chest":
@@ -322,7 +263,6 @@ def _classify_rules(y: np.ndarray, sr: int, f0: float, median_freq: float,
             f"H1-H2={h1_h2:.1f} hcount={hcount} "
             f"slope={slope_str} "
             f"HNR={hnr:.2f} cr={cr:.2f} "
-            f"C={chest_score:.1f} F={falsetto_score:.1f} ratio={falsetto_ratio:.2f} "
             f"→ {result}"
         )
     return result
@@ -365,14 +305,19 @@ def classify_register(y: np.ndarray, sr: int, f0: float, median_freq: float = 0,
     if f0 < FALSETTO_HARD_MIN_HZ:
         return "chest"
 
-    # ML判定を試行（crepe_confを伝搬）
-    # モデルは地声サンプルに偏っているため、地声確定のみMLを信用する。
-    # 裏声判定はルールベースに任せ、誤判定で裏声フレームを潰さないようにする。
+    # ML判定は地声補助が必要な帯域だけに限定する。
+    # 地声比率が高い学習データを活かしつつ、全フレーム推論の計算負荷を抑える。
+    should_try_ml = (
+        ML_CHEST_ASSIST_MIN_HZ <= f0 <= ML_CHEST_ASSIST_MAX_HZ
+        and crepe_conf >= ML_CHEST_ASSIST_MIN_CREPE_CONF
+    )
+
     local_stats = stats or RegisterStats()
-    ml_result = _classify_ml(y, sr, f0, local_stats, crepe_conf=crepe_conf)
-    if ml_result == "chest":
-        local_stats.log_counter += 1
-        return ml_result
+    if should_try_ml:
+        ml_result = _classify_ml(y, sr, f0, local_stats, crepe_conf=crepe_conf)
+        if ml_result == "chest":
+            local_stats.log_counter += 1
+            return ml_result
 
 
     local_stats.log_counter += 1

@@ -248,6 +248,12 @@ Supabase認証により：
 cd backend
 python -m venv venv
 source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+
+# pyworld 依存のため先にビルド環境を調整
+python -m pip install --upgrade pip wheel
+python -m pip install "setuptools<81"
+pip install pyworld --no-build-isolation
+
 pip install -r requirements.txt
 ```
 

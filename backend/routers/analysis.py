@@ -11,6 +11,7 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
+import soundfile as sf
 
 from audio.converter import convert_to_wav, convert_to_wav_hq
 from analysis import analyze
@@ -30,8 +31,10 @@ router = APIRouter(tags=["analysis"])
 # ── ファイル管理 ───────────────────────────────────────────────
 UPLOAD_DIR = "uploads"
 SEPARATED_DIR = "separated"
+DEBUG_DIR = "debugfile"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(SEPARATED_DIR, exist_ok=True)
+os.makedirs(DEBUG_DIR, exist_ok=True)
 
 ALLOWED_MIME_BY_EXT: dict[str, set[str]] = {
     ".wav": {"audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"},
@@ -118,6 +121,56 @@ def cleanup_files(*paths: str | None) -> None:
                 shutil.rmtree(path)
         except Exception as e:
             print(f"[WARN] Cleanup failed for {path}: {e}")
+
+
+def _save_debug_outputs(
+    source_wav_path: str,
+    result: dict,
+    request_id: str,
+    clip_window_sec: float = 1.0,
+) -> list[str]:
+    """デバッグ用に分離後音源と最低/最高音クリップを保存する。"""
+    saved_paths: list[str] = []
+
+    if not os.path.exists(source_wav_path):
+        return saved_paths
+
+    os.makedirs(DEBUG_DIR, exist_ok=True)
+
+    separated_copy_path = os.path.join(DEBUG_DIR, f"{request_id}_separated_vocals.wav")
+    shutil.copy2(source_wav_path, separated_copy_path)
+    saved_paths.append(separated_copy_path)
+
+    min_sec = result.get("debug_overall_min_sec")
+    max_sec = result.get("debug_overall_max_sec")
+    if min_sec is None or max_sec is None:
+        return saved_paths
+
+    try:
+        audio, sr = sf.read(source_wav_path)
+        total_samples = len(audio)
+        if total_samples <= 0:
+            return saved_paths
+
+        def _clip_and_save(center_sec: float, suffix: str) -> str:
+            center = float(center_sec)
+            start_sec = max(0.0, center - clip_window_sec)
+            end_sec = min(total_samples / float(sr), center + clip_window_sec)
+            start_idx = int(start_sec * sr)
+            end_idx = max(start_idx + 1, int(end_sec * sr))
+
+            clip = audio[start_idx:end_idx]
+            out_path = os.path.join(DEBUG_DIR, f"{request_id}_{suffix}.wav")
+            sf.write(out_path, clip, sr)
+            return out_path
+
+        low_path = _clip_and_save(float(min_sec), "lowest")
+        high_path = _clip_and_save(float(max_sec), "highest")
+        saved_paths.extend([low_path, high_path])
+    except Exception as exc:
+        print(f"[WARN] デバッグ音声保存に失敗: {exc}")
+
+    return saved_paths
 
 
 def _enrich_result(result: dict, user: dict | None = None) -> dict:
@@ -275,8 +328,9 @@ async def analyze_karaoke(
     temp_input_path = None
     converted_wav_path = None
     vocal_path = None
+    request_id = str(uuid.uuid4())
     # リクエストごとに独立したディレクトリを使い、並行リクエスト間のファイル混同を防ぐ
-    separated_request_dir = os.path.join(SEPARATED_DIR, str(uuid.uuid4()))
+    separated_request_dir = os.path.join(SEPARATED_DIR, request_id)
 
     try:
         await _validate_upload_file(file)
@@ -313,7 +367,25 @@ async def analyze_karaoke(
         result = analyze(vocal_path, already_separated=True, no_falsetto=no_falsetto)
         print(f"[API] [5/5] 音域解析完了 ({time.time() - t_step:.1f}s)")
         if "error" in result:
+            print(f"[WARN] [API] 解析エラー詳細: {result['error']}")
             raise HTTPException(status_code=422, detail=result["error"])
+
+        print(
+            "[INFO] 最低音/最高音: "
+            f"{result.get('overall_min', 'unknown')}({result.get('overall_min_hz', 0.0):.1f}Hz), "
+            f"{result.get('overall_max', 'unknown')}({result.get('overall_max_hz', 0.0):.1f}Hz)"
+        )
+
+        debug_paths = _save_debug_outputs(
+            source_wav_path=vocal_path,
+            result=result,
+            request_id=request_id,
+        )
+        if debug_paths:
+            print("[INFO] debugfile 保存完了:")
+            for p in debug_paths:
+                print(f"  - {p}")
+
         result = _enrich_result(result, user)
         _auto_save_analysis(user, result, "karaoke", file.filename)
 

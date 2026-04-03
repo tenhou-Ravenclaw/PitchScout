@@ -16,3 +16,11 @@ frontend/build/
 node_modules
 frontend/.env.production
 backend/ml/vocalset_data/
+backend/uploads/
+backend/separated/
+backend/debugfile/
+backend/melbandroformers/
+*.wav
+*.WAV
+*.wav
+*.ckpt
