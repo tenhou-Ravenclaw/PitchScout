@@ -13,7 +13,7 @@ import librosa
 import numpy as np
 import pyworld
 
-from config import FALSETTO_DISPLAY_MIN_HZ
+from config import FALSETTO_HARD_MIN_HZ
 
 WORLD_SAMPLE_RATE = 16000
 WORLD_FRAME_PERIOD_MS = 5.0
@@ -30,6 +30,22 @@ class WorldFeatures:
     voiced_mask: np.ndarray
     time_axis_sec: np.ndarray | None = None
     sample_rate: int = WORLD_SAMPLE_RATE
+
+
+@dataclass(frozen=True)
+class FrameAcousticFeatures:
+    """ゲート判定に使うフレーム単位の音響特徴。"""
+
+    f0: np.ndarray
+    f0_std: np.ndarray
+    ap_mean: np.ndarray
+    ap_std: np.ndarray
+    hnr: np.ndarray
+    sp_tilt: np.ndarray
+    h1_h2: np.ndarray
+    hcount: np.ndarray
+    harmonic_score: np.ndarray
+    voiced_mask: np.ndarray
 
 
 def apply_energy_vad(
@@ -139,6 +155,137 @@ def _safe_stats(values: np.ndarray) -> tuple[float, float]:
     if values.size == 0:
         return 0.0, 0.0
     return float(np.mean(values)), float(np.std(values))
+
+
+def compute_hnr_from_world(sp_frame: np.ndarray, ap_frame: np.ndarray) -> float:
+    """WORLD の SP/AP から HNR(dB) を計算する。"""
+    harmonic_energy = float(np.sum(sp_frame * (1.0 - ap_frame)))
+    noise_energy = float(np.sum(sp_frame * ap_frame))
+    return float(10.0 * np.log10((harmonic_energy + EPS) / (noise_energy + EPS)))
+
+
+def compute_harmonic_score(
+    h1_h2: float,
+    hcount: float,
+    slope: float,
+    w_h1h2: float = 0.3,
+    w_hcount: float = 0.4,
+    w_slope: float = 0.3,
+) -> float:
+    """補助ログ用途の倍音スコアを 0-1 で返す。"""
+    h1h2_score = float(np.clip(1.0 - (h1_h2 / 12.0), 0.0, 1.0))
+    hcount_score = float(np.clip(hcount / 10.0, 0.0, 1.0))
+    slope_score = float(np.clip(-slope / 40.0, 0.0, 1.0))
+    return float(w_h1h2 * h1h2_score + w_hcount * hcount_score + w_slope * slope_score)
+
+
+def _rolling_std(values: np.ndarray, window: int = 5) -> np.ndarray:
+    """短時間窓の移動標準偏差を計算する。"""
+    if values.size == 0:
+        return np.zeros(0, dtype=np.float32)
+
+    pad = window // 2
+    padded = np.pad(values, (pad, pad), mode="edge")
+    out = np.zeros_like(values, dtype=np.float32)
+    for idx in range(values.size):
+        segment = padded[idx: idx + window]
+        out[idx] = float(np.std(segment))
+    return out
+
+
+def _frame_sp_tilt(log_sp: np.ndarray) -> float:
+    """log-SP に対する一次回帰傾きを返す。"""
+    xs = np.arange(log_sp.size, dtype=np.float64)
+    if log_sp.size < 3:
+        return -6.0
+    return float(np.polyfit(xs, log_sp, 1)[0])
+
+
+def _frame_harmonic_stats(
+    sp_frame: np.ndarray,
+    f0: float,
+    sample_rate: int,
+    n_harmonics: int = 10,
+) -> tuple[float, float]:
+    """H1-H2 と有効倍音本数を算出する。"""
+    if f0 <= 0.0:
+        return 0.0, 0.0
+
+    n_bins = sp_frame.size
+    n_fft = max((n_bins - 1) * 2, 2)
+    freq_res = float(sample_rate) / float(n_fft)
+    if freq_res <= 0.0:
+        return 0.0, 0.0
+
+    sp_db = 10.0 * np.log10(np.maximum(sp_frame, EPS))
+    noise_db = float(np.percentile(sp_db, 20))
+
+    harmonic_levels: list[float] = []
+    for order in range(1, n_harmonics + 1):
+        target_hz = f0 * order
+        bin_idx = int(round(target_hz / freq_res))
+        if bin_idx <= 0 or bin_idx >= n_bins:
+            harmonic_levels.append(noise_db)
+            continue
+        lo = max(0, bin_idx - 1)
+        hi = min(n_bins, bin_idx + 2)
+        harmonic_levels.append(float(np.max(sp_db[lo:hi])))
+
+    h1_h2 = float(harmonic_levels[0] - harmonic_levels[1]) if len(harmonic_levels) >= 2 else 0.0
+    hcount = float(sum(1 for level in harmonic_levels if level > noise_db + 8.0))
+    return h1_h2, hcount
+
+
+def extract_frame_acoustic_features(world: WorldFeatures) -> FrameAcousticFeatures:
+    """WORLD 結果からフレーム単位の AP/HNR/倍音特徴を抽出する。"""
+    frame_count = world.f0.size
+    ap_mean = np.mean(world.ap, axis=1).astype(np.float32)
+    ap_std = np.std(world.ap, axis=1).astype(np.float32)
+    hnr = np.zeros(frame_count, dtype=np.float32)
+    sp_tilt = np.zeros(frame_count, dtype=np.float32)
+    h1_h2 = np.zeros(frame_count, dtype=np.float32)
+    hcount = np.zeros(frame_count, dtype=np.float32)
+    harmonic_score = np.zeros(frame_count, dtype=np.float32)
+
+    log_sp_all = np.log(np.maximum(world.sp, EPS))
+
+    for idx in range(frame_count):
+        if not bool(world.voiced_mask[idx]):
+            continue
+
+        f0 = float(world.f0[idx])
+        hnr[idx] = compute_hnr_from_world(world.sp[idx], world.ap[idx])
+        sp_tilt[idx] = _frame_sp_tilt(log_sp_all[idx])
+        frame_h1_h2, frame_hcount = _frame_harmonic_stats(
+            sp_frame=world.sp[idx],
+            f0=f0,
+            sample_rate=world.sample_rate,
+        )
+        h1_h2[idx] = frame_h1_h2
+        hcount[idx] = frame_hcount
+        harmonic_score[idx] = compute_harmonic_score(
+            h1_h2=frame_h1_h2,
+            hcount=frame_hcount,
+            slope=float(sp_tilt[idx]),
+        )
+
+    voiced_f0 = world.f0[world.voiced_mask].astype(np.float32)
+    voiced_f0_std = _rolling_std(voiced_f0, window=5)
+    f0_std = np.zeros(frame_count, dtype=np.float32)
+    f0_std[world.voiced_mask] = voiced_f0_std
+
+    return FrameAcousticFeatures(
+        f0=world.f0.astype(np.float32),
+        f0_std=f0_std,
+        ap_mean=ap_mean,
+        ap_std=ap_std,
+        hnr=hnr,
+        sp_tilt=sp_tilt,
+        h1_h2=h1_h2,
+        hcount=hcount,
+        harmonic_score=harmonic_score,
+        voiced_mask=world.voiced_mask.copy(),
+    )
 
 
 def _ap_band_features(ap_voiced: np.ndarray) -> list[float]:
@@ -275,11 +422,7 @@ def split_register_by_aperiodicity(world: WorldFeatures) -> tuple[np.ndarray, np
     ap_threshold = float(np.median(voiced_ap) + 0.35 * np.std(voiced_ap))
     ap_threshold = float(np.clip(ap_threshold, 0.35, 0.75))
 
-    falsetto_mask = (
-        voiced
-        & (ap_mean_per_frame >= ap_threshold)
-        & (world.f0 >= FALSETTO_DISPLAY_MIN_HZ)
-    )
+    falsetto_mask = voiced & (ap_mean_per_frame >= ap_threshold) & (world.f0 >= FALSETTO_HARD_MIN_HZ)
     chest_mask = voiced & (~falsetto_mask)
 
     # 過剰分離を防ぐため、どちらかが極端に少ない場合は全有声音を地声扱いに戻す。

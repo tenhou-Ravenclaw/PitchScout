@@ -14,7 +14,7 @@ CREPE_HOP_LENGTH = 320     # 20ms (高速化: フレーム数を1/4に削減)
 # === フィルタリング ===
 UNREALISTIC_LOWER_OCT = 1.5    # 下限: medianから1.5オクターブ下
 UNREALISTIC_UPPER_OCT = 1.75   # 上限: medianから1.75オクターブ上
-FALSETTO_DISPLAY_MIN_HZ = 330.0  # mid2E: 裏声の生理的下限 (表示/分離フィルタ)
+FALSETTO_DISPLAY_MIN_HZ = 330.0  # 互換用: 表示系の下限（判定は FALSETTO_HARD_MIN_HZ を使用）
 
 # === 信頼度フィルタリング ===
 CONF_THRESHOLDS = [0.5, 0.35, 0.2, 0.1, 0.05, 0.01]  # 有効フレーム検出の閾値候補
@@ -40,8 +40,20 @@ GRADUATED_CONF_FAR = 0.65    # medianから1.5oct以上
 GRADUATED_CONF_MID = 0.50    # medianから1.0oct以上
 GRADUATED_CONF_NEAR = 0.35   # その他
 
-# === レジスター判定 (register_classifier.py) ===
-FALSETTO_HARD_MIN_HZ = 270.0       # これ以下は地声確定
+# === レジスター判定 (register_classifier.py / pipeline.py) ===
+# Gate-first Hybrid 判定の単一ソース定義。
+FALSETTO_HARD_MIN_HZ = 330.0       # mid2E: 判定ハード下限（これ未満は地声確定）
+HIGH_REGISTER_MIN_HZ = 523.0       # C5: 高音域の閾値切替ポイント
+
+# AP / HNR ゲート（保守的初期値）
+AP_THRESHOLD_HIGH = 0.28           # 高音域 f0 >= HIGH_REGISTER_MIN_HZ
+AP_THRESHOLD_TRANSITION = 0.35     # 遷移帯域 FALSETTO_HARD_MIN_HZ <= f0 < HIGH_REGISTER_MIN_HZ
+HNR_THRESHOLD_HIGH = 8.0           # 高音域
+HNR_THRESHOLD_TRANSITION = 6.0     # 遷移帯域
+
+# AP/HNR が片側のみ成立した曖昧フレームに対する RF フォールバック閾値
+RF_CHEST_THRESHOLD = 0.60
+
 ML_CONF_THRESHOLD_LOW_F0 = 0.75    # f0 < 500Hz (遷移帯域)
 ML_CONF_THRESHOLD_HIGH = 0.75      # f0 >= 500Hz
 ML_CONF_THRESHOLD_NOISY = 0.80     # CREPE信頼度低 + 高f0

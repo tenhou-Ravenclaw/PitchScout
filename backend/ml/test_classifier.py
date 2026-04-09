@@ -17,9 +17,11 @@ test_classifier.py — 声区判定 ML モデルのテストスイート
 
 import os
 import sys
+import tempfile
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 # ml/ から実行時に backend/ を PATH に追加して analysis パッケージ等を import できるようにする
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -218,6 +220,129 @@ class TestRegisterClassifier:
         stats = self._new_stats()
         result = self._classify(y, 16000, 350.0, 300.0, True, 0.8, stats)
         assert result in ("chest", "falsetto", "unknown")
+
+
+class TestGateFirstHybridRegression:
+    """ゲート先行ハイブリッド設計の回帰テスト。"""
+
+    def test_unvoiced_returns_unvoiced(self):
+        """無声音フレームは unvoiced と判定されること。"""
+        from analysis.classifier import HybridClassifier
+
+        clf = HybridClassifier()
+        label, reason = clf.classify_frame(
+            f0=0.0,
+            ap_mean=0.5,
+            hnr=2.0,
+            rf_chest_proba=0.5,
+        )
+        assert label == "unvoiced"
+        assert reason == "no_f0"
+
+    def test_low_f0_high_ap_forced_chest(self):
+        """F0 がハード下限未満なら AP/HNR に関係なく chest を返すこと。"""
+        from analysis.classifier import HybridClassifier
+
+        clf = HybridClassifier()
+        label, reason = clf.classify_frame(
+            f0=FALSETTO_HARD_MIN_HZ - 5.0,
+            ap_mean=0.95,
+            hnr=-4.0,
+            rf_chest_proba=0.1,
+        )
+        assert label == "chest"
+        assert reason == "below_hard_min"
+
+    def test_transition_boundary_no_label_bleed(self):
+        """ひっくり返り相当の遷移で境界前後のラベルが崩れないこと。"""
+        from analysis.classifier import HybridClassifier
+
+        clf = HybridClassifier()
+        f0s = [360.0, 380.0, 400.0, 430.0, 470.0, 530.0, 560.0]
+        ap_vals = [0.20, 0.22, 0.25, 0.36, 0.38, 0.34, 0.33]
+        hnr_vals = [9.5, 9.0, 8.8, 5.2, 4.8, 7.0, 6.8]
+
+        labels: list[str] = []
+        for f0, ap_mean, hnr in zip(f0s, ap_vals, hnr_vals):
+            label, _ = clf.classify_frame(
+                f0=f0,
+                ap_mean=ap_mean,
+                hnr=hnr,
+                rf_chest_proba=0.45,
+            )
+            labels.append(label)
+
+        assert labels[:3] == ["chest", "chest", "chest"]
+        assert labels[3:] == ["falsetto", "falsetto", "falsetto", "falsetto"]
+
+    def test_short_clip_no_crash(self, monkeypatch):
+        """短尺音声(<1s)でもクラッシュせず結果辞書を返すこと。"""
+        import analysis.pipeline as pipeline
+
+        monkeypatch.setattr(pipeline, "_predict_chest_confidence", lambda _features: 0.7)
+
+        sr = 16000
+        duration_sec = 0.45
+        t = np.arange(int(sr * duration_sec), dtype=np.float32) / float(sr)
+        y = 0.4 * np.sin(2.0 * np.pi * 220.0 * t)
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            wav_path = tmp.name
+
+        try:
+            sf.write(wav_path, y, sr)
+            result = pipeline.analyze(wav_path=wav_path)
+            assert isinstance(result, dict)
+            assert "error" not in result
+        finally:
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
+
+    def test_normal_singing_like_split(self):
+        """通常歌唱相当の値で chest/falsetto が分離されること。"""
+        from analysis.classifier import HybridClassifier
+
+        clf = HybridClassifier()
+        # chest 相当
+        chest_label, _ = clf.classify_frame(
+            f0=410.0,
+            ap_mean=0.22,
+            hnr=9.0,
+            rf_chest_proba=0.8,
+        )
+        # falsetto 相当
+        falsetto_label, _ = clf.classify_frame(
+            f0=560.0,
+            ap_mean=0.35,
+            hnr=6.5,
+            rf_chest_proba=0.2,
+        )
+
+        assert chest_label == "chest"
+        assert falsetto_label == "falsetto"
+
+    def test_pure_chest_clip_has_no_falsetto_range(self, monkeypatch):
+        """純粋な地声音源では裏声音域が結果に含まれないこと。"""
+        import analysis.pipeline as pipeline
+
+        monkeypatch.setattr(pipeline, "_predict_chest_confidence", lambda _features: 0.95)
+
+        sr = 16000
+        duration_sec = 1.2
+        t = np.arange(int(sr * duration_sec), dtype=np.float32) / float(sr)
+        y = 0.45 * np.sin(2.0 * np.pi * 220.0 * t)
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            wav_path = tmp.name
+
+        try:
+            sf.write(wav_path, y, sr)
+            result = pipeline.analyze(wav_path=wav_path)
+            assert "error" not in result
+            assert "falsetto_max_hz" not in result
+        finally:
+            if os.path.exists(wav_path):
+                os.remove(wav_path)
 
 
 # ============================================================

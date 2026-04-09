@@ -14,11 +14,18 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import joblib
 import numpy as np
 import soundfile as sf
 
-from analysis.feature_extractor import WorldFeatures, extract_segment_features, split_register_by_aperiodicity
+import joblib
+
+from analysis.classifier import HybridClassifier
+from analysis.feature_extractor import (
+    FrameAcousticFeatures,
+    WorldFeatures,
+    extract_frame_acoustic_features,
+    extract_segment_features,
+)
 from analysis.scoring import analyze_singing_ability
 from config import VOICE_MAX_HZ, VOICE_MIN_HZ
 from note_converter import hz_to_label_and_hz
@@ -156,42 +163,77 @@ def _predict_chest_confidence(features: np.ndarray) -> float:
     return 1.0 if pred == int(meta["chest_label"]) else 0.0
 
 
-def _hybrid_segment_label(world: WorldFeatures, chest_confidence: float, no_falsetto: bool) -> tuple[str, float]:
-    """ML(胸声) + ルール(AP裏声) でセグメントラベルを決定する。"""
-    _, meta = _load_model()
-    chest_threshold = float(meta["chest_probability_threshold"])
-
+def _split_register_with_gates(
+    world: WorldFeatures,
+    frame_features: FrameAcousticFeatures,
+    rf_chest_probability: float,
+    no_falsetto: bool,
+) -> tuple[np.ndarray, np.ndarray, dict[str, int]]:
+    """フレーム単位ゲート判定から chest/falsetto マスクを生成する。"""
+    voiced_mask = world.voiced_mask.copy()
     if no_falsetto:
-        return "chest", chest_confidence
+        return voiced_mask, np.zeros_like(voiced_mask, dtype=bool), {"forced_no_falsetto": int(np.sum(voiced_mask))}
 
-    _, falsetto_mask = split_register_by_aperiodicity(world)
-    voiced = np.maximum(int(np.sum(world.voiced_mask)), 1)
-    falsetto_ratio = float(np.sum(falsetto_mask)) / voiced
+    classifier = HybridClassifier()
+    labels = np.full(world.f0.shape, "unvoiced", dtype=object)
+    reasons = np.full(world.f0.shape, "no_f0", dtype=object)
 
-    # AP規則優先: 裏声フレームが一定割合を超え、かつ胸声信頼度が低い場合は裏声。
-    if falsetto_ratio >= 0.18 and chest_confidence < chest_threshold:
-        return "falsetto", max(1.0 - chest_confidence, falsetto_ratio)
+    for idx in np.where(voiced_mask)[0]:
+        label, reason = classifier.classify_frame(
+            f0=float(frame_features.f0[idx]),
+            ap_mean=float(frame_features.ap_mean[idx]),
+            hnr=float(frame_features.hnr[idx]),
+            rf_chest_proba=rf_chest_probability,
+        )
+        labels[idx] = label
+        reasons[idx] = reason
 
-    return "chest", chest_confidence
+    chest_mask = voiced_mask & (labels == "chest")
+    falsetto_mask = voiced_mask & (labels == "falsetto")
+
+    reason_counts: dict[str, int] = {}
+    for reason in reasons[voiced_mask]:
+        key = str(reason)
+        reason_counts[key] = reason_counts.get(key, 0) + 1
+
+    return chest_mask, falsetto_mask, reason_counts
+
+
+def _hybrid_segment_label(
+    chest_mask: np.ndarray,
+    falsetto_mask: np.ndarray,
+    rf_chest_probability: float,
+    no_falsetto: bool,
+) -> tuple[str, float]:
+    """フレーム分類結果からセグメントラベルを決定する。"""
+    if no_falsetto:
+        return "chest", rf_chest_probability
+
+    voiced = max(int(np.sum(chest_mask) + np.sum(falsetto_mask)), 1)
+    falsetto_ratio = float(np.sum(falsetto_mask)) / float(voiced)
+    chest_ratio = 1.0 - falsetto_ratio
+
+    if falsetto_ratio > chest_ratio:
+        return "falsetto", falsetto_ratio
+    return "chest", max(chest_ratio, rf_chest_probability)
 
 
 def _build_result(
     world: WorldFeatures,
+    chest_mask: np.ndarray,
+    falsetto_mask: np.ndarray,
     segment_label: str,
     segment_confidence: float,
+    gate_reason_counts: dict[str, int],
+    frame_features: FrameAcousticFeatures,
     no_falsetto: bool,
 ) -> dict[str, Any]:
     """FastAPI 互換のレスポンスを生成する。"""
     result: dict[str, Any] = {
         "register_label": segment_label,
         "register_confidence": round(segment_confidence, 4),
+        "debug_gate_reason_counts": gate_reason_counts,
     }
-
-    if no_falsetto:
-        chest_mask = world.voiced_mask
-        falsetto_mask = np.zeros_like(world.voiced_mask, dtype=bool)
-    else:
-        chest_mask, falsetto_mask = split_register_by_aperiodicity(world)
 
     chest_notes = _safe_note_list(world.f0[chest_mask])
     falsetto_notes = _safe_note_list(world.f0[falsetto_mask])
@@ -221,6 +263,9 @@ def _build_result(
     result["chest_ratio"] = round(chest_ratio, 1)
     result["falsetto_ratio"] = round(falsetto_ratio, 1)
     result["chest_avg_hz"] = round(float(np.mean(chest_notes)), 1) if chest_notes else 0.0
+    voiced_mask = world.voiced_mask
+    if int(np.sum(voiced_mask)) > 0:
+        result["debug_harmonic_score_mean"] = round(float(np.mean(frame_features.harmonic_score[voiced_mask])), 4)
 
     try:
         voiced_f0 = world.f0[world.voiced_mask]
@@ -272,6 +317,7 @@ def analyze(wav_path: str, already_separated: bool = False, no_falsetto: bool = 
 
     try:
         segment_features, feature_names, world = extract_segment_features(y=y, sr=sr)
+        frame_features = extract_frame_acoustic_features(world)
         print(f"[DEBUG] 特徴次元: {len(segment_features)}")
         print(f"[DEBUG] 先頭特徴: {feature_names[:5]}")
     except Exception as exc:
@@ -279,9 +325,16 @@ def analyze(wav_path: str, already_separated: bool = False, no_falsetto: bool = 
 
     try:
         chest_confidence = _predict_chest_confidence(segment_features)
-        label, confidence = _hybrid_segment_label(
+        chest_mask, falsetto_mask, gate_reason_counts = _split_register_with_gates(
             world=world,
-            chest_confidence=chest_confidence,
+            frame_features=frame_features,
+            rf_chest_probability=chest_confidence,
+            no_falsetto=no_falsetto,
+        )
+        label, confidence = _hybrid_segment_label(
+            chest_mask=chest_mask,
+            falsetto_mask=falsetto_mask,
+            rf_chest_probability=chest_confidence,
             no_falsetto=no_falsetto,
         )
     except Exception as exc:
@@ -293,8 +346,12 @@ def analyze(wav_path: str, already_separated: bool = False, no_falsetto: bool = 
     )
     result = _build_result(
         world=world,
+        chest_mask=chest_mask,
+        falsetto_mask=falsetto_mask,
         segment_label=label,
         segment_confidence=confidence,
+        gate_reason_counts=gate_reason_counts,
+        frame_features=frame_features,
         no_falsetto=no_falsetto,
     )
     if "debug_overall_min_sec" in result and "debug_overall_max_sec" in result:
