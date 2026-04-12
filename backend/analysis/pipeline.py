@@ -27,7 +27,7 @@ from analysis.feature_extractor import (
     extract_segment_features,
 )
 from analysis.scoring import analyze_singing_ability
-from config import VOICE_MAX_HZ, VOICE_MIN_HZ
+from config import FALSETTO_MIN_CONSECUTIVE, VOICE_MAX_HZ, VOICE_MIN_HZ
 from note_converter import hz_to_label_and_hz
 
 _MODEL_PATH = os.path.join(
@@ -109,39 +109,111 @@ def _add_range(result: dict[str, Any], notes: list[float], prefix: str) -> None:
     result[f"{prefix}_count"] = int(arr.size)
 
 
-def _add_extreme_debug_info(result: dict[str, Any], world: WorldFeatures) -> None:
-    """最低音・最高音の時刻とHzをデバッグ用に結果へ埋め込む。"""
-    if world.time_axis_sec is None:
-        return
+def _true_runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    """True 区間を [start, end) の連続ランとして返す。"""
+    runs: list[tuple[int, int]] = []
+    start: int | None = None
+    for idx, value in enumerate(mask.astype(bool)):
+        if value and start is None:
+            start = idx
+        elif (not value) and start is not None:
+            runs.append((start, idx))
+            start = None
+    if start is not None:
+        runs.append((start, int(mask.size)))
+    return runs
 
-    if len(world.time_axis_sec) != len(world.f0):
-        return
 
-    valid_mask = world.voiced_mask & (world.f0 >= VOICE_MIN_HZ) & (world.f0 <= VOICE_MAX_HZ)
+def _pick_extreme(
+    world: WorldFeatures,
+    mask: np.ndarray,
+    mode: str,
+    min_consecutive_frames: int,
+) -> dict[str, Any] | None:
+    """連続フレーム条件を満たす区間のみから最小/最大の極値を選ぶ。"""
+    if world.time_axis_sec is None or len(world.time_axis_sec) != len(world.f0):
+        return None
+
+    valid_mask = mask & world.voiced_mask & (world.f0 >= VOICE_MIN_HZ) & (world.f0 <= VOICE_MAX_HZ)
     if int(np.sum(valid_mask)) == 0:
+        return None
+
+    runs = _true_runs(valid_mask)
+    sustained_runs = [r for r in runs if (r[1] - r[0]) >= min_consecutive_frames]
+    if not sustained_runs:
+        return None
+
+    candidate_mask = np.zeros_like(valid_mask, dtype=bool)
+    for start, end in sustained_runs:
+        candidate_mask[start:end] = True
+
+    candidate_indices = np.where(candidate_mask)[0]
+    if candidate_indices.size == 0:
+        return None
+
+    candidate_f0 = world.f0[candidate_indices]
+    if mode == "min":
+        pick_local_idx = int(np.argmin(candidate_f0))
+    else:
+        pick_local_idx = int(np.argmax(candidate_f0))
+
+    peak_idx = int(candidate_indices[pick_local_idx])
+    peak_hz = float(world.f0[peak_idx])
+    peak_label, peak_note_hz = hz_to_label_and_hz(peak_hz)
+
+    run_start = peak_idx
+    run_end = peak_idx + 1
+    for start, end in runs:
+        if start <= peak_idx < end:
+            run_start = start
+            run_end = end
+            break
+
+    return {
+        "sec": float(world.time_axis_sec[peak_idx]),
+        "hz_raw": peak_hz,
+        "label": peak_label,
+        "hz_note": float(peak_note_hz),
+        "frames": int(run_end - run_start),
+        "sustained_candidate_frames": int(np.sum(candidate_mask)),
+    }
+
+
+def _write_extreme_to_result(result: dict[str, Any], prefix: str, extreme: dict[str, Any] | None) -> None:
+    """極値デバッグ情報を result に格納する。"""
+    if extreme is None:
         return
+    result[f"debug_{prefix}_sec"] = float(extreme["sec"])
+    result[f"debug_{prefix}_hz_raw"] = float(extreme["hz_raw"])
+    result[f"debug_{prefix}_label"] = str(extreme["label"])
+    result[f"debug_{prefix}_hz_note"] = float(extreme["hz_note"])
+    result[f"debug_{prefix}_frames"] = int(extreme["frames"])
+    result[f"debug_{prefix}_candidate_frames"] = int(extreme["sustained_candidate_frames"])
 
-    valid_indices = np.where(valid_mask)[0]
-    valid_f0 = world.f0[valid_indices]
 
-    min_idx_local = int(np.argmin(valid_f0))
-    max_idx_local = int(np.argmax(valid_f0))
-    min_idx = int(valid_indices[min_idx_local])
-    max_idx = int(valid_indices[max_idx_local])
+def _add_extreme_debug_info(
+    result: dict[str, Any],
+    world: WorldFeatures,
+    chest_mask: np.ndarray,
+    falsetto_mask: np.ndarray,
+) -> None:
+    """全体/地声/裏声の最低音・最高音デバッグ情報を付与する。"""
+    min_frames = max(1, int(FALSETTO_MIN_CONSECUTIVE))
 
-    min_hz = float(world.f0[min_idx])
-    max_hz = float(world.f0[max_idx])
-    min_label, min_note_hz = hz_to_label_and_hz(min_hz)
-    max_label, max_note_hz = hz_to_label_and_hz(max_hz)
+    overall_mask = chest_mask | falsetto_mask
+    overall_min = _pick_extreme(world, overall_mask, "min", min_frames)
+    overall_max = _pick_extreme(world, overall_mask, "max", min_frames)
+    chest_min = _pick_extreme(world, chest_mask, "min", min_frames)
+    chest_max = _pick_extreme(world, chest_mask, "max", min_frames)
+    falsetto_min = _pick_extreme(world, falsetto_mask, "min", min_frames)
+    falsetto_max = _pick_extreme(world, falsetto_mask, "max", min_frames)
 
-    result["debug_overall_min_sec"] = float(world.time_axis_sec[min_idx])
-    result["debug_overall_max_sec"] = float(world.time_axis_sec[max_idx])
-    result["debug_overall_min_hz_raw"] = min_hz
-    result["debug_overall_max_hz_raw"] = max_hz
-    result["debug_overall_min_label"] = min_label
-    result["debug_overall_max_label"] = max_label
-    result["debug_overall_min_hz_note"] = float(min_note_hz)
-    result["debug_overall_max_hz_note"] = float(max_note_hz)
+    _write_extreme_to_result(result, "overall_min", overall_min)
+    _write_extreme_to_result(result, "overall_max", overall_max)
+    _write_extreme_to_result(result, "chest_min", chest_min)
+    _write_extreme_to_result(result, "chest_max", chest_max)
+    _write_extreme_to_result(result, "falsetto_min", falsetto_min)
+    _write_extreme_to_result(result, "falsetto_max", falsetto_max)
 
 
 def _predict_chest_confidence(features: np.ndarray) -> float:
@@ -251,7 +323,7 @@ def _build_result(
     result["overall_max"] = ovr_max_label
     result["overall_min_hz"] = ovr_min_hz
     result["overall_max_hz"] = ovr_max_hz
-    _add_extreme_debug_info(result, world)
+    _add_extreme_debug_info(result, world, chest_mask, falsetto_mask)
 
     _add_range(result, chest_notes, "chest")
     _add_range(result, falsetto_notes, "falsetto")
@@ -360,4 +432,24 @@ def analyze(wav_path: str, already_separated: bool = False, no_falsetto: bool = 
             f"{result.get('debug_overall_min_label')}({result.get('debug_overall_min_hz_raw', 0.0):.1f}Hz)@{result.get('debug_overall_min_sec', 0.0):.2f}s, "
             f"{result.get('debug_overall_max_label')}({result.get('debug_overall_max_hz_raw', 0.0):.1f}Hz)@{result.get('debug_overall_max_sec', 0.0):.2f}s"
         )
+    if "debug_chest_min_sec" in result and "debug_chest_max_sec" in result:
+        print(
+            "[DEBUG] 地声極値: "
+            f"最低={result.get('debug_chest_min_label')}({result.get('debug_chest_min_hz_raw', 0.0):.1f}Hz, "
+            f"{result.get('debug_chest_min_frames', 0)}フレーム)@{result.get('debug_chest_min_sec', 0.0):.2f}s, "
+            f"最高={result.get('debug_chest_max_label')}({result.get('debug_chest_max_hz_raw', 0.0):.1f}Hz, "
+            f"{result.get('debug_chest_max_frames', 0)}フレーム)@{result.get('debug_chest_max_sec', 0.0):.2f}s"
+        )
+    else:
+        print(f"[DEBUG] 地声極値: 連続{int(FALSETTO_MIN_CONSECUTIVE)}フレーム条件を満たす候補なし")
+    if "debug_falsetto_min_sec" in result and "debug_falsetto_max_sec" in result:
+        print(
+            "[DEBUG] 裏声極値: "
+            f"最低={result.get('debug_falsetto_min_label')}({result.get('debug_falsetto_min_hz_raw', 0.0):.1f}Hz, "
+            f"{result.get('debug_falsetto_min_frames', 0)}フレーム)@{result.get('debug_falsetto_min_sec', 0.0):.2f}s, "
+            f"最高={result.get('debug_falsetto_max_label')}({result.get('debug_falsetto_max_hz_raw', 0.0):.1f}Hz, "
+            f"{result.get('debug_falsetto_max_frames', 0)}フレーム)@{result.get('debug_falsetto_max_sec', 0.0):.2f}s"
+        )
+    else:
+        print(f"[DEBUG] 裏声極値: 連続{int(FALSETTO_MIN_CONSECUTIVE)}フレーム条件を満たす候補なし")
     return result

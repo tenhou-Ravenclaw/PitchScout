@@ -17,7 +17,7 @@ venv/
 # アップロードファイル
 uploads/
 separated/
-backend/debugfile/
+debugfile/
 
 # OS
 .DS_Store
@@ -32,3 +32,9 @@ data/
 # デバッグ用スクリプト・出力（コミット不要）
 debug_falsetto/
 debug_falsetto_audio.py
+
+
+.venv/
+.venv/
+**/__pycache__/
+melbandroformers/

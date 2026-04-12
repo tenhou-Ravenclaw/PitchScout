@@ -4,7 +4,13 @@
       "WebSearch",
       "mcp__sequential-thinking__sequentialthinking",
       "mcp__ide__getDiagnostics",
-      "Bash(brew upgrade:*)"
+      "Bash(brew upgrade:*)",
+      "Bash(npm update:*)",
+      "Bash(ls /Users/kanade/Desktop/PitchScout/backend/venv/bin/python*)",
+      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/pip install:*)",
+      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/python:*)",
+      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/pip list:*)"
     ],
     "deny": [
       "Read(**/.env)",

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
 from pathlib import Path
 
 _MODEL_FILENAME_CANDIDATES: list[str] = [
@@ -17,7 +18,16 @@ _MODEL_FILENAME_CANDIDATES: list[str] = [
     "mel_band_roformer_karaoke_gabox_v2.ckpt",
     "mel_band_roformer_karaoke_gabox.ckpt",
 ]
-_MELBAND_LOCAL_DIR = Path("melbandroformers")
+_MELBAND_LOCAL_DIR = Path(
+    os.getenv(
+        "MELBAND_MODEL_DIR",
+        str(Path.home() / ".cache" / "pitchscout" / "melbandroformers"),
+    )
+)
+
+# モデルの再ダウンロード・再初期化を避けるためのシングルトン
+_SEPARATOR_INSTANCE = None
+_SEPARATOR_LOCK = threading.Lock()
 
 
 def _resolve_model_candidates() -> list[str]:
@@ -26,6 +36,44 @@ def _resolve_model_candidates() -> list[str]:
     if override:
         return [override, *_MODEL_FILENAME_CANDIDATES]
     return list(_MODEL_FILENAME_CANDIDATES)
+
+
+def _load_model_once(separator) -> None:
+    """Separator にモデルをロードする（失敗時は例外）。"""
+    output_files: list[str] | str | None = None
+    last_error: Exception | None = None
+
+    for model_filename in _resolve_model_candidates():
+        try:
+            try:
+                separator.load_model(model_filename=model_filename)
+            except TypeError:
+                # audio-separator のバージョン差異でキーワード引数がない場合に備える。
+                separator.load_model(model_filename)
+
+            print(f"[INFO] Loaded model: {model_filename}")
+            return
+        except Exception as exc:
+            last_error = exc
+            print(f"[WARN] モデル読込失敗: {model_filename} ({exc})")
+
+    raise RuntimeError(f"利用可能モデルが見つかりません: {last_error}")
+
+
+def _get_separator(output_dir: str, model_file_dir: str):
+    """モデルロード済み Separator を返す（初回のみ重い初期化を実行）。"""
+    global _SEPARATOR_INSTANCE
+
+    with _SEPARATOR_LOCK:
+        if _SEPARATOR_INSTANCE is None:
+            _SEPARATOR_INSTANCE = _load_separator(output_dir=output_dir, model_file_dir=model_file_dir)
+            _load_model_once(_SEPARATOR_INSTANCE)
+        else:
+            # リクエストごとの出力先に切り替える
+            if hasattr(_SEPARATOR_INSTANCE, "output_dir"):
+                _SEPARATOR_INSTANCE.output_dir = output_dir
+
+    return _SEPARATOR_INSTANCE
 
 
 def _load_separator(output_dir: str, model_file_dir: str):
@@ -121,31 +169,13 @@ def separate_vocals(
 
     print(f"[INFO] Starting MelBandRoformers separation for: {input_wav_path}")
     os.makedirs(_MELBAND_LOCAL_DIR, exist_ok=True)
-    model_file_dir = str(_MELBAND_LOCAL_DIR)
-
-    separator = _load_separator(output_dir=output_dir, model_file_dir=model_file_dir)
+    model_file_dir = str(_MELBAND_LOCAL_DIR.resolve())
+    separator = _get_separator(output_dir=output_dir, model_file_dir=model_file_dir)
 
     output_files: list[str] | str | None = None
-    last_error: Exception | None = None
 
     try:
-        for model_filename in _resolve_model_candidates():
-            try:
-                try:
-                    separator.load_model(model_filename=model_filename)
-                except TypeError:
-                    # audio-separator のバージョン差異でキーワード引数がない場合に備える。
-                    separator.load_model(model_filename)
-
-                print(f"[INFO] Loaded model: {model_filename}")
-                output_files = separator.separate(str(input_file))
-                break
-            except Exception as exc:
-                last_error = exc
-                print(f"[WARN] モデル読込失敗: {model_filename} ({exc})")
-
-        if output_files is None:
-            raise RuntimeError(f"利用可能モデルが見つかりません: {last_error}")
+        output_files = separator.separate(str(input_file))
     except Exception as exc:
         raise RuntimeError(f"MelBandRoformers 分離に失敗しました: {exc}") from exc
 

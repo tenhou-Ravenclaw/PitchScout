@@ -5,6 +5,7 @@
 """
 import os
 import shutil
+import tempfile
 import time
 import uuid
 
@@ -29,9 +30,20 @@ from auth import get_optional_user
 router = APIRouter(tags=["analysis"])
 
 # ── ファイル管理 ───────────────────────────────────────────────
-UPLOAD_DIR = "uploads"
-SEPARATED_DIR = "separated"
-DEBUG_DIR = "debugfile"
+# Uvicorn --reload で backend/ 配下を監視している場合、
+# 解析中の一時ファイル更新で再起動しないように runtime ディレクトリを backend 外へ置く。
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+RUNTIME_DIR = os.environ.get(
+    "PITCHSCOUT_RUNTIME_DIR",
+    os.path.join(tempfile.gettempdir(), "pitchscout_runtime"),
+)
+UPLOAD_DIR = os.path.join(RUNTIME_DIR, "uploads")
+SEPARATED_DIR = os.path.join(RUNTIME_DIR, "separated")
+DEBUG_DIR = os.environ.get(
+    "PITCHSCOUT_DEBUG_DIR",
+    os.path.join(BACKEND_DIR, "debugfile"),
+)
+os.makedirs(RUNTIME_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(SEPARATED_DIR, exist_ok=True)
 os.makedirs(DEBUG_DIR, exist_ok=True)
@@ -129,7 +141,7 @@ def _save_debug_outputs(
     request_id: str,
     clip_window_sec: float = 1.0,
 ) -> list[str]:
-    """デバッグ用に分離後音源と最低/最高音クリップを保存する。"""
+    """デバッグ用に分離後音源と地声/裏声の極値クリップを保存する。"""
     saved_paths: list[str] = []
 
     if not os.path.exists(source_wav_path):
@@ -140,11 +152,6 @@ def _save_debug_outputs(
     separated_copy_path = os.path.join(DEBUG_DIR, f"{request_id}_separated_vocals.wav")
     shutil.copy2(source_wav_path, separated_copy_path)
     saved_paths.append(separated_copy_path)
-
-    min_sec = result.get("debug_overall_min_sec")
-    max_sec = result.get("debug_overall_max_sec")
-    if min_sec is None or max_sec is None:
-        return saved_paths
 
     try:
         audio, sr = sf.read(source_wav_path)
@@ -164,9 +171,18 @@ def _save_debug_outputs(
             sf.write(out_path, clip, sr)
             return out_path
 
-        low_path = _clip_and_save(float(min_sec), "lowest")
-        high_path = _clip_and_save(float(max_sec), "highest")
-        saved_paths.extend([low_path, high_path])
+        clip_specs: list[tuple[str, str]] = [
+            ("debug_chest_min_sec", "chest_lowest"),
+            ("debug_chest_max_sec", "chest_highest"),
+            ("debug_falsetto_min_sec", "falsetto_lowest"),
+            ("debug_falsetto_max_sec", "falsetto_highest"),
+        ]
+
+        for sec_key, suffix in clip_specs:
+            center_sec = result.get(sec_key)
+            if center_sec is None:
+                continue
+            saved_paths.append(_clip_and_save(float(center_sec), suffix))
     except Exception as exc:
         print(f"[WARN] デバッグ音声保存に失敗: {exc}")
 

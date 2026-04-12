@@ -1,6 +1,6 @@
 # PitchScout アーキテクチャ（最新版）
 
-最終更新: 2026-04-02  
+最終更新: 2026-04-09  
 対象リポジトリ: 2026_team11/PitchScout
 
 本ドキュメントは、現在の実装コードを基準に構成を整理したものです。
@@ -118,8 +118,8 @@ backend/
 
   routers/
     auth.py             /auth/*
-    users.py            /profile/*, /analysis/*, /favorites*
-    songs.py            /songs, /artists, /recommend*
+    users.py            /profile/*, /analysis/*(growth含む), /favorites*(batch-check含む), /favorite-artists*
+    songs.py            /songs, /artists, /recommend, /recommend/challenge, /similar-artists
     analysis.py         /analyze, /analyze-karaoke
 
   audio/
@@ -131,8 +131,8 @@ backend/
     pipeline.py         現行メイン推論
     feature_extractor.py WORLD特徴抽出・AP分離
     scoring.py          歌唱力スコア
-    classifier.py       旧フレーム判定ロジック（参照用）
-    features.py         倍音特徴抽出ユーティリティ（参照用）
+    classifier.py       HybridClassifier（AP/HNRゲート先行+RFフォールバック）
+    features.py         倍音特徴抽出ユーティリティ（ML学習スクリプトから参照）
 
   db/
     songs.py            SQLiteアクセス
@@ -173,15 +173,17 @@ backend/
 
 ### 4.4 地声/裏声判定の現況
 
-現行経路は `analysis/pipeline.py` + `analysis/feature_extractor.py` が中心です。
+現行経路は `analysis/pipeline.py` → `analysis/classifier.py` (`HybridClassifier`) が中心です。
 
-- 主判定:
-  - RandomForest の `chest_confidence`
-  - AP 比率ベース規則（`split_register_by_aperiodicity`）
-- 旧ロジック:
-  - `analysis/classifier.py`（フレーム単位 ML+ルール）
-  - `analysis/features.py`（H1-H2/hcount/slope/HNR など）
-  - 現在のメイン解析フローからは直接呼ばれていません
+- フレーム判定（主判定）:
+  - `analysis/classifier.py` の `HybridClassifier.classify_frame()` が全有声フレームを分類
+  - AP/HNR ゲート先行: AP高 AND HNR低 → 裏声、どちらも低い → 地声
+  - 曖昧フレーム（片側のみ成立）→ RandomForest の `chest_confidence` でフォールバック
+- セグメント判定:
+  - フレーム分類結果の chest/falsetto 比率から最終ラベルを決定
+- 学習用ユーティリティ:
+  - `analysis/features.py`（H1-H2/hcount/slope/HNR など。`ml/` の学習スクリプトから参照）
+  - `analysis/feature_extractor.py` の `split_register_by_aperiodicity`（AP ベース分離関数、現行パイプラインでは未使用）
 
 ---
 
@@ -265,7 +267,10 @@ backend/
 過去資料に「Demucs / CREPE」表記が残っている箇所がありますが、現行実装は以下です。
 
 - ボーカル分離: MelBandRoformers（`backend/audio/separator.py`）
-- ピッチ/特徴抽出: WORLD（`backend/analysis/feature_extractor.py`）
-- 推論: RandomForest + AP hybrid（`backend/analysis/pipeline.py`）
+- ピッチ/特徴抽出: WORLD pyworld（`backend/analysis/feature_extractor.py`）
+- フレーム判定: HybridClassifier — AP/HNR ゲート先行 + RF フォールバック（`backend/analysis/classifier.py`）
+- セグメント推論: RandomForest（20次元 WORLD 特徴 → chest confidence）（`backend/analysis/pipeline.py`）
+- ノイズ除去: DeepFilterNet + Silero VAD（`backend/audio/noise.py`）
 
+`config.py` に AP/HNR ゲート閾値、VAD パラメータ、DeepFilterNet 設定などが追加されています。
 実装確認時は本ドキュメントと対象ソースコードを優先してください。
