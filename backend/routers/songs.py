@@ -10,6 +10,7 @@ from db.songs import (
     get_all_songs, get_all_songs_raw, search_songs, count_songs,
     get_artists, get_artist_songs, count_artists, search_artists,
 )
+from config import MAX_FILTER_SONGS
 from recommender import (
     recommend_songs, recommend_challenge_songs,
     recommend_key_for_song, find_similar_artists,
@@ -62,7 +63,8 @@ def read_artist_songs(
                     effective_max,
                 )
                 song.update(key_info)
-            except Exception:
+            except Exception as exc:
+                print(f"[WARN] キー推薦計算失敗 (song_id={song.get('id')}): {exc}")
                 song["recommended_key"] = 0
                 song["fit"] = "unknown"
     return songs
@@ -105,8 +107,7 @@ def read_songs(
 
         # 全件取得して Python 側で音域フィルタを適用する。
         # 現在 ~5000 曲で許容範囲だが、DB 拡張時のメモリ圧迫を防ぐため上限を設ける。
-        _MAX_FILTER_SONGS = 20000
-        all_songs = get_all_songs_raw(q or "")[:_MAX_FILTER_SONGS]
+        all_songs = get_all_songs_raw(q or "")[:MAX_FILTER_SONGS]
         filtered: list[dict] = []
         for song in all_songs:
             try:
@@ -119,8 +120,8 @@ def read_songs(
                 if key_info["fit"] in ("perfect", "good", "ok"):
                     song.update(key_info)
                     filtered.append(song)
-            except Exception:
-                pass
+            except Exception as exc:
+                print(f"[WARN] 音域フィルタ計算失敗 (song_id={song.get('id')}): {exc}")
 
         total = len(filtered)
         songs = filtered[offset: offset + limit]
@@ -147,7 +148,8 @@ def read_songs(
                     effective_max,
                 )
                 song.update(key_info)
-            except Exception:
+            except Exception as exc:
+                print(f"[WARN] キー推薦計算失敗 (song_id={song.get('id')}): {exc}")
                 song["recommended_key"] = 0
                 song["fit"] = "unknown"
 

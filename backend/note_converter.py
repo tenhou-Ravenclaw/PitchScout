@@ -127,10 +127,17 @@ def label_to_rank(label: str) -> int:
     return _LABEL_TO_RANK.get(label, -1)
 
 
-def hz_to_label_and_hz(hz: float) -> tuple:
+def hz_to_label_and_hz(hz: float) -> tuple[str, float]:
     """
     Hz → (ラベル, 定義Hz) を対応表から返す。
-    対数スケールで最近傍を探索（音楽的に正しい距離計算）。
+
+    対数スケールで最近傍を探索する（音楽的に正しい距離計算）。
+
+    Args:
+        hz: 変換する周波数 (Hz)。0 以下なら ("unknown", 0.0) を返す。
+
+    Returns:
+        (音階ラベル, 定義 Hz) のタプル。
     """
     if hz <= 0:
         return "unknown", 0.0
@@ -143,8 +150,19 @@ def hz_to_label_and_hz(hz: float) -> tuple:
     return label, defined_hz
 
 
-# 後方互換（librosaのnote文字列から変換）
+# 後方互換（librosa の note 文字列から変換）
 def to_japanese_notation(note: str) -> str:
+    """
+    librosa 形式の音名（例: "C4"）を日本式ラベル（例: "mid2C"）に変換する。
+
+    NOTE_TABLE に該当がなければ入力をそのまま返す。
+
+    Args:
+        note: librosa 形式の音名文字列。
+
+    Returns:
+        日本式ラベル文字列。
+    """
     for note_name, label, _ in NOTE_TABLE:
         if note_name == note:
             return label

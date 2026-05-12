@@ -1,7 +1,8 @@
 """
 音声解析エンドポイント
-- POST /analyze      (アカペラ/マイク録音用、Demucsなし)
-- POST /analyze-karaoke (カラオケ音源用、Demucsあり)
+
+- POST /analyze        アカペラ/マイク録音用（ボーカル分離なし）
+- POST /analyze-karaoke カラオケ音源用（MelBandRoformers ボーカル分離 + DeepFilterNet ノイズ除去）
 """
 import os
 import shutil
@@ -18,7 +19,7 @@ from audio.converter import convert_to_wav, convert_to_wav_hq
 from analysis import analyze
 from audio.separator import separate_vocals
 from audio.noise import apply_deepfilter
-from config import DFN_ATTENUATION_LIMIT_DB
+from config import DEBUG_CLIP_WINDOW_SEC, DFN_ATTENUATION_LIMIT_DB
 from recommender import recommend_songs, find_similar_artists, classify_voice_type
 from db.users import (
     get_favorite_artist_ids,
@@ -139,9 +140,20 @@ def _save_debug_outputs(
     source_wav_path: str,
     result: dict,
     request_id: str,
-    clip_window_sec: float = 1.0,
+    clip_window_sec: float = DEBUG_CLIP_WINDOW_SEC,
 ) -> list[str]:
-    """デバッグ用に分離後音源と地声/裏声の極値クリップを保存する。"""
+    """
+    デバッグ用に分離後音源と地声/裏声の極値クリップを保存する。
+
+    Args:
+        source_wav_path: 分離後ボーカル WAV のパス。
+        result: 解析結果の辞書（debug_*_sec キーを参照）。
+        request_id: リクエスト識別子（ファイル名接頭辞に使用）。
+        clip_window_sec: 極値前後のクリップ窓幅 (秒)。config.DEBUG_CLIP_WINDOW_SEC。
+
+    Returns:
+        保存したファイルパスのリスト。
+    """
     saved_paths: list[str] = []
 
     if not os.path.exists(source_wav_path):
@@ -190,7 +202,19 @@ def _save_debug_outputs(
 
 
 def _enrich_result(result: dict, user: dict | None = None) -> dict:
-    """解析結果におすすめ曲・似てるアーティスト・声質タイプを追加"""
+    """
+    解析結果におすすめ曲・似てるアーティスト・声質タイプを追加する。
+
+    地声の Hz 範囲が有効な場合にのみ推薦処理を実行する。
+    各推薦処理は独立して try-catch されており、1つが失敗しても他は継続する。
+
+    Args:
+        result: pipeline.analyze() が返した解析結果辞書。
+        user: ログイン済みユーザー情報。None なら未認証。
+
+    Returns:
+        推薦情報を追加した解析結果辞書。エラー時は result をそのまま返す。
+    """
     if "error" in result:
         return result
 
@@ -245,7 +269,18 @@ def _auto_save_analysis(
     source_type: str,
     file_name: str | None,
 ) -> None:
-    """解析結果をログイン済みユーザーの履歴に保存し、声域プロファイルを更新する"""
+    """
+    解析結果をログイン済みユーザーの履歴に保存し、声域プロファイルを更新する。
+
+    未ログインまたは解析エラーの場合は何もしない。
+    保存失敗時はログ出力のみで例外を送出しない（解析結果の返却を優先する）。
+
+    Args:
+        user: ログイン済みユーザー情報。None なら未認証。
+        result: 解析結果辞書。
+        source_type: 音声ソース種別（"microphone" / "karaoke"）。
+        file_name: アップロードされたファイル名。
+    """
     if not user or result.get("error"):
         return
     try:
@@ -279,7 +314,7 @@ async def analyze_voice(
     no_falsetto: bool = Form(False),
     user: dict | None = Depends(get_optional_user),
 ):
-    """アカペラ/マイク録音用 (Demucsなし)。ログイン済みなら履歴に自動保存"""
+    """アカペラ/マイク録音用（ボーカル分離なし）。ログイン済みなら履歴に自動保存。"""
     start_time = time.time()
     print(f"\n{'#'*60}")
     print(f"[API] アカペラ音源分析リクエスト受信: {file.filename}")
@@ -335,7 +370,7 @@ async def analyze_karaoke(
     no_falsetto: bool = Form(False),
     user: dict | None = Depends(get_optional_user),
 ):
-    """カラオケ音源用 (Demucsあり)。ログイン済みなら履歴に自動保存"""
+    """カラオケ音源用（MelBandRoformers 分離あり）。ログイン済みなら履歴に自動保存。"""
     start_time = time.time()
     print(f"\n{'#'*60}")
     print(f"[API] カラオケ音源分析リクエスト受信: {file.filename}")
@@ -364,14 +399,14 @@ async def analyze_karaoke(
         converted_wav_path = convert_to_wav_hq(temp_input_path, output_dir=UPLOAD_DIR)
         print(f"[API] [2/5] 変換完了: {converted_wav_path} ({time.time() - t_step:.1f}s)")
 
-        print(f"\n[API] [3/5] Demucsボーカル分離実行中...")
+        print(f"\n[API] [3/5] MelBandRoformers ボーカル分離実行中...")
         t_step = time.time()
         vocal_path = separate_vocals(
             converted_wav_path,
             output_dir=separated_request_dir,
             ultra_fast_mode=True,
         )
-        print(f"[API] [3/5] ボーカル分離完了: {vocal_path} ({time.time() - t_step:.1f}s)")
+        print(f"[API] [3/5] MelBandRoformers 分離完了: {vocal_path} ({time.time() - t_step:.1f}s)")
 
         print(f"\n[API] [4/5] DeepFilterNetノイズ除去実行中...")
         t_step = time.time()

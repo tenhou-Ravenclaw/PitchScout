@@ -33,7 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isLoading, setIsLoading] = useState(true);
 
   /**
-   * ── 起動時のログインチェック ──
+   * ── 起動時の認証状態チェック（失敗時フェイルセーフ付き） ──
    */
   useEffect(() => {
     if (!supabase) {
@@ -41,21 +41,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    // 1. 現在のセッション（ログイン情報）を確認
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    // 追加: ネットワーク不調で getSession が返らない場合でも loading を解除する
+    const sessionTimeout: ReturnType<typeof setTimeout> = setTimeout(() => {
+      console.warn("[WARN] 認証セッション取得がタイムアウトしました。ゲストとして続行します。");
       setIsLoading(false);
-    });
+    }, 5000);
 
-    // 2. 認証状態の変化（ログインした、ログアウトした等）をリアルタイムで監視
+    // 変更: 成功/失敗の両方で isLoading を解除し、画面が止まらないようにする
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        clearTimeout(sessionTimeout);
+        setUser(session?.user ?? null);
+        setIsLoading(false);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(sessionTimeout);
+        console.error("[ERROR] 認証セッションの取得に失敗しました:", error);
+        setIsLoading(false);
+      });
+
+    // 変更: 認証状態の変化を監視し、復帰時にも loading 状態を確実に解除する
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
+        clearTimeout(sessionTimeout);
         setUser(session?.user ?? null);
         setIsLoading(false);
       }
     );
 
-    return () => subscription.unsubscribe(); // 終了時に監視を止める
+    return () => {
+      // 追加: unmount 時にタイマーを片付けて不要な state 更新を防ぐ
+      clearTimeout(sessionTimeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   /** ── Googleログインの実行 ──

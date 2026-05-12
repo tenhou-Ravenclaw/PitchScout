@@ -1,11 +1,10 @@
 """
-db/users.py — Supabaseユーザーデータの接続管理とクエリ関数
+db/users.py — Supabase ユーザーデータの接続管理とクエリ関数
 
 認証・ユーザープロファイル・分析履歴・お気に入り楽曲/アーティストを管理する。
 楽曲カタログ（SQLite）との結合が必要な場合は db.songs を参照する。
 """
 import os
-from typing import Optional, List, Dict, Any
 from supabase import create_client, Client
 from db.songs import get_songs_by_ids
 from dotenv import load_dotenv
@@ -15,7 +14,7 @@ from config import FAVORITE_ARTIST_LIMIT
 # 環境変数をロード
 load_dotenv()
 
-# Supabaseクライアントの初期化
+# Supabase クライアントの初期化
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
@@ -49,8 +48,16 @@ def _get_supabase() -> Client:
 # ユーザープロファイル関連
 # ============================================================
 
-def get_user_profile(user_id: str) -> Optional[Dict[str, Any]]:
-    """ユーザープロファイルを取得"""
+def get_user_profile(user_id: str) -> dict[str, object] | None:
+    """
+    ユーザープロファイルを取得する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+
+    Returns:
+        プロファイル辞書。取得失敗時は None。
+    """
     try:
         response = _get_supabase().table("user_profiles").select("*").eq("id", user_id).single().execute()
         return response.data
@@ -59,8 +66,17 @@ def get_user_profile(user_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def update_user_profile(user_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
-    """ユーザープロファイルを更新"""
+def update_user_profile(user_id: str, data: dict[str, object]) -> dict[str, object] | None:
+    """
+    ユーザープロファイルを更新する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        data: 更新するフィールドの辞書。
+
+    Returns:
+        更新後のプロファイル辞書。失敗時は None。
+    """
     try:
         response = _get_supabase().table("user_profiles").update(data).eq("id", user_id).execute()
         return response.data[0] if response.data else None
@@ -71,12 +87,23 @@ def update_user_profile(user_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
 
 def update_vocal_range(
     user_id: str,
-    vocal_min: Optional[str] = None,
-    vocal_max: Optional[str] = None,
-    falsetto: Optional[str] = None
-) -> Dict[str, Any]:
-    """ユーザーの最新声域を更新"""
-    data = {}
+    vocal_min: str | None = None,
+    vocal_max: str | None = None,
+    falsetto: str | None = None,
+) -> dict[str, object] | None:
+    """
+    ユーザーの最新声域を更新する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        vocal_min: 地声最低音ラベル（例: "mid1C"）。
+        vocal_max: 地声最高音ラベル（例: "hiA"）。
+        falsetto: 裏声最高音ラベル（例: "hiE"）。
+
+    Returns:
+        更新後のプロファイル辞書。失敗時は None。
+    """
+    data: dict[str, str] = {}
     if vocal_min is not None:
         data["current_vocal_range_min"] = vocal_min
     if vocal_max is not None:
@@ -93,14 +120,28 @@ def update_vocal_range(
 
 def create_analysis_record(
     user_id: str,
-    vocal_min: Optional[str],
-    vocal_max: Optional[str],
-    falsetto: Optional[str],
+    vocal_min: str | None,
+    vocal_max: str | None,
+    falsetto: str | None,
     source_type: str,
-    file_name: Optional[str] = None,
-    result_json: Optional[Dict[str, Any]] = None
-) -> Optional[Dict[str, Any]]:
-    """分析履歴を新規作成"""
+    file_name: str | None = None,
+    result_json: dict[str, object] | None = None,
+) -> dict[str, object] | None:
+    """
+    分析履歴を新規作成する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        vocal_min: 地声最低音ラベル。
+        vocal_max: 地声最高音ラベル。
+        falsetto: 裏声最高音ラベル。
+        source_type: 音声ソース種別（"microphone" / "karaoke" / "file"）。
+        file_name: アップロードされたファイル名。
+        result_json: 解析結果の全データ（Hz 値等を含む）。
+
+    Returns:
+        作成されたレコード辞書。失敗時は None。
+    """
     try:
         data = {
             "user_id": user_id,
@@ -109,7 +150,7 @@ def create_analysis_record(
             "falsetto_max": falsetto,
             "source_type": source_type,
             "file_name": file_name,
-            "result_json": result_json
+            "result_json": result_json,
         }
         response = _get_supabase().table("analysis_history").insert(data).execute()
         return response.data[0] if response.data else None
@@ -118,8 +159,17 @@ def create_analysis_record(
         return None
 
 
-def get_analysis_history(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-    """ユーザーの分析履歴を取得（新しい順）"""
+def get_analysis_history(user_id: str, limit: int = 50) -> list[dict[str, object]]:
+    """
+    ユーザーの分析履歴を取得する（新しい順）。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        limit: 取得する最大件数。
+
+    Returns:
+        分析履歴レコードのリスト。エラー時は空リスト。
+    """
     try:
         response = _get_supabase().table("analysis_history").select(
             "*"
@@ -130,7 +180,7 @@ def get_analysis_history(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         return []
 
 
-def get_analysis_timeline(user_id: str, limit: int = 40) -> List[Dict[str, Any]]:
+def get_analysis_timeline(user_id: str, limit: int = 40) -> list[dict[str, object]]:
     """
     分析履歴タイムラインを取得する（古い順、result_json の Hz 値を含む）。
 
@@ -142,7 +192,7 @@ def get_analysis_timeline(user_id: str, limit: int = 40) -> List[Dict[str, Any]]
         limit: 取得する最大件数（デフォルト 40）。
 
     Returns:
-        分析履歴レコードのリスト（古い順）。
+        分析履歴レコードのリスト（古い順）。エラー時は空リスト。
     """
     try:
         response = (
@@ -164,8 +214,17 @@ def get_analysis_timeline(user_id: str, limit: int = 40) -> List[Dict[str, Any]]
 # お気に入り楽曲関連
 # ============================================================
 
-def add_favorite_song(user_id: str, song_id: int) -> Optional[Dict[str, Any]]:
-    """お気に入りに楽曲を追加"""
+def add_favorite_song(user_id: str, song_id: int) -> dict[str, object] | None:
+    """
+    お気に入りに楽曲を追加する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        song_id: 楽曲 ID（SQLite songs テーブル）。
+
+    Returns:
+        作成されたレコード辞書。失敗（重複等）時は None。
+    """
     try:
         data = {"user_id": user_id, "song_id": song_id}
         response = _get_supabase().table("favorite_songs").insert(data).execute()
@@ -176,16 +235,38 @@ def add_favorite_song(user_id: str, song_id: int) -> Optional[Dict[str, Any]]:
 
 
 def remove_favorite_song(user_id: str, song_id: int) -> bool:
-    """お気に入りから楽曲を削除"""
+    """
+    お気に入りから楽曲を削除する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        song_id: 楽曲 ID。
+
+    Returns:
+        削除成功なら True、失敗なら False。
+    """
     try:
         _get_supabase().table("favorite_songs").delete().eq("user_id", user_id).eq("song_id", song_id).execute()
         return True
-    except Exception:
+    except Exception as exc:
+        print(f"[WARN] お気に入り楽曲削除失敗 (user={user_id}, song={song_id}): {exc}")
         return False
 
 
-def get_favorite_songs(user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
-    """ユーザーのお気に入り楽曲一覧を取得"""
+def get_favorite_songs(user_id: str, limit: int = 100) -> list[dict[str, object]]:
+    """
+    ユーザーのお気に入り楽曲一覧を取得する。
+
+    Supabase のお気に入りレコードと SQLite の楽曲情報を結合して返す。
+    song_id を一括取得して N+1 クエリを回避する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        limit: 取得する最大件数。
+
+    Returns:
+        お気に入り楽曲のリスト（楽曲情報を結合済み）。エラー時は空リスト。
+    """
     try:
         response = _get_supabase().table("favorite_songs").select(
             "id, song_id, created_at"
@@ -198,10 +279,10 @@ def get_favorite_songs(user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         song_ids = [fav["song_id"] for fav in response.data]
         songs_map = get_songs_by_ids(song_ids)
 
-        favorites = []
+        favorites: list[dict[str, object]] = []
         for fav in response.data:
             song = songs_map.get(fav["song_id"])
-            # SQLite側に曲が存在すればリストに追加
+            # SQLite 側に曲が存在すればリストに追加
             if song:
                 favorites.append({
                     "favorite_id": fav["id"],
@@ -221,7 +302,16 @@ def get_favorite_songs(user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
 
 
 def is_favorite(user_id: str, song_id: int) -> bool:
-    """楽曲がお気に入りに登録されているか確認"""
+    """
+    楽曲がお気に入りに登録されているか確認する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        song_id: 楽曲 ID。
+
+    Returns:
+        登録済みなら True。
+    """
     try:
         response = _get_supabase().table("favorite_songs").select("id").eq(
             "user_id", user_id
@@ -240,7 +330,7 @@ def batch_check_favorites(user_id: str, song_ids: list[int]) -> dict[int, bool]:
     Supabase の IN フィルタで1回のクエリに集約する。
 
     Args:
-        user_id:  Supabase ユーザー ID。
+        user_id: Supabase ユーザー ID。
         song_ids: 確認する楽曲 ID のリスト。
 
     Returns:
@@ -266,10 +356,17 @@ def batch_check_favorites(user_id: str, song_ids: list[int]) -> dict[int, bool]:
 # お気に入りアーティスト関連
 # ============================================================
 
-def add_favorite_artist(user_id: str, artist_id: int, artist_name: str) -> Optional[Dict[str, Any]]:
+def add_favorite_artist(user_id: str, artist_id: int, artist_name: str) -> dict[str, object] | None:
     """
-    お気に入りアーティストを追加（上限10組）。
-    既に登録済みの場合はNoneを返す。
+    お気に入りアーティストを追加する（上限 FAVORITE_ARTIST_LIMIT 組）。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        artist_id: アーティスト ID（SQLite artists テーブル）。
+        artist_name: アーティスト名。
+
+    Returns:
+        作成されたレコード辞書。上限超過または重複時は None。
     """
     try:
         # 上限チェック
@@ -292,18 +389,37 @@ def add_favorite_artist(user_id: str, artist_id: int, artist_name: str) -> Optio
 
 
 def remove_favorite_artist(user_id: str, artist_id: int) -> bool:
-    """お気に入りアーティストを削除"""
+    """
+    お気に入りアーティストを削除する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        artist_id: アーティスト ID。
+
+    Returns:
+        削除成功なら True、失敗なら False。
+    """
     try:
         _get_supabase().table("favorite_artists").delete().eq(
             "user_id", user_id
         ).eq("artist_id", artist_id).execute()
         return True
-    except Exception:
+    except Exception as exc:
+        print(f"[WARN] お気に入りアーティスト削除失敗 (user={user_id}, artist={artist_id}): {exc}")
         return False
 
 
-def get_favorite_artists(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-    """ユーザーのお気に入りアーティスト一覧を取得（登録が古い順）"""
+def get_favorite_artists(user_id: str, limit: int = 50) -> list[dict[str, object]]:
+    """
+    ユーザーのお気に入りアーティスト一覧を取得する（登録が古い順）。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        limit: 取得する最大件数。
+
+    Returns:
+        お気に入りアーティストのリスト。エラー時は空リスト。
+    """
     try:
         response = _get_supabase().table("favorite_artists").select(
             "id, artist_id, artist_name, created_at"
@@ -315,7 +431,16 @@ def get_favorite_artists(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
 
 
 def is_favorite_artist(user_id: str, artist_id: int) -> bool:
-    """アーティストがお気に入りに登録されているか確認"""
+    """
+    アーティストがお気に入りに登録されているか確認する。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+        artist_id: アーティスト ID。
+
+    Returns:
+        登録済みなら True。
+    """
     try:
         response = _get_supabase().table("favorite_artists").select("id").eq(
             "user_id", user_id
@@ -326,10 +451,17 @@ def is_favorite_artist(user_id: str, artist_id: int) -> bool:
         return False
 
 
-def get_favorite_artist_ids(user_id: str) -> List[int]:
+def get_favorite_artist_ids(user_id: str) -> list[int]:
     """
-    お気に入りアーティストのIDリストを返す（recommenderで使用）。
-    DBエラー時は空リストを返してフォールバック。
+    お気に入りアーティストの ID リストを返す（recommender で使用）。
+
+    DB エラー時は空リストを返してフォールバックする。
+
+    Args:
+        user_id: Supabase ユーザー ID。
+
+    Returns:
+        アーティスト ID のリスト。エラー時は空リスト。
     """
     try:
         response = _get_supabase().table("favorite_artists").select(
@@ -340,8 +472,18 @@ def get_favorite_artist_ids(user_id: str) -> List[int]:
         print(f"[WARN] お気に入りアーティストID取得失敗: {e}")
         return []
 
+
 def delete_analysis_record(user_id: str, record_id: str) -> bool:
-    """分析履歴を削除"""
+    """
+    分析履歴を削除する。
+
+    Args:
+        user_id: Supabase ユーザー ID（所有権チェック用）。
+        record_id: 削除する分析履歴レコードの ID。
+
+    Returns:
+        削除成功なら True、失敗なら False。
+    """
     try:
         _get_supabase().table("analysis_history").delete().eq(
             "id", record_id
@@ -351,8 +493,19 @@ def delete_analysis_record(user_id: str, record_id: str) -> bool:
         print(f"[ERROR] 分析履歴削除失敗 (user={user_id}, record={record_id}): {e}")
         return False
 
-def update_analysis_record(user_id: str, record_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """分析履歴を更新 (file_nameなど)"""
+
+def update_analysis_record(user_id: str, record_id: str, data: dict[str, object]) -> dict[str, object] | None:
+    """
+    分析履歴を更新する（file_name 等）。
+
+    Args:
+        user_id: Supabase ユーザー ID（所有権チェック用）。
+        record_id: 更新する分析履歴レコードの ID。
+        data: 更新するフィールドの辞書。
+
+    Returns:
+        更新後のレコード辞書。失敗時は None。
+    """
     try:
         response = _get_supabase().table("analysis_history").update(data).eq(
             "id", record_id

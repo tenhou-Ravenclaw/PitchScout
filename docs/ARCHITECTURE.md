@@ -1,10 +1,9 @@
 # PitchScout アーキテクチャ（最新版）
 
-最終更新: 2026-04-09  
-対象リポジトリ: 2026_team11/PitchScout
+最終更新: 2026-04-20  
+対象リポジトリ: PitchScout
 
 本ドキュメントは、現在の実装コードを基準に構成を整理したものです。
-要件・設計の参照元は `docs/requirements/REQUIREMENTS.md` ですが、実際の動作は本書の「実装現況」を優先します。
 
 ---
 
@@ -33,10 +32,10 @@ PitchScout は、フロントエンド（React/TypeScript）とバックエン�
   ├─ routers/users.py
   ├─ routers/songs.py
   └─ routers/analysis.py
-        ├─ audio/converter.py
-        ├─ audio/separator.py (MelBandRoformers)
-        ├─ audio/noise.py (DeepFilterNet / Silero VAD)
-        └─ analysis/pipeline.py (WORLD + RandomForest + AP hybrid)
+        ├─ audio/converter.py      (ffmpeg WAV 変換)
+        ├─ audio/separator.py      (MelBandRoformers ボーカル分離)
+        ├─ audio/noise.py          (DeepFilterNet ノイズ除去)
+        └─ analysis/pipeline.py    (WORLD + AP/HNR ゲート + RF 20次元ベクトル)
 
 [SQLite songs.db]   [Supabase]
 ```
@@ -113,30 +112,36 @@ backend/
   config.py             閾値・定数の一元管理
   models.py             Pydanticモデル
   note_converter.py     Hz <-> 音階ラベル(A4=442Hz)
-  recommender.py        楽曲推薦・類似アーティスト
+  recommender.py        楽曲推薦・類似アーティスト・声質タイプ判定
   auth.py               認証ヘルパー
 
   routers/
     auth.py             /auth/*
-    users.py            /profile/*, /analysis/*(growth含む), /favorites*(batch-check含む), /favorite-artists*
+    users.py            /profile/*, /analysis/*, /favorites*, /favorite-artists*
     songs.py            /songs, /artists, /recommend, /recommend/challenge, /similar-artists
     analysis.py         /analyze, /analyze-karaoke
 
   audio/
-    converter.py        WAV変換
+    converter.py        WAV変換 (ffmpeg: 16kHz mono / 44.1kHz stereo)
     separator.py        MelBandRoformersでボーカル分離
-    noise.py            DeepFilterNet / Silero VAD
+    noise.py            DeepFilterNet3 ノイズ除去 + Silero VAD
 
   analysis/
-    pipeline.py         現行メイン推論
-    feature_extractor.py WORLD特徴抽出・AP分離
-    scoring.py          歌唱力スコア
-    classifier.py       HybridClassifier（AP/HNRゲート先行+RFフォールバック）
+    pipeline.py         メイン解析パイプライン (WORLD → RF → AP/HNRゲート → 結果整形)
+    classifier.py       HybridClassifier (AP/HNRゲート + RFフォールバック)
+    feature_extractor.py WORLD特徴抽出・20次元セグメント特徴集約
     features.py         倍音特徴抽出ユーティリティ（ML学習スクリプトから参照）
+    scoring.py          歌唱力スコア (音域/安定性/表現力)
+
+  ml/
+    train.py            20次元WORLD特徴でRandomForest学習
+    train_classifier.py 6次元倍音特徴での学習（features.py用）
+    test_classifier.py  テストスイート
+    labeler.py          学習データラベリング
 
   db/
-    songs.py            SQLiteアクセス
-    users.py            Supabaseアクセス
+    songs.py            SQLiteアクセス (楽曲/アーティスト検索)
+    users.py            Supabaseアクセス (認証/履歴/お気に入り)
 ```
 
 ---
@@ -146,7 +151,7 @@ backend/
 ### 4.1 `/analyze`（アカペラ/マイク）
 
 1. ファイル検証（拡張子/MIME/マジックバイト）
-2. WAV 変換（`audio/converter.py`）
+2. WAV 変換（`audio/converter.py` → 16kHz モノラル）
 3. 解析実行（`analysis/pipeline.py::analyze`）
 4. おすすめ曲/類似アーティスト/声質タイプの付与
 5. ログイン中なら履歴保存 + プロファイル声域更新
@@ -154,36 +159,55 @@ backend/
 ### 4.2 `/analyze-karaoke`（カラオケ音源）
 
 1. ファイル検証
-2. 高品質 WAV 変換
-3. ボーカル分離（`audio/separator.py`）
-   - 実装は MelBandRoformers（audio-separator）
-4. DeepFilterNet ノイズ除去
+2. 高品質 WAV 変換（44.1kHz ステレオ）
+3. ボーカル分離（`audio/separator.py` — MelBandRoformers）
+4. DeepFilterNet ノイズ除去（`audio/noise.py`）
 5. 解析実行（`analysis/pipeline.py::analyze`）
 6. 結果拡張・履歴保存
 
 ### 4.3 解析コア（`analysis/pipeline.py`）
 
-- WORLD 特徴抽出（`feature_extractor.py`）
-  - F0 / SP / AP
-- セグメント特徴（20次元）を作成
-- `register_model.joblib`（RandomForest）で chest 信頼度推定
-- AP ベース規則と組み合わせた hybrid 判定
-- レンジ算出（overall/chest/falsetto）
-- 歌唱力分析（`analysis/scoring.py`）
+処理フロー:
 
-### 4.4 地声/裏声判定の現況
+```text
+1) 音声読み込み・正規化
+2) WORLD 特徴抽出 (F0/SP/AP) → 20次元セグメント特徴
+3) RandomForest で chest probability を推定
+4) AP/HNR ゲート + RF フォールバックでフレーム分離
+5) フレーム比率 + RF を併用して最終セグメントラベル決定
+6) FastAPI 互換レスポンス整形（音域/比率/歌唱力分析）
+```
 
-現行経路は `analysis/pipeline.py` → `analysis/classifier.py` (`HybridClassifier`) が中心です。
+### 4.4 地声/裏声判定ロジック
 
-- フレーム判定（主判定）:
-  - `analysis/classifier.py` の `HybridClassifier.classify_frame()` が全有声フレームを分類
-  - AP/HNR ゲート先行: AP高 AND HNR低 → 裏声、どちらも低い → 地声
-  - 曖昧フレーム（片側のみ成立）→ RandomForest の `chest_confidence` でフォールバック
-- セグメント判定:
-  - フレーム分類結果の chest/falsetto 比率から最終ラベルを決定
-- 学習用ユーティリティ:
-  - `analysis/features.py`（H1-H2/hcount/slope/HNR など。`ml/` の学習スクリプトから参照）
-  - `analysis/feature_extractor.py` の `split_register_by_aperiodicity`（AP ベース分離関数、現行パイプラインでは未使用）
+判定は `analysis/classifier.py` の `HybridClassifier` が担う。
+
+**フレーム判定（各有声フレーム）:**
+1. f0 < 330Hz (FALSETTO_HARD_MIN_HZ) → 本アプリでは地声寄りとして扱う
+2. AP高 AND HNR低 → 裏声確定（ゲート）
+3. AP低 AND HNR高 → 地声確定（ゲート）
+4. 片側のみ成立（曖昧）→ RF chest probability でフォールバック
+
+**セグメント判定:**
+- フレーム分類結果の chest/falsetto 比率と RF の chest probability を平均
+- combined >= 0.5 → chest、< 0.5 → falsetto
+
+**20次元ベクトル RF:**
+- `feature_extractor.py` の `aggregate_world_features()` で生成
+- 内訳: F0統計6次元 + AP帯域特徴8次元 + SP形状特徴6次元 = 20次元
+- `ml/models/register_model.joblib` に学習済みモデルを格納
+
+### 4.5 config.py の主要定数
+
+| 定数 | 値 | 用途 |
+|------|-----|------|
+| FALSETTO_HARD_MIN_HZ | 330.0 | 裏声判定の絶対下限 |
+| HIGH_REGISTER_MIN_HZ | 523.0 | AP/HNR 閾値の切替ポイント (C5) |
+| AP_THRESHOLD_HIGH | 0.28 | 高音域の AP ゲート閾値 |
+| AP_THRESHOLD_TRANSITION | 0.35 | 遷移帯域の AP ゲート閾値 |
+| HNR_THRESHOLD_HIGH | 8.0 | 高音域の HNR ゲート閾値 (dB) |
+| HNR_THRESHOLD_TRANSITION | 6.0 | 遷移帯域の HNR ゲート閾値 (dB) |
+| RF_CHEST_THRESHOLD | 0.60 | 曖昧フレームの RF フォールバック閾値 |
 
 ---
 
@@ -262,15 +286,14 @@ backend/
 
 ---
 
-## 8. 既知のドキュメント差分メモ
+## 8. 技術スタック対応表
 
-過去資料に「Demucs / CREPE」表記が残っている箇所がありますが、現行実装は以下です。
-
-- ボーカル分離: MelBandRoformers（`backend/audio/separator.py`）
-- ピッチ/特徴抽出: WORLD pyworld（`backend/analysis/feature_extractor.py`）
-- フレーム判定: HybridClassifier — AP/HNR ゲート先行 + RF フォールバック（`backend/analysis/classifier.py`）
-- セグメント推論: RandomForest（20次元 WORLD 特徴 → chest confidence）（`backend/analysis/pipeline.py`）
-- ノイズ除去: DeepFilterNet + Silero VAD（`backend/audio/noise.py`）
-
-`config.py` に AP/HNR ゲート閾値、VAD パラメータ、DeepFilterNet 設定などが追加されています。
-実装確認時は本ドキュメントと対象ソースコードを優先してください。
+| レイヤー | 技術 | ファイル |
+|---------|------|---------|
+| ボーカル分離 | MelBandRoformers (audio-separator) | `audio/separator.py` |
+| ノイズ除去 | DeepFilterNet3 | `audio/noise.py` |
+| ピッチ/特徴抽出 | WORLD pyworld | `analysis/feature_extractor.py` |
+| フレーム判定 | AP/HNR ゲート + RF フォールバック | `analysis/classifier.py` |
+| セグメント推論 | RandomForest (20次元 WORLD 特徴) | `analysis/pipeline.py` |
+| 歌唱力分析 | 音域/安定性/表現力の3軸スコア | `analysis/scoring.py` |
+| 楽曲推薦 | Hz 範囲マッチング + キー変更提案 | `recommender.py` |

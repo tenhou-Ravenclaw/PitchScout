@@ -1,12 +1,14 @@
 """
 audio/noise.py — ノイズ除去
 
-DeepFilterNet3 によるニューラルネットワークノイズ除去と、
-従来の noisereduce ベース関数（後方互換）を提供する。
+DeepFilterNet3 によるニューラルネットワークノイズ除去（MelBandRoformers 分離後に適用）と、
+従来の noisereduce ベース関数（フォールバック用）を提供する。
+Silero VAD も本モジュールで初期化・提供する。
 """
+from __future__ import annotations
+
 import threading
 import time
-from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -97,7 +99,8 @@ def score_frame_vad(frame: np.ndarray, sr: int = 16000) -> float:
             chunk_tensor = torch.FloatTensor(chunk).unsqueeze(0)
             with torch.no_grad():
                 scores.append(float(_vad_model(chunk_tensor, sr)))
-        except Exception:
+        except Exception as exc:
+            print(f"[WARN] VAD チャンク推論失敗（スキップ）: {exc}")
             continue
 
     return max(scores) if scores else 1.0
@@ -137,20 +140,20 @@ def init_deepfilter() -> bool:
 
 def apply_deepfilter(
     input_wav_path: str,
-    output_wav_path: Optional[str] = None,
+    output_wav_path: str | None = None,
     attenuation_limit_db: int = 20,
 ) -> str:
     """
-    DeepFilterNet3 で Demucs 分離後の残留ノイズを除去する。
+    DeepFilterNet3 で MelBandRoformers 分離後の残留ノイズを除去する。
 
     サンプリングレートの変換フロー:
-      Demucs 出力 (44.1kHz) → 48kHz にリサンプル → DeepFilterNet 処理 →
-      48kHz のまま保存 → CREPE パイプラインが内部で 16kHz に変換
+      MelBandRoformers 出力 (44.1kHz) → 48kHz にリサンプル → DeepFilterNet 処理 →
+      48kHz のまま保存 → WORLD パイプラインが内部で 16kHz にリサンプル
 
     エラー時はフォールバックとして input_wav_path をそのまま返す。
 
     Args:
-        input_wav_path: Demucs が出力したボーカル WAV のパス (44.1kHz 想定)。
+        input_wav_path: MelBandRoformers が出力したボーカル WAV のパス (44.1kHz 想定)。
         output_wav_path: 出力先パス。省略時は input と同ディレクトリに
                          {stem}_dfn.wav として保存する。
         attenuation_limit_db: ノイズ減衰上限 (dB)。config.DFN_ATTENUATION_LIMIT_DB を渡す。
@@ -172,7 +175,7 @@ def apply_deepfilter(
             # ロック取得後に再確認（別スレッドが先に初期化した可能性）
             if _df_model is None or _df_state is None:
                 if not init_deepfilter():
-                    print("[WARN] DeepFilterNet 利用不可 — Demucs 出力をそのまま使用します")
+                    print("[WARN] DeepFilterNet 利用不可 — 分離後音声をそのまま使用します")
                     return input_wav_path
 
     t0 = time.time()
@@ -212,18 +215,21 @@ def apply_deepfilter(
         return output_wav_path
 
     except Exception as e:
-        print(f"[WARN] DeepFilterNet 処理失敗 ({e}) — Demucs 出力をそのまま使用します")
+        print(f"[WARN] DeepFilterNet 処理失敗 ({e}) — 分離後音声をそのまま使用します")
         return input_wav_path
 
 
 def reduce_noise_light(file_path: str, output_path: str = "cleaned.wav") -> str:
     """
-    Demucs分離後の残留楽器音を軽く除去する。
+    MelBandRoformers 分離後の残留楽器音を軽く除去する。
 
     ポイント:
       - prop_decrease=0.5 (50%除去): ボーカルを壊さない程度に抑える
       - librosa.effects.splitは使わない: 小さな声のフレーズを切らない
       - stationary=False: 非定常ノイズ(楽器の残留)にも対応
+
+    現在は DeepFilterNet (apply_deepfilter) を優先使用しており、
+    本関数はフォールバック・互換用として残している。
     """
     y, sr = librosa.load(file_path, sr=None, mono=True)
 

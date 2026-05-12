@@ -18,6 +18,7 @@ import math
 import numpy as np
 from note_converter import NOTE_TABLE, hz_to_label_and_hz
 from db.songs import get_connection
+from config import DISCOVERY_SLOTS, FAV_MAX_SLOTS, MAX_PER_ARTIST
 
 # ============================================================
 # カラオケ表記 ↔ Hz 変換
@@ -51,14 +52,33 @@ _LABEL_TO_HZ.update(_NOTE_ALIASES)
 
 
 def label_to_hz(label: str) -> float | None:
-    """カラオケ表記(mid2C等) → Hz。見つからなければNone"""
+    """
+    カラオケ表記（mid2C 等）を Hz に変換する。
+
+    _NOTE_ALIASES によるエイリアス解決を含む。
+
+    Args:
+        label: 音階ラベル文字列。
+
+    Returns:
+        対応する Hz 値。空文字列または未知ラベルなら None。
+    """
     if not label:
         return None
     return _LABEL_TO_HZ.get(label)
 
 
 def _semitones(hz1: float, hz2: float) -> float:
-    """2周波数間の半音数（hz2 > hz1 で正）"""
+    """
+    2 周波数間の半音数を返す（hz2 > hz1 で正）。
+
+    Args:
+        hz1: 基準周波数 (Hz)。
+        hz2: 比較周波数 (Hz)。
+
+    Returns:
+        半音数。どちらかが 0 以下なら 0.0。
+    """
     if hz1 <= 0 or hz2 <= 0:
         return 0.0
     return 12.0 * math.log2(hz2 / hz1)
@@ -68,12 +88,7 @@ def _semitones(hz1: float, hz2: float) -> float:
 # 1. おすすめ曲
 # ============================================================
 
-# お気に入りアーティスト以外から必ず確保する曲数
-DISCOVERY_SLOTS = 4
-# お気に入りアーティストに割り当てる最大曲数
-FAV_MAX_SLOTS = 6
-# アーティスト多様性フィルタ: 同一アーティスト最大曲数
-MAX_PER_ARTIST = 2
+# 推薦配分定数は config.py で一元管理 (DISCOVERY_SLOTS, FAV_MAX_SLOTS, MAX_PER_ARTIST)
 
 
 def recommend_songs(

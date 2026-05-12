@@ -1,7 +1,7 @@
 """
 scoring.py — 歌唱力スコアリング
 
-CREPE 解析データから音域・安定性・表現力の3軸で歌唱力を数値化する。
+WORLD 解析データから音域・安定性・表現力の3軸で歌唱力を数値化する。
 recommender.py（推薦層）ではなく分析層に属するため analysis/ に配置。
 """
 
@@ -11,7 +11,16 @@ from config import STABILITY_MIN_SEGMENT, STABILITY_SCALING
 
 
 def _semitones(hz1: float, hz2: float) -> float:
-    """2周波数間の半音数（hz2 > hz1 で正）"""
+    """
+    2 周波数間の半音数を返す（hz2 > hz1 で正）。
+
+    Args:
+        hz1: 基準周波数 (Hz)。
+        hz2: 比較周波数 (Hz)。
+
+    Returns:
+        半音数。どちらかが 0 以下なら 0.0。
+    """
     if hz1 <= 0 or hz2 <= 0:
         return 0.0
     return 12.0 * math.log2(hz2 / hz1)
@@ -26,15 +35,15 @@ def analyze_singing_ability(
     overall_max_hz: float,
 ) -> dict:
     """
-    CREPE解析データから歌唱力指標を算出
+    WORLD 解析データから歌唱力指標を算出する。
 
     Args:
-        f0_array:       CREPEが出力した基本周波数の配列
-        conf_array:     CREPEが出力した信頼度の配列
-        chest_notes:    地声フレームの周波数リスト (Hz)
-        falsetto_notes: 裏声フレームの周波数リスト (Hz)
-        overall_min_hz: 全体音域の最低音 (Hz)
-        overall_max_hz: 全体音域の最高音 (Hz)
+        f0_array:       WORLD (pyworld) が出力した基本周波数の配列。
+        conf_array:     信頼度の配列（WORLD では全有声フレーム = 1.0）。
+        chest_notes:    地声フレームの周波数リスト (Hz)。
+        falsetto_notes: 裏声フレームの周波数リスト (Hz)。
+        overall_min_hz: 全体音域の最低音 (Hz)。
+        overall_max_hz: 全体音域の最高音 (Hz)。
 
     Returns:
         {
@@ -72,12 +81,20 @@ def analyze_singing_ability(
 
 
 def _compute_stability(f0: np.ndarray, conf: np.ndarray) -> float:
-    """ピッチ安定性スコア (0-100)
+    """
+    ピッチ安定性スコア (0-100) を算出する。
 
     持続音セグメント内のピッチ偏差を計測する。
     隣接フレーム間のピッチ差が1半音以内なら同一音符とみなし、
-    3フレーム以上続くセグメントごとにセント標準偏差を算出、
+    STABILITY_MIN_SEGMENT フレーム以上続くセグメントごとにセント標準偏差を算出、
     セグメント長で重み付き平均 → スコア化。
+
+    Args:
+        f0: 基本周波数の配列。
+        conf: 信頼度の配列（WORLD では全有声フレーム = 1.0）。
+
+    Returns:
+        0-100 の安定性スコア。有効フレーム不足時は 50.0。
     """
     mask = (conf >= 0.3) & (f0 > 0)
     f0_valid = f0[mask]
@@ -124,7 +141,20 @@ def _compute_expression(
     overall_min_hz: float,
     overall_max_hz: float,
 ) -> float:
-    """表現力スコア (0-100)"""
+    """
+    表現力スコア (0-100) を算出する。
+
+    声区の使い分け（地声/裏声の多様性）と音域の活用度（IQR の広さ）を評価する。
+
+    Args:
+        chest_notes: 地声フレームの周波数リスト (Hz)。
+        falsetto_notes: 裏声フレームの周波数リスト (Hz)。
+        overall_min_hz: 全体音域の最低音 (Hz)。
+        overall_max_hz: 全体音域の最高音 (Hz)。
+
+    Returns:
+        0-100 の表現力スコア。フレームがない場合は 0.0。
+    """
     total = len(chest_notes) + len(falsetto_notes)
     if total == 0:
         return 0.0

@@ -9,9 +9,7 @@ from fastapi.responses import JSONResponse
 
 from db.songs import init_db
 from routers import auth, users, songs, analysis
-
-# アップロードファイルの上限（50MB）
-MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+from config import MAX_UPLOAD_BYTES
 
 
 class RequestBodyTooLargeError(Exception):
@@ -20,7 +18,7 @@ class RequestBodyTooLargeError(Exception):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """サーバー起動時に SQLite と DeepFilterNet モデルを初期化する"""
+    """サーバー起動時に SQLite・DeepFilterNet・Silero VAD を初期化する。"""
     init_db()
     from audio.noise import init_deepfilter, init_silero_vad
     init_deepfilter()

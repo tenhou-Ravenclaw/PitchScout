@@ -6,11 +6,11 @@
 - /favorite-artists* (お気に入りアーティスト)
 """
 import math
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from auth import get_current_user
-from config import FAVORITE_ARTIST_LIMIT
+from config import FAVORITE_ARTIST_LIMIT, STABLE_THRESHOLD
 from db.users import (
     get_user_profile, update_user_profile, update_vocal_range,
     create_analysis_record, get_analysis_history, get_analysis_timeline,
@@ -152,7 +152,6 @@ def get_analysis_timeline_endpoint(
         })
 
     # 安定音域計算（STABLE_THRESHOLD 回以上出たラベルの中で最高音 / 最低音を選択）
-    STABLE_THRESHOLD = 4
 
     chest_max_counts: Counter[str] = Counter(
         r.get("vocal_range_max") for r in records if r.get("vocal_range_max")
@@ -189,7 +188,8 @@ def get_analysis_timeline_endpoint(
                 max(candidates, key=label_to_rank) if highest
                 else min(candidates, key=label_to_rank)
             )
-        except Exception:
+        except Exception as exc:
+            print(f"[WARN] 安定音域ラベル選択失敗: {exc}")
             return None
 
     stable_range = {
@@ -247,12 +247,11 @@ def get_analysis_growth(
     # 経過日数を計算
     period_days: int | None = None
     try:
-        fmt = "%Y-%m-%dT%H:%M:%S.%f%z" if "." in (oldest.get("created_at") or "") else None
         oldest_dt = datetime.fromisoformat(oldest["created_at"].replace("Z", "+00:00"))
         latest_dt = datetime.fromisoformat(latest["created_at"].replace("Z", "+00:00"))
         period_days = (latest_dt - oldest_dt).days
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[WARN] 経過日数の計算失敗: {exc}")
 
     old_chest_max = _get_hz(oldest_rj, "chest_max_hz")
     new_chest_max = _get_hz(latest_rj, "chest_max_hz")

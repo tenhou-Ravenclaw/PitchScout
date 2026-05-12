@@ -12,13 +12,33 @@ import re
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "songs.db")
 
 def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
+    """
+    SQLite 接続を取得する。
+
+    Row ファクトリと外部キー制約を有効化した接続を返す。
+    呼び出し元で必ず close() すること。
+
+    Args:
+        db_path: データベースファイルのパス。
+
+    Returns:
+        sqlite3.Connection インスタンス。
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 def _escape_like(query: str) -> str:
-    """LIKE句の特殊文字（%, _）をエスケープするヘルパー"""
+    """
+    LIKE 句の特殊文字（%, _）をエスケープするヘルパー。
+
+    Args:
+        query: エスケープする検索文字列。
+
+    Returns:
+        エスケープ済みの文字列。
+    """
     return query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
 
 def _hiragana_normalize(text: str) -> str:
@@ -48,14 +68,32 @@ def _hiragana_normalize(text: str) -> str:
 
 
 def _query_mode(query: str) -> str:
-    """ひらがな/カタカナだけなら kana、それ以外は name 検索"""
+    """
+    検索クエリのモードを判定する。
+
+    ひらがな/カタカナのみなら "kana"（reading 前方一致）、それ以外は "name"（name 部分一致）。
+
+    Args:
+        query: ユーザーの検索文字列。
+
+    Returns:
+        "kana" または "name"。
+    """
     if not query:
         return "name"
     nfkc = unicodedata.normalize('NFKC', query)
     return "kana" if re.fullmatch(r"[ぁ-ゖァ-ヺーﾞﾟ]+", nfkc) else "name"
 
-def init_db(db_path: str = DB_PATH):
-    """データベースの初期化とマイグレーション"""
+def init_db(db_path: str = DB_PATH) -> None:
+    """
+    データベースの初期化とマイグレーションを実行する。
+
+    テーブル作成・カラム追加・データクレンジング・重複除去を行う。
+    アプリ起動時に 1 回呼び出される（main.py の lifespan から）。
+
+    Args:
+        db_path: データベースファイルのパス。
+    """
     conn = get_connection(db_path)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS artists (
@@ -167,7 +205,17 @@ def init_db(db_path: str = DB_PATH):
 
 
 def search_songs(query: str, limit: int = 20, offset: int = 0) -> list[dict]:
-    """曲名またはアーティスト名、ふりがなであいまい検索（カタカナ対応）"""
+    """
+    曲名またはアーティスト名、ふりがなであいまい検索する（カタカナ対応）。
+
+    Args:
+        query: 検索文字列。
+        limit: 取得する最大件数。
+        offset: ページネーション用オフセット。
+
+    Returns:
+        楽曲情報の辞書リスト。
+    """
     conn = get_connection()
     try:
         # title/name には NFKC 正規化のみ、reading にはひらがな正規化を使用
@@ -197,7 +245,15 @@ def search_songs(query: str, limit: int = 20, offset: int = 0) -> list[dict]:
 
 
 def count_songs(query: str = "") -> int:
-    """楽曲総数を取得（カタカナ対応）"""
+    """
+    楽曲総数を取得する（カタカナ対応）。
+
+    Args:
+        query: 検索文字列。空文字なら全件カウント。
+
+    Returns:
+        該当する楽曲の件数。
+    """
     conn = get_connection()
     try:
         if query:
@@ -223,7 +279,15 @@ def count_songs(query: str = "") -> int:
 
 
 def get_song(song_id: int) -> dict | None:
-    """IDで楽曲を取得"""
+    """
+    ID で楽曲を取得する。
+
+    Args:
+        song_id: 楽曲 ID。
+
+    Returns:
+        楽曲情報の辞書。存在しなければ None。
+    """
     conn = get_connection()
     try:
         row = conn.execute("""
@@ -240,7 +304,15 @@ def get_song(song_id: int) -> dict | None:
 
 
 def get_songs_by_ids(song_ids: list[int]) -> dict[int, dict]:
-    """IDリストで楽曲を一括取得し、{song_id: song_dict} の辞書を返す"""
+    """
+    ID リストで楽曲を一括取得する。
+
+    Args:
+        song_ids: 取得する楽曲 ID のリスト。
+
+    Returns:
+        {song_id: song_dict} の辞書。存在しない ID はキーに含まれない。
+    """
     if not song_ids:
         return {}
     conn = get_connection()
@@ -260,7 +332,15 @@ def get_songs_by_ids(song_ids: list[int]) -> dict[int, dict]:
 
 
 def get_artist(artist_id: int) -> dict | None:
-    """IDでアーティストを取得"""
+    """
+    ID でアーティストを取得する。
+
+    Args:
+        artist_id: アーティスト ID。
+
+    Returns:
+        アーティスト情報の辞書。存在しなければ None。
+    """
     conn = get_connection()
     try:
         row = conn.execute(
@@ -273,7 +353,16 @@ def get_artist(artist_id: int) -> dict | None:
 
 
 def get_artists(limit: int = 100, offset: int = 0) -> list[dict]:
-    """アーティスト一覧の取得"""
+    """
+    アーティスト一覧を取得する（reading 順）。
+
+    Args:
+        limit: 取得する最大件数。
+        offset: ページネーション用オフセット。
+
+    Returns:
+        アーティスト情報の辞書リスト。
+    """
     conn = get_connection()
     try:
         rows = conn.execute("""
@@ -289,7 +378,15 @@ def get_artists(limit: int = 100, offset: int = 0) -> list[dict]:
 
 
 def count_artists(query: str = "") -> int:
-    """アーティスト総数を取得（カタカナ対応）"""
+    """
+    アーティスト総数を取得する（カタカナ対応）。
+
+    Args:
+        query: 検索文字列。空文字なら全件カウント。
+
+    Returns:
+        該当するアーティストの件数。
+    """
     conn = get_connection()
     try:
         if query:
@@ -318,7 +415,19 @@ def count_artists(query: str = "") -> int:
 
 
 def search_artists(query: str, limit: int = 100, offset: int = 0) -> list[dict]:
-    """アーティスト検索: かな入力なら reading 前方一致、その他は name 部分一致"""
+    """
+    アーティストを検索する。
+
+    かな入力なら reading 前方一致、その他は name 部分一致で検索する。
+
+    Args:
+        query: 検索文字列。
+        limit: 取得する最大件数。
+        offset: ページネーション用オフセット。
+
+    Returns:
+        アーティスト情報の辞書リスト。
+    """
     conn = get_connection()
     try:
         mode = _query_mode(query)
@@ -350,7 +459,15 @@ def search_artists(query: str, limit: int = 100, offset: int = 0) -> list[dict]:
         conn.close()
 
 def get_artist_songs(artist_id: int) -> list[dict]:
-    """特定のアーティストの楽曲一覧取得"""
+    """
+    特定のアーティストの楽曲一覧を取得する。
+
+    Args:
+        artist_id: アーティスト ID。
+
+    Returns:
+        楽曲情報の辞書リスト（曲名順）。
+    """
     conn = get_connection()
     try:
         rows = conn.execute("""
@@ -419,7 +536,16 @@ def get_all_songs_raw(query: str = "") -> list[dict]:
 
 
 def get_all_songs(limit: int = 20, offset: int = 0) -> list[dict]:
-    """全曲を取得（アーティスト名50音順 → 曲名順）"""
+    """
+    全曲を取得する（アーティスト名50音順 → 曲名順）。
+
+    Args:
+        limit: 取得する最大件数。
+        offset: ページネーション用オフセット。
+
+    Returns:
+        楽曲情報の辞書リスト。
+    """
     conn = get_connection()
     try:
         rows = conn.execute("""

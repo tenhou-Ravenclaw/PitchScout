@@ -10,7 +10,8 @@
       "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/python -c \"import sys; print\\(sys.executable\\)\")",
       "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/pip install:*)",
       "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/python:*)",
-      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/pip list:*)"
+      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/pip list:*)",
+      "Bash(python3:*)"
     ],
     "deny": [
       "Read(**/.env)",

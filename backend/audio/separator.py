@@ -1,7 +1,8 @@
 """
 audio/separator.py — MelBandRoformers によるボーカル分離
 
-Demucs 依存を廃止し、MelBandRoformers (voc_fv6.ckpt) を利用する。
+audio-separator ライブラリ経由で MelBandRoformers モデルを使用し、
+カラオケ音源からボーカルトラックを分離する。
 """
 
 from __future__ import annotations
@@ -31,16 +32,32 @@ _SEPARATOR_LOCK = threading.Lock()
 
 
 def _resolve_model_candidates() -> list[str]:
-    """環境変数オーバーライドを含む候補モデル名を返す。"""
+    """
+    環境変数オーバーライドを含む候補モデル名を返す。
+
+    MELBAND_MODEL_FILENAME 環境変数が設定されていれば最優先候補として先頭に追加する。
+
+    Returns:
+        試行するモデルファイル名のリスト（優先順）。
+    """
     override = os.getenv("MELBAND_MODEL_FILENAME", "").strip()
     if override:
         return [override, *_MODEL_FILENAME_CANDIDATES]
     return list(_MODEL_FILENAME_CANDIDATES)
 
 
-def _load_model_once(separator) -> None:
-    """Separator にモデルをロードする（失敗時は例外）。"""
-    output_files: list[str] | str | None = None
+def _load_model_once(separator: object) -> None:
+    """
+    Separator にモデルをロードする。
+
+    候補モデル名を順に試行し、最初に成功したものを採用する。
+
+    Args:
+        separator: audio-separator の Separator インスタンス。
+
+    Raises:
+        RuntimeError: 全候補モデルのロードに失敗した場合。
+    """
     last_error: Exception | None = None
 
     for model_filename in _resolve_model_candidates():
@@ -60,8 +77,20 @@ def _load_model_once(separator) -> None:
     raise RuntimeError(f"利用可能モデルが見つかりません: {last_error}")
 
 
-def _get_separator(output_dir: str, model_file_dir: str):
-    """モデルロード済み Separator を返す（初回のみ重い初期化を実行）。"""
+def _get_separator(output_dir: str, model_file_dir: str) -> object:
+    """
+    モデルロード済み Separator を返す（初回のみ重い初期化を実行）。
+
+    スレッドセーフなシングルトンパターンで、複数リクエストからの同時呼び出しに対応する。
+    2回目以降は output_dir のみ差し替えてキャッシュ済みインスタンスを返す。
+
+    Args:
+        output_dir: 分離結果の出力ディレクトリ。
+        model_file_dir: モデルファイルの保存ディレクトリ。
+
+    Returns:
+        audio-separator の Separator インスタンス。
+    """
     global _SEPARATOR_INSTANCE
 
     with _SEPARATOR_LOCK:
@@ -76,15 +105,19 @@ def _get_separator(output_dir: str, model_file_dir: str):
     return _SEPARATOR_INSTANCE
 
 
-def _load_separator(output_dir: str, model_file_dir: str):
+def _load_separator(output_dir: str, model_file_dir: str) -> object:
     """
-    audio-separator の Separator をロードする。
+    audio-separator の Separator を新規生成する。
+
+    Args:
+        output_dir: 分離結果の出力ディレクトリ。
+        model_file_dir: モデルファイルの保存ディレクトリ。
 
     Returns:
-        Separator インスタンス。
+        audio-separator の Separator インスタンス。
 
     Raises:
-        RuntimeError: 依存が不足している場合。
+        RuntimeError: audio-separator パッケージが見つからない場合。
     """
     try:
         from audio_separator.separator import Separator
@@ -118,21 +151,28 @@ def _pick_vocals_file(output_files: list[str] | str) -> str:
     return output_files[0]
 
 
-def _resolve_output_path(vocal_path: str, output_dir: str) -> Path:
+def _resolve_output_path(vocal_path: str, output_dir: str, input_wav_path: str) -> Path:
     """audio-separator の返却値を実在する絶対パスへ解決する。"""
     candidate = Path(vocal_path)
     if candidate.exists():
         return candidate
 
-    # audio-separator は相対ファイル名のみ返す場合があるため output_dir 基準で探索する。
-    in_output_dir = Path(output_dir) / candidate.name
-    if in_output_dir.exists():
-        return in_output_dir
+    # 追加: ライブラリ内部の出力先差異を吸収するため、複数候補ディレクトリを順に探索する。
+    search_dirs: list[Path] = [
+        Path(output_dir),
+        Path(input_wav_path).parent,
+        Path.cwd(),
+        Path(output_dir).parent,
+    ]
 
-    # 念のため出力ディレクトリ配下を再帰検索する。
-    matches = list(Path(output_dir).glob(f"**/{candidate.name}"))
-    if matches:
-        return matches[0]
+    for search_dir in search_dirs:
+        direct_path = search_dir / candidate.name
+        if direct_path.exists():
+            return direct_path
+
+        matches = list(search_dir.glob(f"**/{candidate.name}"))
+        if matches:
+            return matches[0]
 
     return candidate
 
@@ -171,6 +211,8 @@ def separate_vocals(
     os.makedirs(_MELBAND_LOCAL_DIR, exist_ok=True)
     model_file_dir = str(_MELBAND_LOCAL_DIR.resolve())
     separator = _get_separator(output_dir=output_dir, model_file_dir=model_file_dir)
+    # 追加: シングルトン再利用時に実際に設定されている出力先を優先して解決に使う。
+    effective_output_dir = str(getattr(separator, "output_dir", output_dir))
 
     output_files: list[str] | str | None = None
 
@@ -180,7 +222,11 @@ def separate_vocals(
         raise RuntimeError(f"MelBandRoformers 分離に失敗しました: {exc}") from exc
 
     vocal_path = _pick_vocals_file(output_files)
-    resolved_path = _resolve_output_path(vocal_path=vocal_path, output_dir=output_dir)
+    resolved_path = _resolve_output_path(
+        vocal_path=vocal_path,
+        output_dir=effective_output_dir,
+        input_wav_path=input_wav_path,
+    )
 
     if not resolved_path.exists():
         raise RuntimeError(f"分離後のボーカルファイルが見つかりません: {vocal_path}")

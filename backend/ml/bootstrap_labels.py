@@ -14,7 +14,7 @@ bootstrap_labels.py — 自動ラベリング（手動不要）
   # 音声ファイルを指定（複数可、地声裏声混在OK）
   python bootstrap_labels.py singing1.wav singing2.wav singing3.wav
 
-  # カラオケ音源（Demucs分離済み）も使える
+  # カラオケ音源（MelBandRoformers 分離済み）も使える
   python bootstrap_labels.py vocals1.wav vocals2.wav
 
   # フォルダ内の全WAVを処理

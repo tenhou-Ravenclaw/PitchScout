@@ -3,12 +3,14 @@
 .logo-splash-overlay {
   position: fixed;
   inset: 0;
+  /* 変更: アニメーション速度は従来演出に戻し、表示制御はLayout側で改善する */
   background: rgba(0, 0, 0, 0.95);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
   pointer-events: auto;
+  /* 変更: スプラッシュの尺を標準値に戻す */
   animation: splashOverlayFade 4s ease forwards;
 }
 
@@ -42,8 +44,10 @@
 
 /* Wave animation: displayed after histogram ends (1.0s delay) */
 .logo-splash-wave {
+  /* 変更: 波形演出も従来の見せ方に戻す */
   opacity: 0;
   animation: splashWaveIn 3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  /* 変更: 波形の開始タイミングを元に戻す */
   animation-delay: 1s;
   --wave-offset: 30px;
 }
@@ -78,6 +82,7 @@
 
 /* Histogram animation: bars grow from bottom-to-top and slide left-to-right */
 .logo-splash-histogram {
+  /* 変更: ヒストグラム演出を標準値に戻す */
   animation: splashHistogramSequence 4s cubic-bezier(0.34, 1.56, 0.64, 1)
     forwards;
 }

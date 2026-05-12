@@ -1,8 +1,12 @@
 """
-features.py — 地声/裏声判定用の特徴量抽出
+features.py — 地声/裏声判定用の6次元倍音特徴量抽出
 
-register_classifier.py の既存ロジックから6特徴量を抽出する共通モジュール。
+ML 学習スクリプト (ml/train_classifier.py, ml/bootstrap_labels.py 等) が参照する
+6次元特徴ベクトルを抽出する共通モジュール。
 ラベリング・学習・推論で同一の特徴量を使うことを保証する。
+
+※ メイン解析パイプライン (pipeline.py) は WORLD ベースの 20次元ベクトル
+   (feature_extractor.py) を使用する。本モジュールは学習データ作成用。
 
 特徴量:
   0: h1_h2       H1-H2差 (dB)
@@ -23,6 +27,20 @@ N_FEATURES = len(FEATURE_NAMES)
 
 def get_peak_db(fft: np.ndarray, freqs: np.ndarray,
                 target_hz: float, sr: int) -> float:
+    """
+    FFT スペクトルから指定周波数付近のピーク dB 値を返す。
+
+    二次補間（放物線近似）でサブビン精度のピーク値を推定する。
+
+    Args:
+        fft: FFT 振幅スペクトル。
+        freqs: 各ビンに対応する周波数配列。
+        target_hz: ピークを探す中心周波数 (Hz)。
+        sr: サンプリングレート。
+
+    Returns:
+        ピーク dB 値。検出不可の場合は -120.0。
+    """
     if target_hz <= 0 or target_hz >= sr / 2 * 0.95:
         return -120.0
     half_win = max(10.0, target_hz * 0.035)
@@ -44,6 +62,20 @@ def get_peak_db(fft: np.ndarray, freqs: np.ndarray,
 
 
 def compute_hnr(y: np.ndarray, sr: int, f0: float) -> float:
+    """
+    自己相関ベースで調波対雑音比 (HNR) を 0-1 の範囲で返す。
+
+    基本周期付近の自己相関ピークを HNR として使用する。
+    値が高いほど倍音構造が明瞭（地声的）。
+
+    Args:
+        y: 音声波形（1フレーム分）。
+        sr: サンプリングレート。
+        f0: 基本周波数 (Hz)。
+
+    Returns:
+        0.0-1.0 の HNR 値。計算不能の場合は 0.5（中間値）。
+    """
     try:
         win = np.hanning(len(y))
         ac = np.correlate(y * win, y * win, mode='full')

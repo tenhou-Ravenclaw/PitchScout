@@ -1,3 +1,10 @@
+"""
+audio/converter.py — ffmpeg による音声変換
+
+マイク録音用の 16kHz モノラル変換と、
+MelBandRoformers 前処理用の 44.1kHz ステレオ変換を提供する。
+"""
+
 import os
 import shutil
 import subprocess
@@ -30,12 +37,26 @@ def find_ffmpeg() -> str | None:
             return p
     return None
 
-def _run_ffmpeg(cmd: list, input_path: str, output_path: str):
-    """ffmpegコマンドを実行する共通関数"""
-    ffmpeg_bin = find_ffmpeg()
-    if not ffmpeg_bin:
-        raise RuntimeError("ffmpegが見つかりません。brew install ffmpegを実行してください。")
 
+def _run_ffmpeg(cmd: list[str], input_path: str, output_path: str) -> str:
+    """
+    ffmpeg コマンドを実行する共通関数。
+
+    呼び出し元が find_ffmpeg() で取得したパスを cmd[0] に設定済みであることを前提とする。
+    入力ファイルの存在確認と、出力ファイルの生成確認を行う。
+
+    Args:
+        cmd: ffmpeg コマンドライン引数のリスト（cmd[0] が ffmpeg パス）。
+        input_path: 入力ファイルのパス。
+        output_path: 出力ファイルのパス。
+
+    Returns:
+        出力ファイルのパス。
+
+    Raises:
+        FileNotFoundError: 入力ファイルが存在しない場合。
+        RuntimeError: ffmpeg の実行に失敗した場合、または出力ファイルが生成されなかった場合。
+    """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"入力ファイルが見つかりません: {input_path}")
 
@@ -55,8 +76,20 @@ def _run_ffmpeg(cmd: list, input_path: str, output_path: str):
 
 def convert_to_wav(input_path: str, output_dir: str = "uploads") -> str:
     """
-    マイク録音・アカペラ解析用: 16kHz・モノラルに変換
-    (CREPE解析専用。Demucsには使わないこと)
+    マイク録音・アカペラ解析用: 16kHz・モノラルに変換する。
+
+    WORLD (pyworld) 解析に最適化した設定。
+    カラオケ音源（MelBandRoformers 分離前提）には convert_to_wav_hq を使用すること。
+
+    Args:
+        input_path: 入力音声ファイルのパス。
+        output_dir: 出力ディレクトリ。
+
+    Returns:
+        変換後 WAV ファイルのパス。
+
+    Raises:
+        RuntimeError: ffmpeg が見つからない、または変換に失敗した場合。
     """
     ffmpeg_bin = find_ffmpeg()
     if not ffmpeg_bin:
@@ -70,18 +103,29 @@ def convert_to_wav(input_path: str, output_dir: str = "uploads") -> str:
         ffmpeg_bin, "-y",
         "-i", input_path,
         "-vn",
-        "-ar", "16000",   # CREPEは16kHzで十分
+        "-ar", "16000",   # WORLD (pyworld) は16kHzで十分
         "-ac", "1",        # モノラル
-        output_path
+        output_path,
     ]
     return _run_ffmpeg(cmd, input_path, output_path)
 
 
 def convert_to_wav_hq(input_path: str, output_dir: str = "uploads") -> str:
     """
-    Demucs（ボーカル分離）前処理用: 44100Hz・ステレオに変換
-    Demucsは高品質なステレオ音声を必要とする。
+    MelBandRoformers（ボーカル分離）前処理用: 44100Hz・ステレオに変換する。
+
+    MelBandRoformers は高品質なステレオ音声を必要とする。
     16kHz/モノラルだとボーカル分離の精度が大幅に低下する。
+
+    Args:
+        input_path: 入力音声ファイルのパス。
+        output_dir: 出力ディレクトリ。
+
+    Returns:
+        変換後 WAV ファイルのパス。
+
+    Raises:
+        RuntimeError: ffmpeg が見つからない、または変換に失敗した場合。
     """
     ffmpeg_bin = find_ffmpeg()
     if not ffmpeg_bin:
@@ -95,9 +139,9 @@ def convert_to_wav_hq(input_path: str, output_dir: str = "uploads") -> str:
         ffmpeg_bin, "-y",
         "-i", input_path,
         "-vn",
-        "-ar", "44100",   # Demucsが期待するサンプリングレート
-        "-ac", "2",        # ステレオ（Demucsはステレオで最適に動作）
+        "-ar", "44100",   # MelBandRoformers が期待するサンプリングレート
+        "-ac", "2",        # ステレオ（MelBandRoformers はステレオで最適に動作）
         "-sample_fmt", "s16",  # 16bit PCM
-        output_path
+        output_path,
     ]
     return _run_ffmpeg(cmd, input_path, output_path)

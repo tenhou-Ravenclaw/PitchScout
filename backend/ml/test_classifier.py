@@ -10,7 +10,7 @@ test_classifier.py — 声区判定 ML モデルのテストスイート
 
 テスト構成:
     TestFeatureExtractor    : 特徴量抽出の単体テスト（合成音声で入出力を検証）
-    TestRegisterClassifier  : ルールベース判定のテスト（ハードルール・ノイズゲート）
+    TestHybridClassifier    : AP/HNRゲート+RFフォールバック判定のテスト
     TestModelAccuracy       : 学習済みモデルの精度テスト（dataset.npz からホールドアウト）
     TestDatasetIntegrity    : dataset.npz の整合性テスト
 """
@@ -27,7 +27,7 @@ import soundfile as sf
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from analysis.features import N_FEATURES, extract_features
-from config import CREPE_NOISE_GATE, FALSETTO_HARD_MIN_HZ
+from config import FALSETTO_HARD_MIN_HZ
 
 # ============================================================
 # テスト用合成音声ヘルパー
@@ -71,7 +71,7 @@ def _make_sine(freq_hz: float = 440.0, sr: int = 16000,
 # ============================================================
 
 class TestFeatureExtractor:
-    """extract_features() の入出力検証。合成音声を使い、CREPE 不要で高速に実行できる。"""
+    """extract_features() の入出力検証。合成音声を使い、外部モデル不要で高速に実行できる。"""
 
     def test_returns_correct_shape(self):
         """有効なフレームを与えると shape=(6,) の配列が返ること"""
@@ -158,122 +158,95 @@ class TestFeatureExtractor:
 
 
 # ============================================================
-# 2. ルールベース判定のテスト
+# 2. AP/HNR ゲート + RF フォールバック判定のテスト
 # ============================================================
 
-class TestRegisterClassifier:
+class TestHybridClassifier:
     """
-    classify_register() のハードルール部分を検証。
-    ML モデルの有無に関係なく常に成立すべき不変条件をテストする。
+    HybridClassifier.classify_frame() のハードルール部分を検証。
+    AP/HNR ゲートと RF フォールバックの動作をテストする。
     """
-
-    def setup_method(self):
-        from analysis.classifier import classify_register, new_register_stats
-        self._classify = classify_register
-        self._new_stats = new_register_stats
-
-    def test_hard_min_hz_always_chest(self):
-        """FALSETTO_HARD_MIN_HZ (270Hz) 以下は必ず 'chest' を返すこと"""
-        y = _make_sawtooth(200)
-        stats = self._new_stats()
-        result = self._classify(y, 16000, 200.0, 200.0, False, 0.9, stats)
-        assert result == "chest", \
-            f"f0=200Hz (< {FALSETTO_HARD_MIN_HZ}Hz) なのに '{result}' が返った"
-
-    def test_hard_min_hz_boundary(self):
-        """FALSETTO_HARD_MIN_HZ ちょうどは chest を返すこと"""
-        y = _make_sawtooth(FALSETTO_HARD_MIN_HZ)
-        stats = self._new_stats()
-        result = self._classify(y, 16000, FALSETTO_HARD_MIN_HZ, 250.0, False, 0.9, stats)
-        assert result == "chest", \
-            f"f0={FALSETTO_HARD_MIN_HZ}Hz (境界値) なのに '{result}' が返った"
-
-    def test_noise_gate_returns_unknown(self):
-        """CREPE 信頼度が CREPE_NOISE_GATE 未満なら 'unknown' を返すこと"""
-        y = _make_sawtooth(400)
-        stats = self._new_stats()
-        low_conf = CREPE_NOISE_GATE - 0.01
-        result = self._classify(y, 16000, 400.0, 300.0, False, low_conf, stats)
-        assert result == "unknown", \
-            f"低信頼度 ({low_conf:.2f}) なのに 'unknown' 以外 ('{result}') が返った"
-
-    def test_return_value_is_valid(self):
-        """戻り値は 'chest', 'falsetto', 'unknown' のいずれかであること"""
-        y = _make_sawtooth(350)
-        stats = self._new_stats()
-        for f0 in [150.0, 280.0, 350.0, 500.0, 700.0]:
-            conf = 0.9 if f0 >= FALSETTO_HARD_MIN_HZ else 0.5
-            result = self._classify(y, 16000, f0, 300.0, False, conf, stats)
-            assert result in ("chest", "falsetto", "unknown"), \
-                f"f0={f0}: 不正な戻り値 '{result}'"
-
-    def test_does_not_crash_on_short_frame(self):
-        """512 サンプル未満のフレームでもクラッシュしないこと（unknown を返す）"""
-        y = np.zeros(400, dtype=np.float32)
-        stats = self._new_stats()
-        result = self._classify(y, 16000, 400.0, 300.0, False, 0.8, stats)
-        assert result in ("chest", "falsetto", "unknown")
-
-    def test_already_separated_flag_accepted(self):
-        """already_separated=True でもクラッシュしないこと"""
-        y = _make_sawtooth(350)
-        stats = self._new_stats()
-        result = self._classify(y, 16000, 350.0, 300.0, True, 0.8, stats)
-        assert result in ("chest", "falsetto", "unknown")
-
-
-class TestGateFirstHybridRegression:
-    """ゲート先行ハイブリッド設計の回帰テスト。"""
 
     def test_unvoiced_returns_unvoiced(self):
-        """無声音フレームは unvoiced と判定されること。"""
+        """f0=0 なら unvoiced を返すこと"""
         from analysis.classifier import HybridClassifier
 
         clf = HybridClassifier()
-        label, reason = clf.classify_frame(
-            f0=0.0,
-            ap_mean=0.5,
-            hnr=2.0,
-            rf_chest_proba=0.5,
-        )
+        label, reason = clf.classify_frame(f0=0.0, ap_mean=0.5, hnr=2.0, rf_chest_proba=0.5)
         assert label == "unvoiced"
         assert reason == "no_f0"
 
-    def test_low_f0_high_ap_forced_chest(self):
-        """F0 がハード下限未満なら AP/HNR に関係なく chest を返すこと。"""
+    def test_hard_min_hz_always_chest(self):
+        """FALSETTO_HARD_MIN_HZ 未満は必ず 'chest' を返すこと"""
         from analysis.classifier import HybridClassifier
 
         clf = HybridClassifier()
         label, reason = clf.classify_frame(
-            f0=FALSETTO_HARD_MIN_HZ - 5.0,
-            ap_mean=0.95,
-            hnr=-4.0,
-            rf_chest_proba=0.1,
+            f0=200.0, ap_mean=0.9, hnr=-5.0, rf_chest_proba=0.1
         )
         assert label == "chest"
         assert reason == "below_hard_min"
 
-    def test_transition_boundary_no_label_bleed(self):
-        """ひっくり返り相当の遷移で境界前後のラベルが崩れないこと。"""
+    def test_gate_both_high_ap_low_hnr_is_falsetto(self):
+        """AP高 AND HNR低 → ゲート確定で falsetto"""
         from analysis.classifier import HybridClassifier
 
         clf = HybridClassifier()
-        f0s = [360.0, 380.0, 400.0, 430.0, 470.0, 530.0, 560.0]
-        ap_vals = [0.20, 0.22, 0.25, 0.36, 0.38, 0.34, 0.33]
-        hnr_vals = [9.5, 9.0, 8.8, 5.2, 4.8, 7.0, 6.8]
+        label, reason = clf.classify_frame(
+            f0=500.0, ap_mean=0.5, hnr=3.0, rf_chest_proba=0.9
+        )
+        assert label == "falsetto"
+        assert reason == "gate_ap_hnr"
 
-        labels: list[str] = []
-        for f0, ap_mean, hnr in zip(f0s, ap_vals, hnr_vals):
-            label, _ = clf.classify_frame(
-                f0=f0,
-                ap_mean=ap_mean,
-                hnr=hnr,
-                rf_chest_proba=0.45,
-            )
-            labels.append(label)
+    def test_gate_both_low_ap_high_hnr_is_chest(self):
+        """AP低 AND HNR高 → ゲート確定で chest"""
+        from analysis.classifier import HybridClassifier
 
-        assert labels[:3] == ["chest", "chest", "chest"]
-        assert labels[3:] == ["falsetto", "falsetto", "falsetto", "falsetto"]
+        clf = HybridClassifier()
+        label, reason = clf.classify_frame(
+            f0=500.0, ap_mean=0.1, hnr=15.0, rf_chest_proba=0.1
+        )
+        assert label == "chest"
+        assert reason == "gate_ap_hnr"
+
+    def test_ambiguous_falls_back_to_rf(self):
+        """AP/HNR 片側のみ → RF フォールバック"""
+        from analysis.classifier import HybridClassifier
+
+        clf = HybridClassifier()
+        # RF が chest 寄り
+        label, reason = clf.classify_frame(
+            f0=500.0, ap_mean=0.5, hnr=15.0, rf_chest_proba=0.8
+        )
+        assert label == "chest"
+        assert reason == "rf_fallback"
+
+        # RF が falsetto 寄り
+        label, reason = clf.classify_frame(
+            f0=500.0, ap_mean=0.5, hnr=15.0, rf_chest_proba=0.3
+        )
+        assert label == "falsetto"
+        assert reason == "rf_fallback"
+
+    def test_segment_classification(self):
+        """classify_segment が正しく動作すること"""
+        from analysis.classifier import classify_segment
+
+        # 地声が多い場合
+        label, conf = classify_segment(
+            chest_frame_count=80,
+            falsetto_frame_count=20,
+            rf_chest_probability=0.75,
+        )
+        assert label == "chest"
+
+        # 裏声が多い場合
+        label, conf = classify_segment(
+            chest_frame_count=20,
+            falsetto_frame_count=80,
+            rf_chest_probability=0.3,
+        )
+        assert label == "falsetto"
 
     def test_short_clip_no_crash(self, monkeypatch):
         """短尺音声(<1s)でもクラッシュせず結果辞書を返すこと。"""
@@ -297,29 +270,6 @@ class TestGateFirstHybridRegression:
         finally:
             if os.path.exists(wav_path):
                 os.remove(wav_path)
-
-    def test_normal_singing_like_split(self):
-        """通常歌唱相当の値で chest/falsetto が分離されること。"""
-        from analysis.classifier import HybridClassifier
-
-        clf = HybridClassifier()
-        # chest 相当
-        chest_label, _ = clf.classify_frame(
-            f0=410.0,
-            ap_mean=0.22,
-            hnr=9.0,
-            rf_chest_proba=0.8,
-        )
-        # falsetto 相当
-        falsetto_label, _ = clf.classify_frame(
-            f0=560.0,
-            ap_mean=0.35,
-            hnr=6.5,
-            rf_chest_proba=0.2,
-        )
-
-        assert chest_label == "chest"
-        assert falsetto_label == "falsetto"
 
     def test_pure_chest_clip_has_no_falsetto_range(self, monkeypatch):
         """純粋な地声音源では裏声音域が結果に含まれないこと。"""

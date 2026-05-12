@@ -20,15 +20,38 @@ export const LogoSplash: React.FC<LogoSplashProps> = ({ onAnimationEnd }) => {
   const [isVisible, setIsVisible] = useState(true);
   const navigate = useNavigate();
 
-  /** ── アニメーション終了ハンドラー ──
-   * 波形（Wave）のアニメーションが終わったタイミングで呼ばれます。
+  /** ── スプラッシュ終了ハンドラー ──
+   * 波形アニメーション終了またはフェイルセーフタイマー満了で呼ばれます。
    */
-  const handleWaveAnimationEnd = () => {
+  const handleWaveAnimationEnd = (): void => {
     setIsVisible(false); // 表示フラグをOFFにする
   };
 
+  /** ── フェイルセーフ処理 ──
+   * 追加: prefers-reduced-motion や animation event 未発火時でも
+   * 一定時間で確実にスプラッシュを閉じて遷移を継続します。
+   */
+  useEffect(() => {
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (prefersReducedMotion) {
+      handleWaveAnimationEnd();
+      return;
+    }
+
+    const splashTimeout: ReturnType<typeof setTimeout> = setTimeout(() => {
+      console.warn("[WARN] スプラッシュの終了イベントが発火しなかったため、フェイルセーフで遷移します。");
+      handleWaveAnimationEnd();
+    // 変更: アニメーション完了を待てるよう、フェイルセーフ時間を標準値に戻す
+    }, 5500);
+
+    return () => {
+      clearTimeout(splashTimeout);
+    };
+  }, []);
+
   /** ── 画面遷移の実行 ──
-   * isVisible が false になった瞬間、親へ通知し、URLをトップ（/）に切り替えます。
+   * 変更: isVisible が false になった時点で親へ通知し、URLをトップへ統一します。
    */
   useEffect(() => {
     if (!isVisible) {
@@ -50,6 +73,12 @@ export const LogoSplash: React.FC<LogoSplashProps> = ({ onAnimationEnd }) => {
           src={histogramImg}
           alt="histogram"
           className="logo-splash-element logo-splash-histogram"
+          // 追加: スプラッシュ用画像は最優先で取得して、リロード時の待ちを減らす
+          fetchPriority="high"
+          // 追加: 初期演出で使うため遅延読み込みを無効化
+          loading="eager"
+          // 追加: デコードを前倒しして初回描画を速くする
+          decoding="sync"
         />
         {/* 2つ目の要素：波形（アニメーションが設定されており、終了後に非表示化をトリガーします） */}
         <img
@@ -57,6 +86,12 @@ export const LogoSplash: React.FC<LogoSplashProps> = ({ onAnimationEnd }) => {
           alt="wave"
           className="logo-splash-element logo-splash-wave"
           onAnimationEnd={handleWaveAnimationEnd}
+          // 追加: 2枚目画像も優先ロードして演出開始時の空白を防ぐ
+          fetchPriority="high"
+          // 追加: スプラッシュ用なので lazy を使わず即時ロードする
+          loading="eager"
+          // 追加: 体感遅延を抑えるため同期デコードを指定
+          decoding="sync"
         />
       </div>
     </div>

@@ -22,30 +22,40 @@ EPS = 1e-8
 
 @dataclass(frozen=True)
 class WorldFeatures:
-    """WORLD 抽出結果を保持するデータ構造。"""
+    """
+    WORLD ボコーダによる抽出結果を保持する不変データ構造。
 
-    f0: np.ndarray
-    sp: np.ndarray
-    ap: np.ndarray
-    voiced_mask: np.ndarray
-    time_axis_sec: np.ndarray | None = None
-    sample_rate: int = WORLD_SAMPLE_RATE
+    pyworld の harvest → stonemask → cheaptrick → d4c で得られる
+    F0・スペクトル包絡(SP)・非周期性(AP) を格納する。
+    """
+
+    f0: np.ndarray            # 基本周波数 (Hz)。無声音フレームは 0.0。shape=(n_frames,)
+    sp: np.ndarray            # スペクトル包絡。shape=(n_frames, n_fft_bins)
+    ap: np.ndarray            # 非周期性指標 (0-1)。shape=(n_frames, n_fft_bins)
+    voiced_mask: np.ndarray   # 有声音フレームの bool マスク。shape=(n_frames,)
+    time_axis_sec: np.ndarray | None = None  # 各フレームの時刻 (秒)
+    sample_rate: int = WORLD_SAMPLE_RATE     # 解析サンプリングレート (16kHz)
 
 
 @dataclass(frozen=True)
 class FrameAcousticFeatures:
-    """ゲート判定に使うフレーム単位の音響特徴。"""
+    """
+    AP/HNR ゲート判定と倍音解析に使うフレーム単位の音響特徴。
 
-    f0: np.ndarray
-    f0_std: np.ndarray
-    ap_mean: np.ndarray
-    ap_std: np.ndarray
-    hnr: np.ndarray
-    sp_tilt: np.ndarray
-    h1_h2: np.ndarray
-    hcount: np.ndarray
-    harmonic_score: np.ndarray
-    voiced_mask: np.ndarray
+    WorldFeatures から算出される二次特徴量を格納する。
+    classifier.py の HybridClassifier がフレーム分類に使用する。
+    """
+
+    f0: np.ndarray            # 基本周波数 (Hz)。shape=(n_frames,)
+    f0_std: np.ndarray        # F0 の移動標準偏差（ビブラート検出用）。shape=(n_frames,)
+    ap_mean: np.ndarray       # 非周期性の帯域平均 (0-1)。高いほど裏声的。shape=(n_frames,)
+    ap_std: np.ndarray        # 非周期性の帯域標準偏差。shape=(n_frames,)
+    hnr: np.ndarray           # 調波対雑音比 (dB)。低いほど裏声的。shape=(n_frames,)
+    sp_tilt: np.ndarray       # スペクトル傾斜 (dB/bin)。shape=(n_frames,)
+    h1_h2: np.ndarray         # 第1倍音と第2倍音の差 (dB)。大きいほど裏声的。shape=(n_frames,)
+    hcount: np.ndarray        # 有効倍音本数 (0-10)。少ないほど裏声的。shape=(n_frames,)
+    harmonic_score: np.ndarray  # 倍音スコア (0-1)。h1_h2/hcount/slope の加重平均。shape=(n_frames,)
+    voiced_mask: np.ndarray   # 有声音フレームの bool マスク。shape=(n_frames,)
 
 
 def apply_energy_vad(
@@ -87,7 +97,16 @@ def apply_energy_vad(
 
 
 def _ensure_world_rate(y: np.ndarray, sr: int) -> np.ndarray:
-    """WORLD 用に 16kHz へリサンプルする。"""
+    """
+    WORLD 用に 16kHz へリサンプルする。
+
+    Args:
+        y: モノラル波形。
+        sr: 現在のサンプリングレート。
+
+    Returns:
+        16kHz にリサンプル済みの波形。既に 16kHz ならそのまま返す。
+    """
     if sr == WORLD_SAMPLE_RATE:
         return y
 
@@ -158,7 +177,16 @@ def _safe_stats(values: np.ndarray) -> tuple[float, float]:
 
 
 def compute_hnr_from_world(sp_frame: np.ndarray, ap_frame: np.ndarray) -> float:
-    """WORLD の SP/AP から HNR(dB) を計算する。"""
+    """
+    WORLD の SP/AP から HNR (dB) を計算する。
+
+    Args:
+        sp_frame: スペクトル包絡の1フレーム分。
+        ap_frame: 非周期性指標の1フレーム分。
+
+    Returns:
+        HNR (dB)。高いほど調波成分が支配的（地声的）。
+    """
     harmonic_energy = float(np.sum(sp_frame * (1.0 - ap_frame)))
     noise_energy = float(np.sum(sp_frame * ap_frame))
     return float(10.0 * np.log10((harmonic_energy + EPS) / (noise_energy + EPS)))
@@ -172,7 +200,23 @@ def compute_harmonic_score(
     w_hcount: float = 0.4,
     w_slope: float = 0.3,
 ) -> float:
-    """補助ログ用途の倍音スコアを 0-1 で返す。"""
+    """
+    補助ログ用途の倍音スコアを 0-1 で返す。
+
+    h1_h2 / hcount / slope の加重平均で算出。
+    高いほど地声的な倍音構造を示す。
+
+    Args:
+        h1_h2: 第1倍音と第2倍音の差 (dB)。
+        hcount: 有効倍音本数。
+        slope: スペクトル傾斜。
+        w_h1h2: h1_h2 の重み。
+        w_hcount: hcount の重み。
+        w_slope: slope の重み。
+
+    Returns:
+        0-1 ��倍音スコア。
+    """
     h1h2_score = float(np.clip(1.0 - (h1_h2 / 12.0), 0.0, 1.0))
     hcount_score = float(np.clip(hcount / 10.0, 0.0, 1.0))
     slope_score = float(np.clip(-slope / 40.0, 0.0, 1.0))
@@ -180,7 +224,16 @@ def compute_harmonic_score(
 
 
 def _rolling_std(values: np.ndarray, window: int = 5) -> np.ndarray:
-    """短時間窓の移動標準偏差を計算する。"""
+    """
+    短時間窓の移動標準偏差を計算する。
+
+    Args:
+        values: 入力配列。
+        window: 窓幅（フレーム数）。
+
+    Returns:
+        移動標準偏差の配列。入力と同じ長さ。
+    """
     if values.size == 0:
         return np.zeros(0, dtype=np.float32)
 
@@ -194,7 +247,15 @@ def _rolling_std(values: np.ndarray, window: int = 5) -> np.ndarray:
 
 
 def _frame_sp_tilt(log_sp: np.ndarray) -> float:
-    """log-SP に対する一次回帰傾きを返す。"""
+    """
+    log-SP に対する一次回帰傾きを返す。
+
+    Args:
+        log_sp: 対数スペクトル包絡の1フレーム分。
+
+    Returns:
+        傾き (dB/bin)。ビン数不足時は -6.0。
+    """
     xs = np.arange(log_sp.size, dtype=np.float64)
     if log_sp.size < 3:
         return -6.0
@@ -207,7 +268,18 @@ def _frame_harmonic_stats(
     sample_rate: int,
     n_harmonics: int = 10,
 ) -> tuple[float, float]:
-    """H1-H2 と有効倍音本数を算出する。"""
+    """
+    H1-H2 と有効倍音本数を算出する。
+
+    Args:
+        sp_frame: スペクトル包絡の1フレーム分。
+        f0: 基本周波数 (Hz)。0 以下なら (0.0, 0.0) を返す。
+        sample_rate: サンプリングレート。
+        n_harmonics: 評価する倍音の最大次数。
+
+    Returns:
+        (H1-H2 差 (dB), 有効倍音本数) のタプル。
+    """
     if f0 <= 0.0:
         return 0.0, 0.0
 
@@ -237,7 +309,18 @@ def _frame_harmonic_stats(
 
 
 def extract_frame_acoustic_features(world: WorldFeatures) -> FrameAcousticFeatures:
-    """WORLD 結果からフレーム単位の AP/HNR/倍音特徴を抽出する。"""
+    """
+    WORLD 結果からフレーム単位の AP/HNR/倍音特徴を抽出する。
+
+    有声フレームのみ計算し、無声フレームはゼロ埋めする。
+    classifier.py の HybridClassifier がフレーム分類に使用する。
+
+    Args:
+        world: WORLD ボコーダの抽出結果。
+
+    Returns:
+        フレーム単位の音響特徴。
+    """
     frame_count = world.f0.size
     ap_mean = np.mean(world.ap, axis=1).astype(np.float32)
     ap_std = np.std(world.ap, axis=1).astype(np.float32)
@@ -434,7 +517,21 @@ def split_register_by_aperiodicity(world: WorldFeatures) -> tuple[np.ndarray, np
 
 
 def extract_segment_features(y: np.ndarray, sr: int) -> tuple[np.ndarray, list[str], WorldFeatures]:
-    """音声波形から学習・推論用のセグメント特徴を抽出する。"""
+    """
+    音声波形から学習・推論用のセグメント特徴を抽出する。
+
+    WORLD 特徴抽出 → 20次元集約のラッパー関数。
+
+    Args:
+        y: モノラル波形。
+        sr: サンプリングレート。
+
+    Returns:
+        (特徴量ベクトル, 特徴名リスト, WorldFeatures) のタプル。
+
+    Raises:
+        ValueError: 有効な有声音が不足している場合。
+    """
     world = extract_world_features(y=y, sr=sr)
     features, names = aggregate_world_features(world)
     return features, names, world
