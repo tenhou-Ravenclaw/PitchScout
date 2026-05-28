@@ -30,7 +30,7 @@ def read_artists(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     q: str | None = None,
-):
+) -> dict:
     """アーティスト一覧を取得（ページネーション対応）"""
     if q:
         artists = search_artists(q, limit, offset)
@@ -47,7 +47,7 @@ def read_artist_songs(
     chest_min_hz: float | None = Query(None),
     chest_max_hz: float | None = Query(None),
     falsetto_max_hz: float | None = Query(None),
-):
+) -> list[dict]:
     """特定アーティストの楽曲一覧を取得"""
     songs = get_artist_songs(artist_id)
     if chest_min_hz and chest_max_hz:
@@ -89,7 +89,7 @@ def read_songs(
             "False のときは全曲を返しキー推薦情報のみ付与する。"
         ),
     ),
-):
+) -> dict:
     """
     楽曲一覧を取得（検索・ページネーション対応）。
 
@@ -167,7 +167,7 @@ def get_challenge_recommendations(
     chest_avg_hz: float = Query(..., description="ユーザー地声平均(Hz)"),
     falsetto_max_hz: float | None = Query(None, description="ユーザー裏声最高(Hz)"),
     limit: int = Query(5, ge=1, le=20),
-):
+) -> list[dict]:
     """
     あと少しで歌えるチャレンジ曲を取得する。
 
@@ -189,7 +189,7 @@ def get_recommendations(
     falsetto_max_hz: float | None = Query(None),
     limit: int = Query(10, ge=1, le=50),
     user: dict | None = Depends(get_optional_user),
-):
+) -> list[dict]:
     """音域Hzを指定しておすすめ曲を取得（ログイン済みならお気に入りアーティスト優先）"""
     fav_ids = get_favorite_artist_ids(user["id"]) if user else []
     return recommend_songs(
@@ -204,6 +204,6 @@ def get_similar_artists(
     chest_max_hz: float = Query(...),
     chest_avg_hz: float = Query(...),
     limit: int = Query(5, ge=1, le=20),
-):
+) -> list[dict]:
     """音域Hzを指定して似てるアーティストを取得"""
     return find_similar_artists(chest_min_hz, chest_max_hz, chest_avg_hz, limit)

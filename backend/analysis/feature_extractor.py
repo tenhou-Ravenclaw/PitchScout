@@ -13,10 +13,8 @@ import librosa
 import numpy as np
 import pyworld
 
-from config import FALSETTO_HARD_MIN_HZ
+from config import FALSETTO_HARD_MIN_HZ, WORLD_SAMPLE_RATE, WORLD_FRAME_PERIOD_MS, HARMONIC_NOISE_FLOOR_DB
 
-WORLD_SAMPLE_RATE = 16000
-WORLD_FRAME_PERIOD_MS = 5.0
 EPS = 1e-8
 
 
@@ -304,7 +302,7 @@ def _frame_harmonic_stats(
         harmonic_levels.append(float(np.max(sp_db[lo:hi])))
 
     h1_h2 = float(harmonic_levels[0] - harmonic_levels[1]) if len(harmonic_levels) >= 2 else 0.0
-    hcount = float(sum(1 for level in harmonic_levels if level > noise_db + 8.0))
+    hcount = float(sum(1 for level in harmonic_levels if level > noise_db + HARMONIC_NOISE_FLOOR_DB))
     return h1_h2, hcount
 
 

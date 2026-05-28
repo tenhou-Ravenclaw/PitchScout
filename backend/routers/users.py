@@ -37,7 +37,7 @@ router = APIRouter(tags=["users"])
 # ============================================================
 
 @router.get("/profile/me")
-def get_my_profile(user: dict = Depends(get_current_user)):
+def get_my_profile(user: dict = Depends(get_current_user)) -> dict:
     """自分のプロファイルを取得"""
     profile = get_user_profile(user["id"])
     if not profile:
@@ -46,7 +46,7 @@ def get_my_profile(user: dict = Depends(get_current_user)):
 
 
 @router.put("/profile/me")
-def update_my_profile(data: UserProfileUpdate, user: dict = Depends(get_current_user)):
+def update_my_profile(data: UserProfileUpdate, user: dict = Depends(get_current_user)) -> dict:
     """自分のプロファイルを更新"""
     profile = update_user_profile(user["id"], data.model_dump(exclude_none=True))
     if profile is None:
@@ -55,7 +55,7 @@ def update_my_profile(data: UserProfileUpdate, user: dict = Depends(get_current_
 
 
 @router.put("/profile/vocal-range")
-def update_my_vocal_range(data: VocalRangeUpdate, user: dict = Depends(get_current_user)):
+def update_my_vocal_range(data: VocalRangeUpdate, user: dict = Depends(get_current_user)) -> dict:
     """自分の声域情報を更新"""
     result = update_vocal_range(
         user["id"],
@@ -73,7 +73,7 @@ def update_my_vocal_range(data: VocalRangeUpdate, user: dict = Depends(get_curre
 # ============================================================
 
 @router.post("/analysis")
-def create_analysis(data: AnalysisCreate, user: dict = Depends(get_current_user)):
+def create_analysis(data: AnalysisCreate, user: dict = Depends(get_current_user)) -> dict:
     """分析履歴を保存"""
     record = create_analysis_record(
         user["id"],
@@ -85,12 +85,13 @@ def create_analysis(data: AnalysisCreate, user: dict = Depends(get_current_user)
     )
     if record is None:
         raise HTTPException(status_code=500, detail="分析履歴の保存に失敗しました")
-    update_vocal_range(
+    if update_vocal_range(
         user["id"],
         data.vocal_range_min,
         data.vocal_range_max,
         data.falsetto_max,
-    )
+    ) is None:
+        print(f"[WARN] 声域プロファイルの更新に失敗しました (user={user['id']})")
     return record
 
 
@@ -98,7 +99,7 @@ def create_analysis(data: AnalysisCreate, user: dict = Depends(get_current_user)
 def get_my_analysis_history(
     user: dict = Depends(get_current_user),
     limit: int = Query(50, ge=1, le=100),
-):
+) -> list:
     """自分の分析履歴を取得"""
     return get_analysis_history(user["id"], limit)
 
@@ -107,7 +108,7 @@ def get_my_analysis_history(
 def get_my_integrated_range(
     user: dict = Depends(get_current_user),
     limit: int = Query(20, ge=1, le=100),
-):
+) -> dict:
     """直近N件の分析履歴から統合音域を取得"""
     records = get_analysis_history(user["id"], limit)
     fav_ids = get_favorite_artist_ids(user["id"])
@@ -296,7 +297,7 @@ def get_analysis_growth(
 
 
 @router.delete("/analysis/history/{record_id}")
-def delete_my_analysis_history(record_id: str, user: dict = Depends(get_current_user)):
+def delete_my_analysis_history(record_id: str, user: dict = Depends(get_current_user)) -> dict:
     """自分の分析履歴を削除"""
     success = delete_analysis_record(user["id"], record_id)
     if success:
@@ -309,7 +310,7 @@ def update_my_analysis_history(
     record_id: str,
     data: AnalysisUpdate,
     user: dict = Depends(get_current_user),
-):
+) -> dict:
     """自分の分析履歴を更新 (file_nameなど)"""
     result = update_analysis_record(user["id"], record_id, data.model_dump(exclude_none=True))
     if result:
@@ -322,7 +323,7 @@ def update_my_analysis_history(
 # ============================================================
 
 @router.post("/favorites")
-def add_favorite(data: FavoriteSongAdd, user: dict = Depends(get_current_user)):
+def add_favorite(data: FavoriteSongAdd, user: dict = Depends(get_current_user)) -> dict:
     """お気に入りに楽曲を追加"""
     result = add_favorite_song(user["id"], data.song_id)
     if not result:
@@ -331,7 +332,7 @@ def add_favorite(data: FavoriteSongAdd, user: dict = Depends(get_current_user)):
 
 
 @router.delete("/favorites/{song_id}")
-def remove_favorite(song_id: int, user: dict = Depends(get_current_user)):
+def remove_favorite(song_id: int, user: dict = Depends(get_current_user)) -> dict:
     """お気に入りから楽曲を削除"""
     success = remove_favorite_song(user["id"], song_id)
     if success:
@@ -340,13 +341,13 @@ def remove_favorite(song_id: int, user: dict = Depends(get_current_user)):
 
 
 @router.get("/favorites")
-def get_my_favorites(user: dict = Depends(get_current_user), limit: int = Query(100, ge=1, le=100)):
+def get_my_favorites(user: dict = Depends(get_current_user), limit: int = Query(100, ge=1, le=100)) -> list:
     """自分のお気に入り楽曲一覧を取得"""
     return get_favorite_songs(user["id"], limit)
 
 
 @router.get("/favorites/check/{song_id}")
-def check_favorite(song_id: int, user: dict = Depends(get_current_user)):
+def check_favorite(song_id: int, user: dict = Depends(get_current_user)) -> dict:
     """楽曲がお気に入りに登録されているか確認"""
     return {"is_favorite": is_favorite(user["id"], song_id)}
 
@@ -382,7 +383,7 @@ def batch_check_favorites_endpoint(
 def add_favorite_artist_endpoint(
     data: FavoriteArtistAdd,
     user: dict = Depends(get_current_user),
-):
+) -> dict:
     """
     お気に入りアーティストを追加（上限10組）。
     artist_id と artist_name は /songs?q= などで検索して取得してください。
@@ -401,7 +402,7 @@ def add_favorite_artist_endpoint(
 def remove_favorite_artist_endpoint(
     artist_id: int,
     user: dict = Depends(get_current_user),
-):
+) -> dict:
     """お気に入りアーティストを削除"""
     success = remove_favorite_artist(user["id"], artist_id)
     if success:
@@ -410,12 +411,12 @@ def remove_favorite_artist_endpoint(
 
 
 @router.get("/favorite-artists")
-def get_my_favorite_artists(user: dict = Depends(get_current_user)):
+def get_my_favorite_artists(user: dict = Depends(get_current_user)) -> list:
     """自分のお気に入りアーティスト一覧を取得"""
     return get_favorite_artists(user["id"])
 
 
 @router.get("/favorite-artists/check/{artist_id}")
-def check_favorite_artist(artist_id: int, user: dict = Depends(get_current_user)):
+def check_favorite_artist(artist_id: int, user: dict = Depends(get_current_user)) -> dict:
     """アーティストがお気に入りに登録されているか確認"""
     return {"is_favorite": is_favorite_artist(user["id"], artist_id)}

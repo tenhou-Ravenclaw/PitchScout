@@ -47,7 +47,7 @@ cp .env.example .env
 ```env
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-anon-key-here
-JWT_SECRET=your-jwt-secret-here-change-in-production
+JWT_SECRET=<generated-secret>
 ```
 
 ### 4. 依存関係のインストール

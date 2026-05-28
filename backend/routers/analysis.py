@@ -7,8 +7,10 @@
 import os
 import shutil
 import tempfile
+import threading
 import time
 import uuid
+from contextlib import contextmanager
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
 from fastapi import HTTPException
@@ -19,7 +21,14 @@ from audio.converter import convert_to_wav, convert_to_wav_hq
 from analysis import analyze
 from audio.separator import separate_vocals
 from audio.noise import apply_deepfilter
-from config import DEBUG_CLIP_WINDOW_SEC, DFN_ATTENUATION_LIMIT_DB
+from config import (
+    ANALYSIS_TIME_WARNING_SEC,
+    DEBUG_CLIP_WINDOW_SEC,
+    DFN_ATTENUATION_LIMIT_DB,
+    MAX_CONCURRENT_KARAOKE_ANALYSES,
+    MAX_CONCURRENT_VOICE_ANALYSES,
+    SAVE_DEBUG_AUDIO,
+)
 from recommender import recommend_songs, find_similar_artists, classify_voice_type
 from db.users import (
     get_favorite_artist_ids,
@@ -47,7 +56,11 @@ DEBUG_DIR = os.environ.get(
 os.makedirs(RUNTIME_DIR, exist_ok=True)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(SEPARATED_DIR, exist_ok=True)
-os.makedirs(DEBUG_DIR, exist_ok=True)
+if SAVE_DEBUG_AUDIO:
+    os.makedirs(DEBUG_DIR, exist_ok=True)
+
+_voice_analysis_slots = threading.BoundedSemaphore(MAX_CONCURRENT_VOICE_ANALYSES)
+_karaoke_analysis_slots = threading.BoundedSemaphore(MAX_CONCURRENT_KARAOKE_ANALYSES)
 
 ALLOWED_MIME_BY_EXT: dict[str, set[str]] = {
     ".wav": {"audio/wav", "audio/x-wav", "audio/wave", "audio/vnd.wave"},
@@ -81,7 +94,22 @@ _MAGIC_CHECKABLE_EXTS: set[str] = {ext for _, _, exts in _MAGIC_SIGNATURES for e
 _MAGIC_CHECKABLE_EXTS.add(".wav")
 
 
-async def _validate_upload_file(file: UploadFile) -> None:
+@contextmanager
+def _analysis_slot(semaphore: threading.BoundedSemaphore, label: str):
+    """解析処理の同時実行数を制限する。空きがなければ 429 を返す。"""
+    acquired = semaphore.acquire(blocking=False)
+    if not acquired:
+        raise HTTPException(
+            status_code=429,
+            detail=f"{label}の同時解析数が上限に達しています。少し待ってから再試行してください",
+        )
+    try:
+        yield
+    finally:
+        semaphore.release()
+
+
+def _validate_upload_file(file: UploadFile) -> None:
     """
     アップロードファイルの拡張子・MIME・マジックバイトを検証する。
 
@@ -105,8 +133,8 @@ async def _validate_upload_file(file: UploadFile) -> None:
 
     # マジックバイト検証: ヘッダを先読みしてシグネチャ確認後、ファイルポインタを先頭に戻す
     if ext in _MAGIC_CHECKABLE_EXTS:
-        header = await file.read(12)
-        await file.seek(0)
+        header = file.file.read(12)
+        file.file.seek(0)
 
         if ext == ".wav":
             # WAV: bytes[0:4]=="RIFF" かつ bytes[8:12]=="WAVE"
@@ -155,6 +183,9 @@ def _save_debug_outputs(
         保存したファイルパスのリスト。
     """
     saved_paths: list[str] = []
+
+    if not SAVE_DEBUG_AUDIO:
+        return saved_paths
 
     if not os.path.exists(source_wav_path):
         return saved_paths
@@ -308,12 +339,12 @@ def _auto_save_analysis(
 # ============================================================
 
 @router.post("/analyze")
-async def analyze_voice(
+def analyze_voice(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     no_falsetto: bool = Form(False),
     user: dict | None = Depends(get_optional_user),
-):
+) -> dict:
     """アカペラ/マイク録音用（ボーカル分離なし）。ログイン済みなら履歴に自動保存。"""
     start_time = time.time()
     print(f"\n{'#'*60}")
@@ -324,34 +355,35 @@ async def analyze_voice(
     converted_wav_path = None
 
     try:
-        await _validate_upload_file(file)
+        with _analysis_slot(_voice_analysis_slots, "アカペラ音源"):
+            _validate_upload_file(file)
 
-        print(f"[API] [1/3] ファイル保存中...")
-        # _validate_upload_file() 通過後は必ず有効な拡張子が取れる（空文字は 400 で弾かれる）
-        ext = os.path.splitext(file.filename or "")[1]
-        temp_input_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}{ext}")
+            print(f"[API] [1/3] ファイル保存中...")
+            # _validate_upload_file() 通過後は必ず有効な拡張子が取れる（空文字は 400 で弾かれる）
+            ext = os.path.splitext(file.filename or "")[1]
+            temp_input_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}{ext}")
 
-        with open(temp_input_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        print(f"[API] [1/3] 保存完了: {temp_input_path}")
+            with open(temp_input_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            print(f"[API] [1/3] 保存完了: {temp_input_path}")
 
-        print(f"\n[API] [2/3] WAV変換中...")
-        converted_wav_path = convert_to_wav(temp_input_path, output_dir=UPLOAD_DIR)
-        print(f"[API] [2/3] 変換完了: {converted_wav_path}")
+            print(f"\n[API] [2/3] WAV変換中...")
+            converted_wav_path = convert_to_wav(temp_input_path, output_dir=UPLOAD_DIR)
+            print(f"[API] [2/3] 変換完了: {converted_wav_path}")
 
-        print(f"\n[API] [3/3] 音域解析実行中...")
-        result = analyze(converted_wav_path, no_falsetto=no_falsetto)
-        if "error" in result:
-            raise HTTPException(status_code=422, detail=result["error"])
-        result = _enrich_result(result, user)
-        _auto_save_analysis(user, result, "microphone", file.filename)
+            print(f"\n[API] [3/3] 音域解析実行中...")
+            result = analyze(converted_wav_path, no_falsetto=no_falsetto)
+            if "error" in result:
+                raise HTTPException(status_code=422, detail=result["error"])
+            result = _enrich_result(result, user)
+            _auto_save_analysis(user, result, "microphone", file.filename)
 
-        elapsed_time = time.time() - start_time
-        print(f"\n[API] アカペラ音源分析完了 (処理時間: {elapsed_time:.2f}秒)")
-        print(f"{'#'*60}\n")
+            elapsed_time = time.time() - start_time
+            print(f"\n[API] アカペラ音源分析完了 (処理時間: {elapsed_time:.2f}秒)")
+            print(f"{'#'*60}\n")
 
-        background_tasks.add_task(cleanup_files, temp_input_path, converted_wav_path)
-        return result
+            background_tasks.add_task(cleanup_files, temp_input_path, converted_wav_path)
+            return result
 
     except HTTPException:
         background_tasks.add_task(cleanup_files, temp_input_path, converted_wav_path)
@@ -364,12 +396,12 @@ async def analyze_voice(
 
 
 @router.post("/analyze-karaoke")
-async def analyze_karaoke(
+def analyze_karaoke(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     no_falsetto: bool = Form(False),
     user: dict | None = Depends(get_optional_user),
-):
+) -> dict:
     """カラオケ音源用（MelBandRoformers 分離あり）。ログイン済みなら履歴に自動保存。"""
     start_time = time.time()
     print(f"\n{'#'*60}")
@@ -384,73 +416,74 @@ async def analyze_karaoke(
     separated_request_dir = os.path.join(SEPARATED_DIR, request_id)
 
     try:
-        await _validate_upload_file(file)
+        with _analysis_slot(_karaoke_analysis_slots, "カラオケ音源"):
+            _validate_upload_file(file)
 
-        print(f"[API] [1/5] ファイル保存中...")
-        # _validate_upload_file() 通過後は必ず有効な拡張子が取れる（空文字は 400 で弾かれる）
-        ext = os.path.splitext(file.filename or "")[1]
-        temp_input_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}{ext}")
-        with open(temp_input_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        print(f"[API] [1/5] 保存完了: {temp_input_path}")
+            print(f"[API] [1/5] ファイル保存中...")
+            # _validate_upload_file() 通過後は必ず有効な拡張子が取れる（空文字は 400 で弾かれる）
+            ext = os.path.splitext(file.filename or "")[1]
+            temp_input_path = os.path.join(UPLOAD_DIR, f"{uuid.uuid4()}{ext}")
+            with open(temp_input_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            print(f"[API] [1/5] 保存完了: {temp_input_path}")
 
-        print(f"\n[API] [2/5] 高品質WAV変換中...")
-        t_step = time.time()
-        converted_wav_path = convert_to_wav_hq(temp_input_path, output_dir=UPLOAD_DIR)
-        print(f"[API] [2/5] 変換完了: {converted_wav_path} ({time.time() - t_step:.1f}s)")
+            print(f"\n[API] [2/5] 高品質WAV変換中...")
+            t_step = time.time()
+            converted_wav_path = convert_to_wav_hq(temp_input_path, output_dir=UPLOAD_DIR)
+            print(f"[API] [2/5] 変換完了: {converted_wav_path} ({time.time() - t_step:.1f}s)")
 
-        print(f"\n[API] [3/5] MelBandRoformers ボーカル分離実行中...")
-        t_step = time.time()
-        vocal_path = separate_vocals(
-            converted_wav_path,
-            output_dir=separated_request_dir,
-            ultra_fast_mode=True,
-        )
-        print(f"[API] [3/5] MelBandRoformers 分離完了: {vocal_path} ({time.time() - t_step:.1f}s)")
+            print(f"\n[API] [3/5] MelBandRoformers ボーカル分離実行中...")
+            t_step = time.time()
+            vocal_path = separate_vocals(
+                converted_wav_path,
+                output_dir=separated_request_dir,
+                ultra_fast_mode=True,
+            )
+            print(f"[API] [3/5] MelBandRoformers 分離完了: {vocal_path} ({time.time() - t_step:.1f}s)")
 
-        print(f"\n[API] [4/5] DeepFilterNetノイズ除去実行中...")
-        t_step = time.time()
-        vocal_path = apply_deepfilter(vocal_path, attenuation_limit_db=DFN_ATTENUATION_LIMIT_DB)
-        print(f"[API] [4/5] ノイズ除去完了: {vocal_path} ({time.time() - t_step:.1f}s)")
+            print(f"\n[API] [4/5] DeepFilterNetノイズ除去実行中...")
+            t_step = time.time()
+            vocal_path = apply_deepfilter(vocal_path, attenuation_limit_db=DFN_ATTENUATION_LIMIT_DB)
+            print(f"[API] [4/5] ノイズ除去完了: {vocal_path} ({time.time() - t_step:.1f}s)")
 
-        print(f"\n[API] [5/5] 音域解析実行中...")
-        t_step = time.time()
-        result = analyze(vocal_path, already_separated=True, no_falsetto=no_falsetto)
-        print(f"[API] [5/5] 音域解析完了 ({time.time() - t_step:.1f}s)")
-        if "error" in result:
-            print(f"[WARN] [API] 解析エラー詳細: {result['error']}")
-            raise HTTPException(status_code=422, detail=result["error"])
+            print(f"\n[API] [5/5] 音域解析実行中...")
+            t_step = time.time()
+            result = analyze(vocal_path, already_separated=True, no_falsetto=no_falsetto)
+            print(f"[API] [5/5] 音域解析完了 ({time.time() - t_step:.1f}s)")
+            if "error" in result:
+                print(f"[WARN] [API] 解析エラー詳細: {result['error']}")
+                raise HTTPException(status_code=422, detail=result["error"])
 
-        print(
-            "[INFO] 最低音/最高音: "
-            f"{result.get('overall_min', 'unknown')}({result.get('overall_min_hz', 0.0):.1f}Hz), "
-            f"{result.get('overall_max', 'unknown')}({result.get('overall_max_hz', 0.0):.1f}Hz)"
-        )
+            print(
+                "[INFO] 最低音/最高音: "
+                f"{result.get('overall_min', 'unknown')}({result.get('overall_min_hz', 0.0):.1f}Hz), "
+                f"{result.get('overall_max', 'unknown')}({result.get('overall_max_hz', 0.0):.1f}Hz)"
+            )
 
-        debug_paths = _save_debug_outputs(
-            source_wav_path=vocal_path,
-            result=result,
-            request_id=request_id,
-        )
-        if debug_paths:
-            print("[INFO] debugfile 保存完了:")
-            for p in debug_paths:
-                print(f"  - {p}")
+            debug_paths = _save_debug_outputs(
+                source_wav_path=vocal_path,
+                result=result,
+                request_id=request_id,
+            )
+            if debug_paths:
+                print("[INFO] debugfile 保存完了:")
+                for p in debug_paths:
+                    print(f"  - {p}")
 
-        result = _enrich_result(result, user)
-        _auto_save_analysis(user, result, "karaoke", file.filename)
+            result = _enrich_result(result, user)
+            _auto_save_analysis(user, result, "karaoke", file.filename)
 
-        elapsed_time = time.time() - start_time
-        minutes = int(elapsed_time // 60)
-        seconds = int(elapsed_time % 60)
-        time_str = f"{minutes}分{seconds}秒" if minutes > 0 else f"{seconds}秒"
-        print(f"\n[API] カラオケ音源分析完了 (処理時間: {time_str})")
-        if elapsed_time > 240:
-            print(f"[WARN] 処理時間が長いです ({time_str})")
-        print(f"{'#'*60}\n")
+            elapsed_time = time.time() - start_time
+            minutes = int(elapsed_time // 60)
+            seconds = int(elapsed_time % 60)
+            time_str = f"{minutes}分{seconds}秒" if minutes > 0 else f"{seconds}秒"
+            print(f"\n[API] カラオケ音源分析完了 (処理時間: {time_str})")
+            if elapsed_time > ANALYSIS_TIME_WARNING_SEC:
+                print(f"[WARN] 処理時間が長いです ({time_str})")
+            print(f"{'#'*60}\n")
 
-        background_tasks.add_task(cleanup_files, temp_input_path, converted_wav_path, separated_request_dir)
-        return result
+            background_tasks.add_task(cleanup_files, temp_input_path, converted_wav_path, separated_request_dir)
+            return result
 
     except HTTPException:
         background_tasks.add_task(cleanup_files, temp_input_path, converted_wav_path, separated_request_dir)

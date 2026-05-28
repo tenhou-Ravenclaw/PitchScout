@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import Callable
 
 import numpy as np
 import soundfile as sf
@@ -17,12 +18,14 @@ import torchaudio
 import librosa
 import noisereduce as nr
 
+from config import VAD_CHUNK_SIZE
+
 # ============================================================
 # Silero VAD シングルトン（モジュールレベル）
 # main.py の lifespan で init_silero_vad() を呼び起動時に初期化する。
 # ============================================================
-_vad_model = None
-_vad_get_timestamps = None
+_vad_model: torch.nn.Module | None = None
+_vad_get_timestamps: Callable | None = None
 _vad_lock = threading.Lock()  # 遅延初期化の競合状態を防止
 _vad_fallback_warned = False   # 未初期化フォールバック警告を一度だけ出すためのフラグ
 
@@ -87,7 +90,7 @@ def score_frame_vad(frame: np.ndarray, sr: int = 16000) -> float:
             _vad_fallback_warned = True
         return 1.0  # モデル未初期化: 全フレームを音声とみなしフィルタを無効化
 
-    chunk_size = 512  # Silero VAD が期待するチャンクサイズ (16kHz で 32ms)
+    chunk_size = VAD_CHUNK_SIZE  # Silero VAD が期待するチャンクサイズ (16kHz で 32ms)
     scores: list[float] = []
 
     for start in range(0, len(frame), chunk_size):
@@ -110,8 +113,8 @@ def score_frame_vad(frame: np.ndarray, sr: int = 16000) -> float:
 # DeepFilterNet シングルトン（モジュールレベル）
 # main.py の lifespan で init_deepfilter() を呼び起動時に初期化する。
 # ============================================================
-_df_model = None
-_df_state = None
+_df_model: object | None = None
+_df_state: object | None = None
 _df_lock = threading.Lock()  # 遅延初期化の競合状態を防止
 
 

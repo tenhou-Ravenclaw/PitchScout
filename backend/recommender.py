@@ -18,7 +18,20 @@ import math
 import numpy as np
 from note_converter import NOTE_TABLE, hz_to_label_and_hz
 from db.songs import get_connection
-from config import DISCOVERY_SLOTS, FAV_MAX_SLOTS, MAX_PER_ARTIST
+from config import (
+    CHALLENGE_HIGH_PENALTY_MAX,
+    CHALLENGE_LOW_PENALTY_MAX,
+    CHALLENGE_SCORE_MAX,
+    CHALLENGE_SCORE_MIN,
+    DISCOVERY_SLOTS,
+    FAV_MAX_SLOTS,
+    MAX_PER_ARTIST,
+    RECOMMEND_CENTER_DIFF_WEIGHT,
+    RECOMMEND_HIGH_PENALTY_WEIGHT,
+    RECOMMEND_LOW_PENALTY_WEIGHT,
+    RECOMMEND_MIN_SCORE,
+    RECOMMEND_PERFECT_BONUS,
+)
 
 # ============================================================
 # カラオケ表記 ↔ Hz 変換
@@ -91,6 +104,33 @@ def _semitones(hz1: float, hz2: float) -> float:
 # 推薦配分定数は config.py で一元管理 (DISCOVERY_SLOTS, FAV_MAX_SLOTS, MAX_PER_ARTIST)
 
 
+def _pick_with_diversity(candidates: list[dict], n: int) -> list[dict]:
+    """
+    アーティスト多様性フィルタ付きで n 曲選ぶ。
+
+    同一アーティストの曲が MAX_PER_ARTIST 曲を超えて選ばれないよう制限し、
+    推薦結果の多様性を確保する。candidates はスコア降順でソート済みを前提とする。
+
+    Args:
+        candidates: 推薦候補の楽曲リスト（スコア降順ソート済み）。
+        n: 選択する最大曲数。
+
+    Returns:
+        アーティスト多様性を考慮して選んだ楽曲リスト（最大 n 曲）。
+    """
+    result_list: list[dict] = []
+    artist_count: dict[str, int] = {}
+    for c in candidates:
+        name = c["artist"]
+        if artist_count.get(name, 0) >= MAX_PER_ARTIST:
+            continue
+        artist_count[name] = artist_count.get(name, 0) + 1
+        result_list.append(c)
+        if len(result_list) >= n:
+            break
+    return result_list
+
+
 def recommend_songs(
     chest_min_hz: float,
     chest_max_hz: float,
@@ -156,14 +196,14 @@ def recommend_songs(
 
             # スコア計算
             score = 100.0
-            score -= low_penalty * 6.0
-            score -= high_penalty * 8.0
-            score -= center_diff * 2.0
+            score -= low_penalty * RECOMMEND_LOW_PENALTY_WEIGHT
+            score -= high_penalty * RECOMMEND_HIGH_PENALTY_WEIGHT
+            score -= center_diff * RECOMMEND_CENTER_DIFF_WEIGHT
 
             if low_penalty == 0 and high_penalty == 0:
-                score += 5.0
+                score += RECOMMEND_PERFECT_BONUS
 
-            if score <= 30:
+            if score <= RECOMMEND_MIN_SCORE:
                 continue
 
             entry = {
@@ -193,39 +233,13 @@ def recommend_songs(
 
         discovery_slots = limit - fav_slots
 
-        def pick_with_diversity(candidates: list[dict], n: int) -> list[dict]:
-            """
-            アーティスト多様性フィルタ付きで n 曲選ぶ。
-
-            同一アーティストの曲が MAX_PER_ARTIST 曲を超えて選ばれないよう制限し、
-            推薦結果の多様性を確保する。candidates はスコア降順でソート済みを前提とする。
-
-            Args:
-                candidates: 推薦候補の楽曲リスト（スコア降順ソート済み）。
-                n: 選択する最大曲数。
-
-            Returns:
-                アーティスト多様性を考慮して選んだ楽曲リスト（最大 n 曲）。
-            """
-            result_list: list[dict] = []
-            artist_count: dict[str, int] = {}
-            for c in candidates:
-                name = c["artist"]
-                if artist_count.get(name, 0) >= MAX_PER_ARTIST:
-                    continue
-                artist_count[name] = artist_count.get(name, 0) + 1
-                result_list.append(c)
-                if len(result_list) >= n:
-                    break
-            return result_list
-
         # お気に入りアーティスト枠
-        fav_picks = pick_with_diversity(fav_candidates, fav_slots)
+        fav_picks = _pick_with_diversity(fav_candidates, fav_slots)
         fav_artist_names_used = {c["artist"] for c in fav_picks}
 
         # ディスカバリー枠: お気に入りアーティストを除外
         discovery_pool = [c for c in normal_candidates if c["artist"] not in fav_artist_names_used]
-        discovery_picks = pick_with_diversity(discovery_pool, discovery_slots)
+        discovery_picks = _pick_with_diversity(discovery_pool, discovery_slots)
 
         # お気に入り枠が埋まらなかった場合は normal で補完
         shortfall = fav_slots - len(fav_picks)
@@ -235,12 +249,13 @@ def recommend_songs(
                 if c["artist"] not in fav_artist_names_used
                 and c not in discovery_picks
             ]
-            extra_picks = pick_with_diversity(extra_pool, shortfall)
+            extra_picks = _pick_with_diversity(extra_pool, shortfall)
             discovery_picks.extend(extra_picks)
 
         combined = fav_picks + discovery_picks
 
         # --- キー変更おすすめを付与、artist_id を削除 ---
+        fav_artist_set = {entry["artist"] for entry in fav_picks}
         result_final = []
         for c in combined:
             key_info = recommend_key_for_song(
@@ -249,10 +264,7 @@ def recommend_songs(
             )
             c.update(key_info)
             c.pop("artist_id", None)
-            # お気に入りアーティストの曲かどうかフラグを付ける
-            c["is_favorite_artist"] = c["artist"] in {
-                name for entry in fav_picks for name in [entry["artist"]]
-            }
+            c["is_favorite_artist"] = c["artist"] in fav_artist_set
             result_final.append(c)
 
         return result_final[:limit]
@@ -340,17 +352,17 @@ def recommend_challenge_songs(
             center_diff = abs(_semitones(chest_avg_hz, song_center)) if chest_avg_hz > 0 else 0.0
 
             score = 100.0
-            score -= low_penalty * 6.0
-            score -= high_penalty * 8.0
-            score -= center_diff * 2.0
+            score -= low_penalty * RECOMMEND_LOW_PENALTY_WEIGHT
+            score -= high_penalty * RECOMMEND_HIGH_PENALTY_WEIGHT
+            score -= center_diff * RECOMMEND_CENTER_DIFF_WEIGHT
 
-            # チャレンジ曲: スコア 5〜30 かつ低音ペナルティが軽微・高音ペナルティが現実的な範囲
-            if not (5.0 < score <= 30.0):
+            # チャレンジ曲: スコア CHALLENGE_SCORE_MIN〜MAX かつペナルティが現実的な範囲
+            if not (CHALLENGE_SCORE_MIN < score <= CHALLENGE_SCORE_MAX):
                 continue
-            if low_penalty > 3.0:
+            if low_penalty > CHALLENGE_LOW_PENALTY_MAX:
                 continue  # 低音が大幅不足な曲は喉への負担が大きいため除外
-            if high_penalty > 5.0:
-                continue  # 5半音以上高い曲は短期練習で届かないため除外
+            if high_penalty > CHALLENGE_HIGH_PENALTY_MAX:
+                continue  # 高音ペナルティが上限を超える曲は短期練習で届かないため除外
 
             key_info = recommend_key_for_song(
                 r["lowest_note"], r["highest_note"],
@@ -371,17 +383,9 @@ def recommend_challenge_songs(
         candidates.sort(key=lambda x: x["match_score"], reverse=True)
 
         # アーティスト多様性フィルタ
-        result: list[dict] = []
-        artist_count: dict[str, int] = {}
-        for c in candidates:
-            name = c["artist"]
-            if artist_count.get(name, 0) >= MAX_PER_ARTIST:
-                continue
-            artist_count[name] = artist_count.get(name, 0) + 1
+        result = _pick_with_diversity(candidates, limit)
+        for c in result:
             c.pop("artist_id", None)
-            result.append(c)
-            if len(result) >= limit:
-                break
 
         return result
     finally:

@@ -16,32 +16,34 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup")
-def signup(data: SignUpRequest):
+def signup(data: SignUpRequest) -> dict:
     """メールアドレスでユーザー登録"""
     return sign_up_with_email(data.email, data.password, data.display_name)
 
 
 @router.post("/signin")
-def signin(data: SignInRequest):
+def signin(data: SignInRequest) -> dict:
     """メールアドレスでログイン"""
     return sign_in_with_email(data.email, data.password)
 
 
 @router.post("/signout")
-def signout_endpoint(user: dict = Depends(get_current_user)):
+def signout_endpoint(user: dict = Depends(get_current_user)) -> dict:
     """ログアウト"""
-    sign_out()
+    success = sign_out(str(user.get("__access_token", "")))
+    if not success:
+        raise HTTPException(status_code=400, detail="ログアウトに失敗しました")
     return {"message": "ログアウトしました"}
 
 
 @router.post("/refresh")
-def refresh(data: RefreshTokenRequest):
+def refresh(data: RefreshTokenRequest) -> dict:
     """セッションをリフレッシュ"""
     return refresh_session(data.refresh_token)
 
 
 @router.post("/reset-password")
-def reset_password(data: PasswordResetRequest):
+def reset_password(data: PasswordResetRequest) -> dict:
     """パスワードリセットメールを送信"""
     success = request_password_reset(data.email)
     if success:
@@ -53,9 +55,9 @@ def reset_password(data: PasswordResetRequest):
 def update_password_endpoint(
     data: PasswordUpdateRequest,
     user: dict = Depends(get_current_user),
-):
+) -> dict:
     """パスワードを更新（要ログイン）"""
-    success = update_password(user.get("id"), data.new_password)
+    success = update_password(str(user.get("__access_token", "")), data.new_password)
     if success:
         return {"message": "パスワードを更新しました"}
     raise HTTPException(status_code=400, detail="パスワード更新に失敗しました")

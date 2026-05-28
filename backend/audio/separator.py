@@ -12,6 +12,8 @@ import shutil
 import threading
 from pathlib import Path
 
+from config import CONVERTER_HQ_SR
+
 _MODEL_FILENAME_CANDIDATES: list[str] = [
     # audio-separator 同梱モデル（取得先メタデータを内部管理）
     "vocals_mel_band_roformer.ckpt",
@@ -131,7 +133,7 @@ def _load_separator(output_dir: str, model_file_dir: str) -> object:
         output_format="WAV",
         output_single_stem="Vocals",
         model_file_dir=model_file_dir,
-        sample_rate=44100,
+        sample_rate=CONVERTER_HQ_SR,
     )
 
 

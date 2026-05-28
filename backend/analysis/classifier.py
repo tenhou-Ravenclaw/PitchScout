@@ -21,6 +21,7 @@ from config import (
     HNR_THRESHOLD_TRANSITION,
     REGISTER_LOG_LEVEL,
     RF_CHEST_THRESHOLD,
+    SEGMENT_DECISION_THRESHOLD,
 )
 
 
@@ -116,7 +117,7 @@ def classify_segment(
     # フレーム比率と RF を平均して最終信頼度とする
     combined_chest = (frame_chest_ratio + rf_chest_probability) / 2.0
 
-    if combined_chest >= 0.5:
+    if combined_chest >= SEGMENT_DECISION_THRESHOLD:
         return "chest", combined_chest
     return "falsetto", 1.0 - combined_chest
 

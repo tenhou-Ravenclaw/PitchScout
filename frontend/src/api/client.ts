@@ -1,5 +1,5 @@
 import axios, { InternalAxiosRequestConfig } from "axios";
-import { supabase } from "../supabaseClient";
+import { getSupabaseAccessToken, setCachedAccessToken, supabase } from "../supabaseClient";
 
 /** リトライフラグを持つ拡張リクエスト設定 */
 interface RetryableConfig extends InternalAxiosRequestConfig {
@@ -15,13 +15,10 @@ export const API = axios.create({
 
 /** 認証トークンを自動付与するリクエストインターセプター */
 API.interceptors.request.use(async (config) => {
-  if (supabase) {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (token) {
-      config.headers = config.headers || {};
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+  const token = await getSupabaseAccessToken();
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -44,16 +41,24 @@ API.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
-      const { data, error: refreshError } = await supabase.auth.refreshSession();
-      if (!refreshError && data.session) {
-        // リフレッシュ成功: 新しいトークンで元のリクエストをリトライ
-        originalRequest.headers = originalRequest.headers || {};
-        originalRequest.headers.Authorization = `Bearer ${data.session.access_token}`;
-        return API(originalRequest);
-      }
+      try {
+        const { data, error: refreshError } = await supabase.auth.refreshSession();
+        if (!refreshError && data.session) {
+          // リフレッシュ成功: 新しいトークンで元のリクエストをリトライ
+          setCachedAccessToken(data.session.access_token);
+          originalRequest.headers = originalRequest.headers || {};
+          originalRequest.headers.Authorization = `Bearer ${data.session.access_token}`;
+          return API(originalRequest);
+        }
 
-      // リフレッシュ失敗: セッションをクリア（ログアウト状態にする）
-      await supabase.auth.signOut();
+        setCachedAccessToken(null);
+        await supabase.auth.signOut().catch((signOutError: unknown) => {
+          console.warn("[WARN] Supabase セッションのクリアに失敗しました:", signOutError);
+        });
+      } catch (refreshError) {
+        setCachedAccessToken(null);
+        console.warn("[WARN] Supabase セッションのリフレッシュに失敗しました:", refreshError);
+      }
     }
 
     return Promise.reject(error);

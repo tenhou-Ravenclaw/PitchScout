@@ -5,7 +5,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 // Supabase公式のUser型と、設定済みのクライアントを読み込みます
 import { User } from "@supabase/supabase-js";
-import { supabase } from "../supabaseClient";
+import { setCachedAccessToken, supabase } from "../supabaseClient";
 
 /** ── 認証データの設計図 ── */
 interface AuthContextType {
@@ -52,11 +52,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       .getSession()
       .then(({ data: { session } }) => {
         clearTimeout(sessionTimeout);
+        setCachedAccessToken(session?.access_token);
         setUser(session?.user ?? null);
         setIsLoading(false);
       })
       .catch((error: unknown) => {
         clearTimeout(sessionTimeout);
+        setCachedAccessToken(null);
         console.error("[ERROR] 認証セッションの取得に失敗しました:", error);
         setIsLoading(false);
       });
@@ -65,6 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         clearTimeout(sessionTimeout);
+        setCachedAccessToken(session?.access_token);
         setUser(session?.user ?? null);
         setIsLoading(false);
       }
@@ -99,7 +102,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   /** ── ログアウトの実行 ── */
   const logout = useCallback(async () => {
     if (!supabase) return;
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.warn("[WARN] Supabase ログアウトに失敗しました:", error);
+    }
+    setCachedAccessToken(null);
     setUser(null);
   }, []);
 

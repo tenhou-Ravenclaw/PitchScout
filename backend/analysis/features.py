@@ -19,7 +19,7 @@ ML 学習スクリプト (ml/train_classifier.py, ml/bootstrap_labels.py 等) �
 
 import numpy as np
 import librosa
-from config import FFT_SPECTRUM_SIZE
+from config import FFT_SPECTRUM_SIZE, HARMONIC_NOISE_FLOOR_DB
 
 FEATURE_NAMES = ["h1_h2", "hcount", "slope", "hnr", "centroid_r", "f0"]
 N_FEATURES = len(FEATURE_NAMES)
@@ -127,10 +127,10 @@ def extract_features(y: np.ndarray, sr: int, f0: float) -> np.ndarray | None:
         return None
 
     # 有効倍音本数
-    hcount = sum(1 for db in H[:10] if db > noise_db + 8.0)
+    hcount = sum(1 for db in H[:10] if db > noise_db + HARMONIC_NOISE_FLOOR_DB)
 
     # 倍音減衰スロープ
-    slope_pts = [(i + 1, H[i]) for i in range(8) if H[i] > noise_db + 8.0]
+    slope_pts = [(i + 1, H[i]) for i in range(8) if H[i] > noise_db + HARMONIC_NOISE_FLOOR_DB]
     if len(slope_pts) >= 3:
         xs = np.array([p[0] for p in slope_pts], dtype=float)
         ys = np.array([p[1] for p in slope_pts], dtype=float)

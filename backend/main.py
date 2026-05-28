@@ -3,7 +3,7 @@ warnings.filterwarnings("ignore")
 
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -46,14 +46,27 @@ app.add_middleware(
 
 # ── アップロードサイズ制限ミドルウェア ────────────────────────
 @app.middleware("http")
-async def limit_upload_size(request: Request, call_next):
+async def limit_upload_size(request: Request, call_next) -> Response:
     """Content-Length と実測サイズの両方で上限（50MB）を超えるリクエストを拒否する。"""
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_UPLOAD_BYTES:
-        return JSONResponse(
-            status_code=413,
-            content={"error": f"ファイルサイズが上限（{MAX_UPLOAD_BYTES // (1024 * 1024)}MB）を超えています"},
-        )
+    if content_length:
+        try:
+            content_length_bytes = int(content_length)
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Content-Length ヘッダーが不正です"},
+            )
+        if content_length_bytes < 0:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Content-Length ヘッダーが不正です"},
+            )
+        if content_length_bytes > MAX_UPLOAD_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"error": f"ファイルサイズが上限（{MAX_UPLOAD_BYTES // (1024 * 1024)}MB）を超えています"},
+            )
 
     received_size = 0
     original_receive = request.receive

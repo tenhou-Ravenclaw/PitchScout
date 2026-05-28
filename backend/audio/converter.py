@@ -11,6 +11,8 @@ import subprocess
 import uuid
 from functools import lru_cache
 
+from config import CONVERTER_MONO_SR, CONVERTER_HQ_SR
+
 
 @lru_cache(maxsize=1)
 def find_ffmpeg() -> str | None:
@@ -103,7 +105,7 @@ def convert_to_wav(input_path: str, output_dir: str = "uploads") -> str:
         ffmpeg_bin, "-y",
         "-i", input_path,
         "-vn",
-        "-ar", "16000",   # WORLD (pyworld) は16kHzで十分
+        "-ar", str(CONVERTER_MONO_SR),   # WORLD (pyworld) は16kHzで十分
         "-ac", "1",        # モノラル
         output_path,
     ]
@@ -139,7 +141,7 @@ def convert_to_wav_hq(input_path: str, output_dir: str = "uploads") -> str:
         ffmpeg_bin, "-y",
         "-i", input_path,
         "-vn",
-        "-ar", "44100",   # MelBandRoformers が期待するサンプリングレート
+        "-ar", str(CONVERTER_HQ_SR),   # MelBandRoformers が期待するサンプリングレート
         "-ac", "2",        # ステレオ（MelBandRoformers はステレオで最適に動作）
         "-sample_fmt", "s16",  # 16bit PCM
         output_path,

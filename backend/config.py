@@ -5,6 +5,30 @@ pipeline.py / classifier.py / feature_extractor.py で使用する閾値・パ�
 チューニング時はこのファイルのみ変更すればよい。
 """
 
+import os
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    """環境変数から整数を読み込む。無効値なら default を返す。"""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+        return value if value >= minimum else default
+    except (TypeError, ValueError):
+        print(f"[WARN] {name} の値が不正です ('{raw}')。デフォルト {default} を使用します")
+        return default
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    """環境変数から真偽値を読み込む。"""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # === 音高検出 ===
 VOICE_MIN_HZ = 65.0       # 人声の絶対下限 (C2付近)
 VOICE_MAX_HZ = 1324.0     # 人声の絶対上限 (E6付近)
@@ -97,8 +121,50 @@ MAX_PER_ARTIST: int = 2        # 同一アーティスト最大曲数（多様�
 # routers/users.py の安定音域計算で使用。直近N件中この回数以上出現したラベルを安定とみなす。
 STABLE_THRESHOLD: int = 4
 
+# === WORLD 解析パラメータ ===
+WORLD_SAMPLE_RATE: int = 16000       # WORLD (pyworld) の解析サンプリングレート
+WORLD_FRAME_PERIOD_MS: float = 5.0   # WORLD のフレーム周期 (ミリ秒)
+
+# === 音声変換サンプリングレート ===
+CONVERTER_MONO_SR: int = 16000       # マイク録音: 16kHz モノラル
+CONVERTER_HQ_SR: int = 44100         # カラオケ: 44.1kHz ステレオ
+
+# === Silero VAD ===
+VAD_CHUNK_SIZE: int = 512            # チャンクサイズ (16kHz で 32ms)
+
+# === 倍音解析ノイズフロア ===
+HARMONIC_NOISE_FLOOR_DB: float = 8.0  # 有効倍音判定の閾値 (ノイズフロア + この値)
+
+# === レジスター判定: セグメント決定 ===
+SEGMENT_DECISION_THRESHOLD: float = 0.5  # フレーム比率 + RF 合成値の地声/裏声境界
+
+# === 推薦スコアリング ===
+RECOMMEND_LOW_PENALTY_WEIGHT: float = 6.0   # 最低音超過ペナルティ重み
+RECOMMEND_HIGH_PENALTY_WEIGHT: float = 8.0  # 最高音超過ペナルティ重み
+RECOMMEND_CENTER_DIFF_WEIGHT: float = 2.0   # 中心音ずれペナルティ重み
+RECOMMEND_PERFECT_BONUS: float = 5.0        # 完全一致ボーナス
+RECOMMEND_MIN_SCORE: float = 30.0           # 推薦対象の最低スコア
+
+# === チャレンジ曲推薦 ===
+CHALLENGE_SCORE_MIN: float = 5.0            # チャレンジ曲の最低スコア
+CHALLENGE_SCORE_MAX: float = 30.0           # チャレンジ曲の最高スコア
+CHALLENGE_LOW_PENALTY_MAX: float = 3.0      # 低音ペナルティ上限（半音）
+CHALLENGE_HIGH_PENALTY_MAX: float = 5.0     # 高音ペナルティ上限（半音）
+
+# === 解析時間警告 ===
+ANALYSIS_TIME_WARNING_SEC: int = 240        # 処理時間警告閾値 (秒)
+
+# === 解析同時実行制限 ===
+# 重い音声解析で API worker を詰まらせないためのプロセス内上限。
+# 複数 worker 構成では worker ごとにこの上限が適用される。
+MAX_CONCURRENT_VOICE_ANALYSES: int = _env_int("MAX_CONCURRENT_VOICE_ANALYSES", 2)
+MAX_CONCURRENT_KARAOKE_ANALYSES: int = _env_int("MAX_CONCURRENT_KARAOKE_ANALYSES", 1)
+
+# === デバッグ音声保存 ===
+# ユーザー音声を含むため、本番では既定で保存しない。必要な時だけ明示的に有効化する。
+SAVE_DEBUG_AUDIO: bool = _env_bool("PITCHSCOUT_SAVE_DEBUG_AUDIO", False)
+
 # === ログ制御 ===
-import os
 # REGISTER_LOG_LEVEL: 0=なし, 1=サマリーのみ(デフォルト)
 _raw_log_level = os.getenv("REGISTER_LOG_LEVEL", "1")
 try:

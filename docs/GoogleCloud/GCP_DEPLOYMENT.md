@@ -342,10 +342,10 @@ nano .env
 ```env
 # Supabase設定
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_KEY=your-backend-supabase-key
 
 # JWT Secret（強力なランダム文字列を生成）
-JWT_SECRET=your-super-secure-random-jwt-secret-change-this
+JWT_SECRET=<generated-secret>
 
 # 環境
 ENVIRONMENT=production
@@ -432,7 +432,7 @@ nano .env.production
 
 ```env
 REACT_APP_SUPABASE_URL=https://your-project.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+REACT_APP_SUPABASE_ANON_KEY=your-supabase-anon-key
 REACT_APP_API_URL=http://YOUR_EXTERNAL_IP:8000
 ```
 

@@ -195,7 +195,7 @@ sudo apt-get install -y \
 5. **APIキーを取得**:
    - Settings > API から以下をコピー:
      - `Project URL`: `https://xxxxx.supabase.co`
-     - `anon public key`: `eyJhbGc...`
+     - `anon public key`: `your-supabase-anon-key`
 
 6. **データベースセットアップ**:
    - SQL Editor を開く
@@ -290,10 +290,10 @@ nano .env  # または vim .env
 ```env
 # Supabase設定（必須）
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_KEY=your-backend-supabase-key
 
 # JWT設定（必須・本番環境では強力なランダム文字列に変更）
-JWT_SECRET=your-super-secure-random-jwt-secret-change-this-in-production
+JWT_SECRET=<generated-secret>
 
 # オプション設定
 # ENVIRONMENT=production
@@ -363,7 +363,7 @@ nano .env.production
 
 ```env
 REACT_APP_SUPABASE_URL=https://your-project.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+REACT_APP_SUPABASE_ANON_KEY=your-supabase-anon-key
 REACT_APP_API_URL=https://api.your-domain.com
 ```
 
