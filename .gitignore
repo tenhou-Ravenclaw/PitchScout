@@ -21,5 +21,4 @@ backend/separated/
 backend/debugfile/
 *.wav
 *.WAV
-*.wav
 *.ckpt

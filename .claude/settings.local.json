@@ -2,16 +2,7 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "mcp__sequential-thinking__sequentialthinking",
-      "mcp__ide__getDiagnostics",
-      "Bash(brew upgrade:*)",
-      "Bash(npm update:*)",
-      "Bash(ls /Users/kanade/Desktop/PitchScout/backend/venv/bin/python*)",
-      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/python -c \"import sys; print\\(sys.executable\\)\")",
-      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/pip install:*)",
-      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/python:*)",
-      "Bash(/Users/kanade/Desktop/PitchScout/backend/venv/bin/pip list:*)",
-      "Bash(python3:*)"
+      "mcp__sequential-thinking__sequentialthinking"
     ],
     "deny": [
       "Read(**/.env)",
@@ -30,40 +21,23 @@
   "mcpServers": {
     "context7": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@upstash/context7-mcp"
-      ]
+      "args": ["-y", "@upstash/context7-mcp"]
     },
     "sequential-thinking": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-sequential-thinking"
-      ]
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
     },
     "playwright": {
       "command": "npx",
-      "args": [
-        "-y",
-        "@playwright/mcp@latest"
-      ]
+      "args": ["-y", "@playwright/mcp@latest"]
     },
     "chrome-devtools": {
       "command": "npx",
-      "args": [
-        "-y",
-        "chrome-devtools-mcp"
-      ]
+      "args": ["-y", "chrome-devtools-mcp"]
     },
     "serena": {
       "command": "uvx",
-      "args": [
-        "--from",
-        "serena",
-        "serena",
-        "start-mcp-server"
-      ]
+      "args": ["--from", "serena", "serena", "start-mcp-server"]
     }
   }
 }

@@ -32,7 +32,7 @@ from analysis.feature_extractor import (
     extract_segment_features,
 )
 from analysis.scoring import analyze_singing_ability
-from config import FALSETTO_HARD_MIN_HZ, VOICE_MAX_HZ, VOICE_MIN_HZ
+from config import FALSETTO_HARD_MIN_HZ, REGISTER_LOG_LEVEL, VOICE_MAX_HZ, VOICE_MIN_HZ
 from note_converter import hz_to_label_and_hz
 
 _MODEL_PATH = os.path.join(
@@ -314,7 +314,8 @@ def analyze(wav_path: str, already_separated: bool = False, no_falsetto: bool = 
     try:
         segment_features, feature_names, world = extract_segment_features(y=y, sr=sr)
         frame_features = extract_frame_acoustic_features(world)
-        print(f"[DEBUG] 特徴次元: {len(segment_features)}")
+        if REGISTER_LOG_LEVEL >= 2:
+            print(f"[DEBUG] 特徴次元: {len(segment_features)}")
     except Exception as exc:
         return {"error": f"WORLD 特徴抽出に失敗しました: {exc}"}
 

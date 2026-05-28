@@ -31,7 +31,7 @@ interface SearchBarProps {
 
 /**
  * SearchBar Component
- * 
+ *
  * @example
  * <SearchBar
  *   value={searchInput}

@@ -68,7 +68,7 @@ const Header: React.FC<HeaderProps> = ({
         )}
         {/** hidden md:flex: スマホでは非表示、PCサイズで表示します */}
         <header className="hidden md:flex items-center justify-between px-8 py-4 bg-slate-900/80 backdrop-blur-md border-b border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.15)] sticky top-0 z-50">
-            
+
             {/* ── 左端：ロゴエリア ── */}
             <div className="flex items-center gap-4 cursor-pointer group" onClick={() => navigate("/")}>
                 <img src={logo} alt="App Logo" className="w-10 h-10 rounded-lg shadow-lg object-cover ring-2 ring-cyan-500/50 group-hover:ring-cyan-400 transition-all" />
@@ -99,7 +99,7 @@ const Header: React.FC<HeaderProps> = ({
 
             {/* ── 右端：検索・ユーザーエリア ── */}
             <div className="flex items-center gap-6">
-                
+
                 {/* 検索バー（大きな画面でのみ表示） */}
                 <div className="relative hidden lg:block" role="search">
                     <input

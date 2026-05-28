@@ -73,7 +73,7 @@ const Layout: React.FC = () => {
   return (
     /** pb-24: スマホ版ナビバーが画面下部に重ならないように余白を作っています */
     <div className="pb-24 md:pb-0 min-h-[100dvh] relative bg-slate-900 overflow-hidden font-sans selection:bg-pink-500 selection:text-white text-slate-200">
-      
+
       {/* ── 全画面共通の背景グラデーション装飾 ── */}
       <div className="fixed inset-0 z-0 opacity-20 pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[120%] h-[40%] bg-gradient-to-r from-red-600 to-transparent -skew-y-3 transform" />

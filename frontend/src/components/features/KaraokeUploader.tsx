@@ -18,11 +18,11 @@ interface Props {
 
 const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
   // ── 共有状態 (Context) ──
-  const { 
-    isAnalyzing: loading, setIsAnalyzing: setLoading, 
-    progress, setProgress, 
+  const {
+    isAnalyzing: loading, setIsAnalyzing: setLoading,
+    progress, setProgress,
     stepLabel, setStepLabel,
-    startAnalysisTimer, stopAnalysisTimer 
+    startAnalysisTimer, stopAnalysisTimer
   } = useAnalysis();
 
   // ── ローカル状態 (State) ──
@@ -66,7 +66,7 @@ const KaraokeUploader: React.FC<Props> = ({ onResult }) => {
     try {
       // サーバーへファイルを送信して解析を依頼
       const data = await analyzeKaraoke(file, file.name, noFalsetto);
-      
+
       stopAnalysisTimer(); // タイマー停止
       setProgress(100);    // プログレスバーを100%に
       setStepLabel("完了！");

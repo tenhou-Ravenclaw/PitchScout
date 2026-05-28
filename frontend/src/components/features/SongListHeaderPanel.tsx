@@ -49,7 +49,7 @@ const SongListHeaderPanel: React.FC<SongListHeaderPanelProps> = ({
         onSubmit={onSearchSubmit}
         placeholder="楽曲名・アーティスト名で検索..."
       />
-      
+
       {!hideTitleArea && (
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>

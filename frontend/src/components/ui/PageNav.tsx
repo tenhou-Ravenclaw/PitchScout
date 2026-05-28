@@ -45,7 +45,7 @@ interface PageNavProps {
 
 /**
  * PageNav Component
- * 
+ *
  * @example
  * <PageNav
  *   currentPage={0}

@@ -22,7 +22,7 @@ interface IndexNavProps {
 
 /**
  * IndexNav Component
- * 
+ *
  * @example
  * <IndexNav
  *   onIndexClick={handleIndexJump}

@@ -174,10 +174,10 @@ sudo apt-get install -y \
 
 ### 2.5 ネットワーク・帯域幅
 
-- **想定ファイルサイズ**: 
+- **想定ファイルサイズ**:
   - 録音音声: 1-5MB (WebM/WAV)
   - カラオケ音源: 3-10MB
-- **同時接続**: 
+- **同時接続**:
   - 開発: 1-10ユーザー
   - 本番: 50-100ユーザー（負荷分散推奨）
 
@@ -439,7 +439,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # タイムアウト設定（音声処理に時間がかかるため）
         proxy_connect_timeout 300s;
         proxy_send_timeout 300s;

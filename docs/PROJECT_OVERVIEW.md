@@ -1,6 +1,6 @@
 # PitchScout プロジェクト概要
 
-最終更新: 2026-04-28  
+最終更新: 2026-04-28
 本番環境: https://pitch-scout.vercel.app/
 
 ---
@@ -343,4 +343,3 @@ PitchScout/
 | 閾値管理 | config.py 集約 | ハードコード禁止、チューニング容易 |
 
 ---
-

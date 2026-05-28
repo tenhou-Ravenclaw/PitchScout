@@ -320,7 +320,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
                   <p className="text-[10px] text-cyan-400/80 font-bold mb-1 tracking-widest">
                     {new Date(record.created_at).toLocaleString("ja-JP")}
                   </p>
-                  
+
                   {editingId === record.id ? (
                     <div className="flex items-center gap-2 mt-1" onClick={e => e.stopPropagation()}>
                       {/* 拡張子より前の部分のみ編集可能 */}
@@ -376,15 +376,15 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
                   {/* PCでのみ表示されるアクションボタン */}
                   <div className="hidden sm:flex items-center gap-2 ml-2">
-                    <button 
-                      onClick={(e) => handleEdit(e, record)} 
+                    <button
+                      onClick={(e) => handleEdit(e, record)}
                       className="p-2 bg-slate-800 border border-blue-500 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all duration-300"
                       title="名前を編集"
                     >
                       <PencilIcon className="w-4 h-4" />
                     </button>
-                    <button 
-                      onClick={(e) => handleDelete(e, record.id)} 
+                    <button
+                      onClick={(e) => handleDelete(e, record.id)}
                       className="p-2 bg-slate-800 border border-red-500 text-red-500 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-300"
                       title="削除"
                     >
