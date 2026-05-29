@@ -8,6 +8,7 @@ import sqlite3
 import os
 import unicodedata
 import re
+from functools import lru_cache
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "songs.db")
 
@@ -119,6 +120,7 @@ def init_db(db_path: str = DB_PATH) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title);
             CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist_id);
+            CREATE INDEX IF NOT EXISTS idx_artists_reading ON artists(reading);
         """)
 
         # マイグレーション: 既存DBに reading カラムを追加
@@ -134,6 +136,11 @@ def init_db(db_path: str = DB_PATH) -> None:
             conn.commit()
         except sqlite3.OperationalError:
             pass  # カラムが既に存在する場合は無視
+
+        # マイグレーション: 既存DBに idx_artists_reading インデックスを追加
+        # reading 前方一致検索（かな検索）を高速化するため
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_artists_reading ON artists(reading)")
+        conn.commit()
 
         # 既存の重複データを除去（IDが最小のレコードを残す）
         conn.execute("""
@@ -379,9 +386,13 @@ def get_artists(limit: int = 100, offset: int = 0) -> list[dict]:
         conn.close()
 
 
+@lru_cache(maxsize=256)
 def count_artists(query: str = "") -> int:
     """
     アーティスト総数を取得する（カタカナ対応）。
+
+    songs.db は実行時読み取り専用のため lru_cache でキャッシュしている。
+    同一クエリでのページ遷移ごとに DB をスキャンするコストを排除する。
 
     Args:
         query: 検索文字列。空文字なら全件カウント。
