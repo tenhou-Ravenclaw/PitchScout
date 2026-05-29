@@ -81,11 +81,11 @@ export const useSongListData = ({
 
   // 五十音インデックスジャンプ
   const { handleIndexJump } = useIndexJump(
-    artists,
     totalArtists,
-    totalPages,
     setArtistPage,
-    notifyError
+    notifyError,
+    fetchArtists,
+    setPageInput
   );
 
   // アーティスト選択・楽曲取得

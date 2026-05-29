@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getArtists, Artist } from "../api";
 import { ARTISTS_PER_PAGE, SEARCH_ALIASES } from "../constants/songListConstants";
 
@@ -15,13 +15,19 @@ export const useArtistListPages = (
   const [artistPage, setArtistPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const lastFetchRef = useRef<{ page: number; query: string } | null>(null);
 
   const totalPages = Math.ceil(totalArtists / ARTISTS_PER_PAGE);
 
   const fetchArtists = useCallback(async (page: number) => {
+    const effectiveQuery = SEARCH_ALIASES[query] || query;
+    if (lastFetchRef.current?.page === page && lastFetchRef.current?.query === effectiveQuery) {
+      return;
+    }
+
+    lastFetchRef.current = { page, query: effectiveQuery };
     setLoading(true);
     try {
-      const effectiveQuery = SEARCH_ALIASES[query] || query;
       const data = await getArtists(ARTISTS_PER_PAGE, page * ARTISTS_PER_PAGE, effectiveQuery);
       setArtists(data.artists);
       setTotalArtists(data.total);

@@ -1,5 +1,5 @@
 import { API } from "./client";
-import type { SongsResponse, Song, UserRange, ArtistsResponse } from "./types";
+import type { SongsResponse, Song, UserRange, ArtistsResponse, ArtistIndexPageResponse } from "./types";
 
 type SongQueryParams = {
   limit?: number;
@@ -37,6 +37,16 @@ export const getArtists = async (
   const params: SongQueryParams = { limit, offset };
   if (query) params.q = query;
   const res = await API.get<ArtistsResponse>("/artists", { params });
+  return res.data;
+};
+
+export const getArtistIndexPage = async (
+  char: string,
+  limit: number = 10,
+): Promise<ArtistIndexPageResponse> => {
+  const res = await API.get<ArtistIndexPageResponse>("/artists/index-page", {
+    params: { char, limit },
+  });
   return res.data;
 };
 

@@ -8,6 +8,7 @@ import React from "react";
 import { StarIcon as StarSolid } from "@heroicons/react/24/solid";
 import { StarIcon as StarOutline } from "@heroicons/react/24/outline";
 import { Artist } from "../../api";
+import { getConsonantRow } from "../../constants/songListConstants";
 
 /**
  * ArtistListPanel が受け取るプロパティ
@@ -33,9 +34,15 @@ const ArtistListPanel: React.FC<ArtistListPanelProps> = ({
   isFavorite,
 }) => {
   return (
-    <div className="w-full max-w-3xl bg-slate-900/60 backdrop-blur-md rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.5)] border border-cyan-500/20 overflow-hidden">
+    <div id="artist-list-panel" className="w-full max-w-3xl bg-slate-900/60 backdrop-blur-md rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.5)] border border-cyan-500/20 overflow-hidden">
       {artists.map((artist) => (
-        <div key={artist.id} className="group relative flex items-center w-full border-b border-cyan-500/10 last:border-0 hover:bg-cyan-900/20 transition-all duration-300">
+        <div
+          key={artist.id}
+          id={`artist-${artist.id}`}
+          // 五十音インデックスジャンプ時のスクロール対象。同行に複数アーティストがいる場合は querySelector が最初の要素を返す
+          data-row={getConsonantRow(artist.reading || "")}
+          className="group relative flex items-center w-full border-b border-cyan-500/10 last:border-0 hover:bg-cyan-900/20 transition-all duration-300"
+        >
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-400 opacity-0 group-hover:opacity-100 shadow-[0_0_10px_rgba(34,211,238,1)] transition-opacity duration-300"></div>
           <button
             onClick={() => onSelectArtist(artist)}
