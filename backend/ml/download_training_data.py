@@ -39,7 +39,7 @@ import subprocess
 import glob
 import numpy as np
 
-# ml/ から実行時に親ディレクトリ (backend/) の feature_extractor を見つける
+# ml/ から実行時に親ディレクトリ (backend/) の analysis パッケージを見つける
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 # ============================================================
@@ -176,7 +176,7 @@ def process_wavs_to_dataset(labeled_wavs: dict[str, list[str]]):
     import librosa
     import torch
     import torchcrepe
-    from feature_extractor import extract_features
+    from analysis.features import extract_features
 
     all_features = []
     all_labels = []
@@ -237,7 +237,7 @@ def _extract_all_features(wav_path: str) -> np.ndarray | None:
     import librosa
     import torch
     import torchcrepe
-    from feature_extractor import extract_features
+    from analysis.features import extract_features
 
     y, sr = librosa.load(wav_path, sr=None, mono=True)
     if len(y) / sr < 1.0:

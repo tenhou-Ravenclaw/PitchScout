@@ -2,8 +2,8 @@
 
 > AI声域分析＆楽曲推薦アプリケーションの機能・非機能要件
 
-**バージョン**: 1.0  
-**最終更新**: 2026年2月19日  
+**バージョン**: 1.1
+**最終更新**: 2026年3月24日
 **プロジェクト**: 2026_team11
 
 ---
@@ -17,6 +17,30 @@
 - [5. インターフェース要件](#5-インターフェース要件)
 - [6. 制約事項](#6-制約事項)
 - [7. 将来の拡張](#7-将来の拡張)
+
+---
+
+## 0. 変更点まとめ（2026-03-24）
+
+### 0.1 分析パイプライン更新
+
+- 旧: Demucs → DeepFilterNet → CREPE → RandomForest
+- 新: MelBandRoformers(voc_fv6.ckpt) → DeepFilterNet → WORLD(pyworld) → RandomForest
+- フロント/バックの公開 API（`/analyze`, `/analyze-karaoke`）は変更しない
+
+### 0.2 実装ファイル変更
+
+- 置換: `backend/audio/separator.py`（MelBandRoformers ベースへ移行）
+- 追加: `backend/analysis/feature_extractor.py`（WORLD の F0/SP/AP 抽出と集約）
+- 置換: `backend/analysis/pipeline.py`（WORLD+RF 推論へ移行）
+- 追加: `backend/ml/train.py`（VocalSet 用学習スクリプト）
+
+### 0.3 依存関係変更
+
+- 追加: `pyworld`, `huggingface_hub>=0.30.0`, `audio-separator[cpu]>=0.40.0`
+- 削除: `demucs`, `torchcrepe`
+- 更新: `numpy==2.2.0`
+- 補足: 環境によっては `pyworld` を `pip install pyworld --no-build-isolation` で先行インストールする
 
 ---
 
@@ -115,7 +139,7 @@
 ```
 
 **非機能要件**:
-- 処理時間: 
+- 処理時間:
   - CPU: 1-3分（高速）、3-5分（高品質）
   - GPU: 30秒-1分（高速）、1-2分（高品質）
 - ファイルサイズ上限: 50MB
@@ -356,7 +380,7 @@
 - パスワードリセットトークンの有効期限: 1時間
 
 #### 3.4.4 入力検証
-- ファイルアップロード: 
+- ファイルアップロード:
   - サイズ上限: 50MB
   - MIME typeチェック（audio/*, video/*）
   - ファイル拡張子ホワイトリスト
@@ -550,7 +574,7 @@ source_url      TEXT         -- スクレイピング元URL
 ### 5.3 UI/UXガイドライン
 
 - **デザインシステム**: Tailwind CSS
-- **カラースキーム**: 
+- **カラースキーム**:
   - プライマリ: ブルー系
   - アクセント: オレンジ・レッド
 - **レスポンシブデザイン**: モバイルファースト

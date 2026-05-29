@@ -7,7 +7,7 @@
 import React from "react";
 import type { UserRange } from "../../api";
 import SearchBar from "../ui/SearchBar";
-import SyllableIndex from "../ui/SyllableIndex";
+import IndexNav from "../ui/IndexNav";
 
 /**
  * SongListHeaderPanel が受け取るプロパティ
@@ -49,7 +49,7 @@ const SongListHeaderPanel: React.FC<SongListHeaderPanelProps> = ({
         onSubmit={onSearchSubmit}
         placeholder="楽曲名・アーティスト名で検索..."
       />
-      
+
       {!hideTitleArea && (
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
           <div>
@@ -62,7 +62,7 @@ const SongListHeaderPanel: React.FC<SongListHeaderPanelProps> = ({
                 : (userRange ? "" : "録音すると、キーおすすめが表示されます")}
             </p>
           </div>
-          <SyllableIndex
+          <IndexNav
             onIndexClick={onIndexClick}
             visible={!activeQuery}
           />

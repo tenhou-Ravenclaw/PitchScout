@@ -105,11 +105,39 @@ NOTE_TABLE = [
 
 _FREQS = [row[2] for row in NOTE_TABLE]
 
+# label → NOTE_TABLE インデックス（音高順位）のキャッシュ
+# NOTE_TABLE は低音から高音順なのでインデックス = 音高順位
+_LABEL_TO_RANK: dict[str, int] = {row[1]: i for i, row in enumerate(NOTE_TABLE)}
 
-def hz_to_label_and_hz(hz: float) -> tuple:
+
+def label_to_rank(label: str) -> int:
+    """
+    音階ラベル（例: "mid2C"）を音高順位（0始まり）に変換する。
+
+    NOTE_TABLE の先頭が最低音（lowlowC）であるため、
+    インデックスをそのまま音高順位として使用できる。
+    未知ラベルは -1 を返す（比較時に最低音扱い）。
+
+    Args:
+        label: 音階ラベル文字列（例: "mid2C", "hiA", "lowlowG"）
+
+    Returns:
+        NOTE_TABLE 上のインデックス（0 = 最低音）。未知ラベルは -1。
+    """
+    return _LABEL_TO_RANK.get(label, -1)
+
+
+def hz_to_label_and_hz(hz: float) -> tuple[str, float]:
     """
     Hz → (ラベル, 定義Hz) を対応表から返す。
-    対数スケールで最近傍を探索（音楽的に正しい距離計算）。
+
+    対数スケールで最近傍を探索する（音楽的に正しい距離計算）。
+
+    Args:
+        hz: 変換する周波数 (Hz)。0 以下なら ("unknown", 0.0) を返す。
+
+    Returns:
+        (音階ラベル, 定義 Hz) のタプル。
     """
     if hz <= 0:
         return "unknown", 0.0
@@ -122,8 +150,19 @@ def hz_to_label_and_hz(hz: float) -> tuple:
     return label, defined_hz
 
 
-# 後方互換（librosaのnote文字列から変換）
+# 後方互換（librosa の note 文字列から変換）
 def to_japanese_notation(note: str) -> str:
+    """
+    librosa 形式の音名（例: "C4"）を日本式ラベル（例: "mid2C"）に変換する。
+
+    NOTE_TABLE に該当がなければ入力をそのまま返す。
+
+    Args:
+        note: librosa 形式の音名文字列。
+
+    Returns:
+        日本式ラベル文字列。
+    """
     for note_name, label, _ in NOTE_TABLE:
         if note_name == note:
             return label

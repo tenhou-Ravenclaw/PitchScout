@@ -135,11 +135,47 @@ export interface AnalysisHistoryRecord {
   result_json?: AnalysisResult | null;
 }
 
-export interface IntegratedVocalRange extends Partial<AnalysisResult> {
+export interface TotalVocalRange extends Partial<AnalysisResult> {
   data_count: number;
   limit: number;
   singing_analysis?: SingingAnalysis;
   voice_type?: VoiceType;
   recommended_songs?: RecommendedSong[];
   similar_artists?: SimilarArtist[];
+}
+
+/** 分析タイムラインの1点（1回の分析結果） */
+export interface TimelinePoint {
+  /** 分析日時 (ISO 8601) */
+  date: string;
+  /** 地声最低音ラベル（例: "mid1C"） */
+  chest_min: string | null;
+  /** 地声最高音ラベル（例: "mid2G"） */
+  chest_max: string | null;
+  /** 裏声最高音ラベル（例: "hiC"） */
+  falsetto_max: string | null;
+  /** 地声最低音 Hz */
+  chest_min_hz: number | null;
+  /** 地声最高音 Hz */
+  chest_max_hz: number | null;
+  /** 裏声最高音 Hz */
+  falsetto_max_hz: number | null;
+}
+
+/** 安定音域（直近 N 件中 M 回以上出現した音域） */
+export interface StableRange {
+  /** 安定して出ている地声最低音ラベル */
+  chest_min: string | null;
+  /** 安定して出ている地声最高音ラベル */
+  chest_max: string | null;
+  /** 安定して出ている裏声最高音ラベル */
+  falsetto_max: string | null;
+}
+
+/** GET /analysis/timeline レスポンス */
+export interface AnalysisTimeline {
+  /** 古い順に並んだ分析タイムラインポイントの配列 */
+  timeline: TimelinePoint[];
+  /** 安定音域（直近 N 件中 4 回以上出現） */
+  stable_range: StableRange;
 }

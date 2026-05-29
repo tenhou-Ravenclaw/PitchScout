@@ -4,8 +4,8 @@ import { UserRange } from "../api";
 import { Artist, Song } from "../api";
 import { getArtistSongs } from "../api/songs";
 import { toUserMessage } from "../api/error";
-import { useArtistListPagination } from "./useArtistListPagination";
-import { useSongSearchPagination } from "./useSongSearchPagination";
+import { useArtistListPages } from "./useArtistListPages";
+import { useSongSearchPages } from "./useSongSearchPages";
 import { useIndexJump } from "./useIndexJump";
 
 /**
@@ -23,8 +23,8 @@ export interface UseSongListDataParams {
   onSearchChange?: (query: string) => void;
 }
 
-/** ページング操作の種別 */
-export type PaginationAction = "next" | "prev" | "jump";
+/** ページ操作の種別 */
+export type PageAction = "next" | "prev" | "jump";
 
 /**
  * SongListPage で利用するデータ取得・選択・ページング処理を集約したフックです。
@@ -65,7 +65,7 @@ export const useSongListData = ({
     error,
     totalPages,
     fetchArtists,
-  } = useArtistListPagination(activeQuery);
+  } = useArtistListPages(activeQuery);
 
   // 楽曲検索＋ページング
   const {
@@ -77,7 +77,7 @@ export const useSongListData = ({
     error: searchError,
     totalPages: totalSearchPages,
     fetchSearchSongs,
-  } = useSongSearchPagination(activeQuery, userRange ?? null);
+  } = useSongSearchPages(activeQuery, userRange ?? null);
 
   // 五十音インデックスジャンプ
   const { handleIndexJump } = useIndexJump(
@@ -117,7 +117,7 @@ export const useSongListData = ({
   }, [onSearchChange]);
 
   // ページネーション操作
-  const handlePaginate = useCallback((action: PaginationAction) => {
+  const handlePaginate = useCallback((action: PageAction) => {
     if (activeQuery) {
       // 楽曲検索のページネーション
       if (action === "next") {

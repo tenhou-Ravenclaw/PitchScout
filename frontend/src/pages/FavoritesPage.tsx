@@ -6,7 +6,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { FavoriteSong, toUserMessage } from '../api';
-import { collectionApi } from '../api/collectionApi';
+import { listApi } from '../api/listApi';
 import { useFavoriteSongs } from '../hooks/useFavoriteSongs';
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid';
 import { useToast } from '../hooks/useToast';
@@ -44,7 +44,7 @@ const FavoritesPage: React.FC<FavoritesPageProps> = ({ isAuthenticated, onLoginC
         }
         setLoading(true);
         setError(null);
-        collectionApi.favoriteSong.get()
+        listApi.favoriteSong.get()
             .then(setFavorites)
             .catch(err => setError(toUserMessage(err, "お気に入りを取得できませんでした")))
             .finally(() => setLoading(false));

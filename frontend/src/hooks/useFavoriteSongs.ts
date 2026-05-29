@@ -1,4 +1,4 @@
-import { useItemCollection } from "./useItemCollection";
+import { useItemList } from "./useItemList";
 
 /**
  * **useFavoriteSongs カスタムフック**
@@ -26,7 +26,7 @@ import { useItemCollection } from "./useItemCollection";
  * ```
  */
 export const useFavoriteSongs = (onLoginRequired?: () => void) => {
-  const { toggle, isIncluded, isToggling, loading } = useItemCollection("favoriteSong", onLoginRequired);
+  const { toggle, isIncluded, isToggling, loading } = useItemList("favoriteSong", onLoginRequired);
   return {
     toggleFavoriteSong: toggle,
     isFavoriteSong: isIncluded,

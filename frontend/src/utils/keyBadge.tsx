@@ -26,4 +26,3 @@ export const keyBadge = (key: number, fit?: KeyFit): React.ReactElement => {
   }
   return <span className={className}>{label}</span>;
 };
-

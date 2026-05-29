@@ -6,6 +6,7 @@
 
 import React from "react";
 import { AnalysisResult, RecommendedSong, SimilarArtist } from "../../api";
+import PianoKeyboard from "../ui/PianoKeyboard";
 
 interface Props {
   result: AnalysisResult; // 表示する解析データ
@@ -126,7 +127,35 @@ const ResultView: React.FC<Props> = ({ result }) => {
         </div>
       )}
 
-      {/* ──── 3. 音域詳細カード（地声・裏声） ──── */}
+      {/* ──── 3. ピアノ鍵盤による声域ビジュアライザ ──── */}
+      <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
+        <div className="flex items-center gap-4 mb-2 text-xs text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-3 h-3 rounded-sm bg-indigo-300" />
+            地声
+          </span>
+          {result.falsetto_max && (
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-sm bg-emerald-300" />
+              裏声
+            </span>
+          )}
+          {result.falsetto_max && (
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-sm border-2 border-emerald-500 bg-indigo-300" />
+              重なり
+            </span>
+          )}
+        </div>
+        <PianoKeyboard
+          chestMin={result.chest_min ?? result.overall_min}
+          chestMax={result.chest_max ?? result.overall_max}
+          falsettoMin={result.falsetto_min}
+          falsettoMax={result.falsetto_max}
+        />
+      </div>
+
+      {/* ──── 4. 音域詳細カード（地声・裏声） ──── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {hasChest && (
           <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
@@ -188,7 +217,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
         )}
       </div>
 
-      {/* ──── 4. 歌唱力スコア詳細 ──── */}
+      {/* ──── 5. 歌唱力スコア詳細 ──── */}
       {analysis && (
         <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
           <div className="flex items-center justify-between mb-4">
@@ -230,7 +259,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
         </div>
       )}
 
-      {/* ──── 5. 声が似ているアーティスト ──── */}
+      {/* ──── 6. 声が似ているアーティスト ──── */}
       {artists.length > 0 && (
         <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
           <h3 className="text-sm font-bold text-slate-200 mb-3">声が似ているアーティスト</h3>
@@ -266,7 +295,7 @@ const ResultView: React.FC<Props> = ({ result }) => {
         </div>
       )}
 
-      {/* ──── 6. おすすめの曲（キー提案付き） ──── */}
+      {/* ──── 7. おすすめの曲（キー提案付き） ──── */}
       {songs.length > 0 && (
         <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
           <h3 className="text-sm font-bold text-slate-200 mb-1">おすすめの曲</h3>

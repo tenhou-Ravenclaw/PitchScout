@@ -1,481 +1,299 @@
-# ピッチスカウト フロントエンド アーキテクチャ
+# PitchScout アーキテクチャ（最新版）
 
-## 1. プロジェクト概要
+最終更新: 2026-04-20
+対象リポジトリ: PitchScout
 
-**ピッチスカウト**は、ユーザーの声を録音・分析し、音域に合った楽曲やキー変更を提案する Web アプリ。
-
-| 項目 | 技術 |
-|------|------|
-| フレームワーク | React 19 + TypeScript |
-| スタイリング | Tailwind CSS 3 |
-| HTTP クライアント | Axios |
-| 認証 | Supabase Auth (Google OAuth) |
-| アイコン | Heroicons v2 |
-| ビルドツール | Create React App (react-scripts) |
-| バックエンド | FastAPI (Python) |
-| 楽曲 DB | SQLite (songs.db / 約 5000 曲) |
-| ユーザー DB | Supabase (PostgreSQL) |
+本ドキュメントは、現在の実装コードを基準に構成を整理したものです。
 
 ---
 
-## 2. ディレクトリ構成
+## 1. 全体構成
 
-```
-src/
-├── index.tsx                  # エントリポイント
-├── App.tsx                    # ルートコンポーネント・ViewState 管理・画面切替
-├── api.ts                     # Axios クライアント・API 関数・UserRange 型
-├── supabaseClient.ts          # Supabase クライアント初期化 (null 安全)
-│
-├── contexts/
-│   └── AuthContext.tsx         # 認証コンテキスト (Google OAuth)
-│
-├── components/
-│   ├── Header.tsx              # デスクトップヘッダー (md+ 表示)
-│   ├── BottomNav.tsx           # モバイルボトムナビ (<md 表示)
-│   ├── Recorder.tsx            # マイク録音 + 波形ビジュアライザー
-│   ├── KaraokeUploader.tsx     # カラオケ音源アップロード
-│   └── ResultView.tsx          # 分析結果表示 (音域・スコア・おすすめ曲)
-│
-├── Landing.tsx                 # ランディング画面 (NEW RECORD / HISTORY)
-├── Home.tsx                    # メニュー画面 (録音方法選択グリッド)
-├── LoginPage.tsx               # ログイン画面 (Google OAuth ボタン)
-├── AnalysisResultPage.tsx      # 分析結果ダッシュボード (レーダーチャート付き)
-├── SongListPage.tsx            # 楽曲一覧 (アーティスト別グリッド + 曲テーブル)
-├── GuidePage.tsx               # 使い方ガイド
-├── PlaceholderPage.tsx         # 開発中画面の汎用プレースホルダー
-├── RecordingSelectionPage.tsx  # 録音方法選択 (旧 UI・未使用)
-│
-├── assets/
-│   └── logo.png                # アプリロゴ
-│
-├── App.css                     # App 用 CSS
-├── index.css                   # グローバル CSS (Tailwind ディレクティブ)
-├── HomePage.css                # Landing 用カスタム CSS (アニメーション等)
-│
-├── App.test.tsx                # テスト
-├── setupTests.ts               # テスト設定
-├── react-app-env.d.ts          # CRA 型定義
-└── reportWebVitals.ts          # パフォーマンス計測
+PitchScout は、フロントエンド（React/TypeScript）とバックエンド（FastAPI/Python）で構成される音域分析アプリです。
+
+- フロントエンド: 録音/アップロード UI、結果表示、履歴・お気に入り管理
+- バックエンド: 音声前処理、声区分析、推薦、ユーザーデータ管理
+- データストア:
+  - SQLite: 楽曲・アーティスト（読み取り中心）
+  - Supabase(PostgreSQL): 認証、プロフィール、履歴、お気に入り
+
+### 1.1 構成図（論理）
+
+```text
+[Browser / React]
+  ├─ routes.tsx + routeWrappers
+  ├─ Contexts (Auth / App / Analysis)
+  └─ API client (Axios + Supabase token interceptor)
+          |
+          | HTTPS
+          v
+[FastAPI]
+  ├─ routers/auth.py
+  ├─ routers/users.py
+  ├─ routers/songs.py
+  └─ routers/analysis.py
+        ├─ audio/converter.py      (ffmpeg WAV 変換)
+        ├─ audio/separator.py      (MelBandRoformers ボーカル分離)
+        ├─ audio/noise.py          (DeepFilterNet ノイズ除去)
+        └─ analysis/pipeline.py    (WORLD + AP/HNR ゲート + RF 20次元ベクトル)
+
+[SQLite songs.db]   [Supabase]
 ```
 
 ---
 
-## 3. 画面遷移 (ViewState)
+## 2. フロントエンド
 
-`App.tsx` で定義された `ViewState` 型により、全 11 画面を管理:
+### 2.1 採用技術
 
-```typescript
-type ViewState =
-  | "landing"    // ランディング
-  | "menu"       // メニュー (録音方法選択)
-  | "recorder"   // 録音
-  | "uploader"   // カラオケ音源アップロード
-  | "result"     // 分析結果 (ResultView)
-  | "analysis"   // 分析ダッシュボード (AnalysisResultPage)
-  | "songList"   // 楽曲一覧
-  | "history"    // 履歴 (Placeholder)
-  | "mypage"     // マイページ (Placeholder)
-  | "guide"      // 使い方ガイド
-  | "login";     // ログイン
-```
+- React 19
+- TypeScript
+- react-router-dom
+- Axios
+- Tailwind CSS
+- Supabase JS SDK
+- Recharts
+- CRA（react-scripts）
 
-### 遷移図 (ASCII)
+参照: `frontend/package.json`
 
-```
-                    ┌──────────┐
-                    │ landing  │  ← 初期画面
-                    └────┬─────┘
-                 ┌───────┴────────┐
-                 ▼                ▼
-            ┌────────┐      ┌─────────┐
-            │  menu  │      │ history │ (Placeholder)
-            └──┬─┬─┬─┘      └─────────┘
-       ┌───────┘ │ └────────┐
-       ▼         ▼          ▼
-  ┌──────────┐ ┌──────────┐ ┌──────────┐
-  │ recorder │ │ recorder │ │ uploader │
-  │ (通常)   │ │(カラオケ)│ │          │
-  └────┬─────┘ └────┬─────┘ └──────────┘
-       └──────┬─────┘
-              ▼
-        ┌──────────┐     ┌──────────┐
-        │  result  │────▶│ analysis │
-        └──────────┘     └──────────┘
+### 2.2 ルーティング設計
 
-  Header/BottomNav から常にアクセス可能:
-    songList, guide, login, analysis
-```
+`frontend/src/routes.tsx` で全ページを `React.lazy()` による遅延ロードに統一しています。
+主要パス:
 
-> **設計意図**: React Router を使わず `useState<ViewState>` で画面を切り替える SPA パターン。ハッカソン規模ではシンプルで十分。
+- `/` `/menu` `/record` `/karaoke` `/upload`
+- `/result` `/analysis` `/songs`
+- `/favorites` `/history`
+- `/guide` `/login` `/reset-password` `/change-password`
+
+### 2.3 API 通信と認証連携
+
+`frontend/src/api/client.ts` の `API` インスタンスを全 API 通信で使用します。
+
+- リクエスト時: Supabase セッションから JWT を取得し `Authorization: Bearer ...` を自動付与
+- レスポンス時: 401 を受けたら一度だけ `refreshSession()` を試行して再実行
+
+`frontend/src/supabaseClient.ts` は環境変数未設定時に `null` を返す実装で、認証機能を無効化してもアプリが落ちない設計です。
 
 ---
 
-## 4. デザインルール
+## 3. バックエンド
 
-### カラーパレット (ダークテーマ)
+### 3.1 採用技術
 
-| 用途 | カラー | Tailwind クラス例 |
-|------|--------|-------------------|
-| 背景 (ベース) | Slate 900 | `bg-slate-900` |
-| カード背景 | Slate 900/60 + blur | `bg-slate-900/60 backdrop-blur-md` |
-| ボーダー | White 10% | `border border-white/10` |
-| アクセント (主) | Cyan | `text-cyan-400`, `border-cyan-500/30` |
-| アクセント (副) | Pink / Rose | `text-pink-500`, `text-rose-400` |
-| 成功 / 地声 | Indigo | `bg-indigo-500` |
-| 成功 / 裏声 | Emerald | `bg-emerald-400` |
-| スコア (高) | Emerald | `text-emerald-500` |
-| スコア (中) | Sky / Amber | `text-sky-500`, `text-amber-500` |
-| スコア (低) | Rose | `text-rose-400` |
+- FastAPI / Uvicorn
+- numpy / scipy / librosa / soundfile
+- torch / torchaudio
+- pyworld
+- audio-separator[cpu]（MelBandRoformers 実行）
+- deepfilternet
+- scikit-learn / joblib
+- Supabase Python SDK
 
-### Glassmorphism カードパターン
+参照: `backend/requirements.txt`
 
-```
-bg-slate-900/60 backdrop-blur-md rounded-2xl shadow-xl border border-white/10
-```
+### 3.2 エントリポイント
 
-### レスポンシブ方針
+`backend/main.py`
 
-| ブレークポイント | ナビゲーション |
-|------------------|----------------|
-| `md` 以上 (768px+) | `Header` を表示 (`hidden md:flex`) |
-| `md` 未満 | `BottomNav` を表示 (`md:hidden`) |
-| コンテンツ | `pb-24 md:pb-0` で BottomNav 分の余白を確保 |
+- lifespan 初期化:
+  - SQLite 初期化: `db.songs.init_db()`
+  - ノイズ処理モデル初期化: `init_deepfilter()`, `init_silero_vad()`
+- CORS: `ALLOWED_ORIGINS`（環境変数）
+- アップロード上限: 50MB（ミドルウェア）
+- ルーター登録: auth / users / songs / analysis
 
----
+### 3.3 ディレクトリ責務
 
-## 5. コンポーネント一覧
+```text
+backend/
+  main.py               FastAPIアプリ設定
+  config.py             閾値・定数の一元管理
+  models.py             Pydanticモデル
+  note_converter.py     Hz <-> 音階ラベル(A4=442Hz)
+  recommender.py        楽曲推薦・類似アーティスト・声質タイプ判定
+  auth.py               認証ヘルパー
 
-### Header
+  routers/
+    auth.py             /auth/*
+    users.py            /profile/*, /analysis/*, /favorites*, /favorite-artists*
+    songs.py            /songs, /artists, /recommend, /recommend/challenge, /similar-artists
+    analysis.py         /analyze, /analyze-karaoke
 
-| Props | 型 | 説明 |
-|-------|----|------|
-| `onLogoClick` | `() => void` (optional) | ロゴクリック → landing へ |
-| `onMenuClick` | `() => void` | 「録音」ナビクリック |
-| `onAnalysisClick` | `() => void` | 「分析結果」ナビクリック |
-| `onSongListClick` | `() => void` | 「楽曲一覧」ナビクリック |
-| `onGuideClick` | `() => void` | 「使い方ガイド」ナビクリック |
-| `currentView` | `string` | 現在の ViewState (アクティブ表示用) |
-| `searchQuery` | `string` | 検索バーの値 |
-| `onSearchChange` | `(query: string) => void` | 検索入力ハンドラ |
-| `isAuthenticated` | `boolean` | ログイン状態 |
-| `userName` | `string \| null` | 表示名 |
-| `onLoginClick` | `() => void` | ログインボタン |
-| `onLogoutClick` | `() => void` | ログアウトボタン |
+  audio/
+    converter.py        WAV変換 (ffmpeg: 16kHz mono / 44.1kHz stereo)
+    separator.py        MelBandRoformersでボーカル分離
+    noise.py            DeepFilterNet3 ノイズ除去 + Silero VAD
 
-### BottomNav
+  analysis/
+    pipeline.py         メイン解析パイプライン (WORLD → RF → AP/HNRゲート → 結果整形)
+    classifier.py       HybridClassifier (AP/HNRゲート + RFフォールバック)
+    feature_extractor.py WORLD特徴抽出・20次元セグメント特徴集約
+    features.py         倍音特徴抽出ユーティリティ（ML学習スクリプトから参照）
+    scoring.py          歌唱力スコア (音域/安定性/表現力)
 
-| Props | 型 | 説明 |
-|-------|----|------|
-| `currentView` | `string` | 現在の ViewState |
-| `onViewChange` | `(view: any) => void` | 画面切替 |
-| `isAuthenticated` | `boolean` | ログイン状態 (マイページ/ログイン切替) |
+  ml/
+    train.py            20次元WORLD特徴でRandomForest学習
+    train_classifier.py 6次元倍音特徴での学習（features.py用）
+    test_classifier.py  テストスイート
+    labeler.py          学習データラベリング
 
-### Recorder
-
-| Props | 型 | 説明 |
-|-------|----|------|
-| `onResult` | `(data: any) => void` | 分析結果コールバック |
-| `initialUseDemucs` | `boolean` | true: カラオケモード (BGM 除去) |
-
-- Web Audio API で波形ビジュアライザー (Canvas) を描画
-- MediaRecorder API でブラウザ録音
-
-### KaraokeUploader
-
-- Props なし (自己完結コンポーネント)
-- 対応フォーマット: WAV, MP3, M4A, AAC, MP4, OGG, FLAC, WMA, WebM
-- 内部で `ResultView` を使用して結果を表示
-
-### ResultView
-
-| Props | 型 | 説明 |
-|-------|----|------|
-| `result` | `any` | バックエンドからの分析結果オブジェクト |
-
-表示セクション:
-1. 声質タイプ + 全体音域
-2. 地声/裏声バランスバー
-3. 地声・裏声の詳細カード
-4. 歌唱力スコア (総合・音域・安定性・表現力)
-5. 声が似ているアーティスト
-6. おすすめ曲リスト
-
----
-
-## 6. 状態管理
-
-### AuthContext (グローバル)
-
-```
-AuthProvider (App.tsx でラップ)
-  └── useAuth() で以下を提供:
-        user: User | null         ← Supabase User オブジェクト
-        isAuthenticated: boolean
-        isLoading: boolean
-        loginWithGoogle(): Promise<void>
-        logout(): Promise<void>
-```
-
-- Supabase クライアントが `null` (env 未設定) の場合、認証機能は無効化されるが**アプリは正常動作する**
-- `onAuthStateChange` でリダイレクト後のセッション復帰を監視
-
-### App.tsx ローカルステート
-
-| State | 型 | 用途 |
-|-------|----|------|
-| `view` | `ViewState` | 現在表示中の画面 |
-| `isKaraokeMode` | `boolean` | 録音モード (通常 / カラオケ) |
-| `result` | `any` | 最新の分析結果 |
-| `searchQuery` | `string` | 楽曲検索クエリ |
-| `userRange` | `UserRange \| null` | ユーザーの音域 (キーおすすめ用) |
-
-### localStorage キー
-
-| キー | 内容 |
-|------|------|
-| `voiceRange` | `UserRange` (JSON) — 音域データの永続化 |
-| `lastResult` | 分析結果 (JSON) — 最新結果の永続化 |
-
----
-
-## 7. API 連携
-
-### フロントエンド API 関数 (`api.ts`)
-
-| 関数 | メソッド | エンドポイント | 説明 |
-|------|----------|----------------|------|
-| `analyzeVoice(blob)` | POST | `/analyze` | マイク録音の音域分析 |
-| `analyzeKaraoke(file, filename)` | POST | `/analyze-karaoke` | カラオケ音源の音域分析 (Demucs) |
-| `getSongs(limit, offset, query, userRange)` | GET | `/songs` | 楽曲検索 + キーおすすめ |
-
-### バックエンド主要エンドポイント
-
-| メソッド | パス | 認証 | 説明 |
-|----------|------|------|------|
-| POST | `/analyze` | 任意 | アカペラ音源分析 |
-| POST | `/analyze-karaoke` | 任意 | カラオケ音源分析 (Demucs BGM 除去) |
-| GET | `/songs` | 不要 | 楽曲一覧 + キーおすすめ |
-| GET | `/recommend` | 不要 | おすすめ曲取得 |
-| GET | `/similar-artists` | 不要 | 似ているアーティスト取得 |
-| POST | `/auth/signup` | 不要 | メールでユーザー登録 |
-| POST | `/auth/signin` | 不要 | メールでログイン |
-| POST | `/auth/signout` | 必須 | ログアウト |
-| POST | `/auth/refresh` | 不要 | セッションリフレッシュ |
-| POST | `/auth/reset-password` | 不要 | パスワードリセットメール送信 |
-| POST | `/auth/update-password` | 必須 | パスワード更新 |
-| GET | `/profile/me` | 必須 | プロファイル取得 |
-| PUT | `/profile/me` | 必須 | プロファイル更新 |
-| PUT | `/profile/vocal-range` | 必須 | 声域情報更新 |
-| POST | `/analysis` | 必須 | 分析履歴保存 |
-| GET | `/analysis/history` | 必須 | 分析履歴取得 |
-| POST | `/favorites` | 必須 | お気に入り追加 |
-| DELETE | `/favorites/{song_id}` | 必須 | お気に入り削除 |
-| GET | `/favorites` | 必須 | お気に入り一覧 |
-| GET | `/favorites/check/{song_id}` | 必須 | お気に入り確認 |
-
-### 認証トークン自動付与
-
-```typescript
-// api.ts — Axios interceptor
-API.interceptors.request.use(async (config) => {
-  if (supabase) {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  }
-  return config;
-});
-```
-
-フロントエンドは Supabase と直接通信して OAuth を処理し、取得した JWT をバックエンド API リクエストに自動付与する。
-
----
-
-## 8. 主要ワークフロー
-
-### 録音 → 分析フロー
-
-```
-ユーザー操作              フロントエンド                 バックエンド
-─────────────────────────────────────────────────────────────────────
-menu で録音方法選択  →  Recorder コンポーネント表示
-                         │
-録音開始ボタン押下   →  MediaRecorder.start()
-                         Web Audio API で波形描画
-                         │
-録音停止ボタン押下   →  MediaRecorder.stop()
-                         Blob 生成
-                         │
-                         analyzeVoice(blob)       →  POST /analyze
-                         or analyzeKaraoke(blob)  →  POST /analyze-karaoke
-                                                       │
-                                                       WAV 変換
-                                                       (Demucs BGM 除去)
-                                                       analyzer.analyze()
-                                                       おすすめ曲追加
-                                                       │
-                         result を受信           ←  JSON レスポンス
-                         │
-                         setResult(data)
-                         setView("result")
-                         localStorage に保存
-                         │
-                         ResultView で表示
-```
-
-### 楽曲検索フロー
-
-```
-Header 検索バー入力  →  onSearchChange(query)
-                         setSearchQuery(query)
-                         setView("songList")
-                         │
-SongListPage           →  500ms デバウンス後
-                         getSongs(500, 0, query, userRange)
-                         │                        →  GET /songs?q=...&chest_min_hz=...
-                         │
-                         アーティスト別グリッド表示
-                         │
-アーティスト選択     →  曲テーブル表示 (キーバッジ付き)
-```
-
-### 認証フロー (Google OAuth)
-
-```
-ログインボタン押下   →  loginWithGoogle()
-                         supabase.auth.signInWithOAuth({ provider: "google" })
-                         │
-                         Google 認証画面にリダイレクト
-                         │
-認証成功             →  元の URL にリダイレクト
-                         onAuthStateChange が発火
-                         setUser(session.user)
-                         │
-                         以降の API リクエストに JWT 自動付与
+  db/
+    songs.py            SQLiteアクセス (楽曲/アーティスト検索)
+    users.py            Supabaseアクセス (認証/履歴/お気に入り)
 ```
 
 ---
 
-## 9. 主要型定義
+## 4. 音声解析パイプライン（現行）
 
-### UserRange (`api.ts`)
+### 4.1 `/analyze`（アカペラ/マイク）
 
-```typescript
-interface UserRange {
-  chest_min_hz: number;    // 地声最低音 (Hz)
-  chest_max_hz: number;    // 地声最高音 (Hz)
-  falsetto_max_hz?: number; // 裏声最高音 (Hz)
-}
+1. ファイル検証（拡張子/MIME/マジックバイト）
+2. WAV 変換（`audio/converter.py` → 16kHz モノラル）
+3. 解析実行（`analysis/pipeline.py::analyze`）
+4. おすすめ曲/類似アーティスト/声質タイプの付与
+5. ログイン中なら履歴保存 + プロファイル声域更新
+
+### 4.2 `/analyze-karaoke`（カラオケ音源）
+
+1. ファイル検証
+2. 高品質 WAV 変換（44.1kHz ステレオ）
+3. ボーカル分離（`audio/separator.py` — MelBandRoformers）
+4. DeepFilterNet ノイズ除去（`audio/noise.py`）
+5. 解析実行（`analysis/pipeline.py::analyze`）
+6. 結果拡張・履歴保存
+
+### 4.3 解析コア（`analysis/pipeline.py`）
+
+処理フロー:
+
+```text
+1) 音声読み込み・正規化
+2) WORLD 特徴抽出 (F0/SP/AP) → 20次元セグメント特徴
+3) RandomForest で chest probability を推定
+4) AP/HNR ゲート + RF フォールバックでフレーム分離
+5) フレーム比率 + RF を併用して最終セグメントラベル決定
+6) FastAPI 互換レスポンス整形（音域/比率/歌唱力分析）
 ```
 
-### Song (`SongListPage.tsx`)
+### 4.4 地声/裏声判定ロジック
 
-```typescript
-interface Song {
-  id: number;
-  title: string;
-  artist: string;
-  lowest_note: string | null;   // "C3" 形式
-  highest_note: string | null;
-  falsetto_note: string | null;
-  note: string | null;
-  source: string;
-  recommended_key?: number;     // キー変更推奨値 (±N)
-  fit?: string;                 // "perfect" | "good" | "ok" | "hard"
-}
-```
+判定は `analysis/classifier.py` の `HybridClassifier` が担う。
 
-### 分析結果オブジェクト (バックエンド返却)
+**フレーム判定（各有声フレーム）:**
+1. f0 < 330Hz (FALSETTO_HARD_MIN_HZ) → 本アプリでは地声寄りとして扱う
+2. AP高 AND HNR低 → 裏声確定（ゲート）
+3. AP低 AND HNR高 → 地声確定（ゲート）
+4. 片側のみ成立（曖昧）→ RF chest probability でフォールバック
 
-```typescript
-// ResultView / AnalysisResultPage が受け取る result の主要フィールド
-{
-  // 音域
-  overall_min: string;        // "C3"
-  overall_max: string;        // "G5"
-  overall_min_hz: number;
-  overall_max_hz: number;
-  chest_min: string;
-  chest_max: string;
-  chest_min_hz: number;
-  chest_max_hz: number;
-  falsetto_min?: string;
-  falsetto_max?: string;
-  falsetto_min_hz?: number;
-  falsetto_max_hz?: number;
-  chest_ratio: number;        // 0-100
-  falsetto_ratio: number;     // 0-100
-  chest_count: number;        // フレーム数
-  falsetto_count: number;
+**セグメント判定:**
+- フレーム分類結果の chest/falsetto 比率と RF の chest probability を平均
+- combined >= 0.5 → chest、< 0.5 → falsetto
 
-  // 声質タイプ
-  voice_type: {
-    voice_type: string;       // "ハイトーン" etc.
-    range_class: string;      // "高音域" etc.
-    description: string;
-  };
+**20次元ベクトル RF:**
+- `feature_extractor.py` の `aggregate_world_features()` で生成
+- 内訳: F0統計6次元 + AP帯域特徴8次元 + SP形状特徴6次元 = 20次元
+- `ml/models/register_model.joblib` に学習済みモデルを格納
 
-  // 歌唱力分析
-  singing_analysis: {
-    overall_score: number;    // 0-100
-    range_score: number;
-    range_semitones: number;
-    stability_score: number;
-    expression_score: number;
-  };
+### 4.5 config.py の主要定数
 
-  // おすすめ
-  recommended_songs: Array<{ id, title, artist, match_score, recommended_key, fit, ... }>;
-  similar_artists: Array<{ id, name, similarity_score, typical_lowest, typical_highest }>;
-
-  // エラー時
-  error?: string;
-}
-```
+| 定数 | 値 | 用途 |
+|------|-----|------|
+| FALSETTO_HARD_MIN_HZ | 330.0 | 裏声判定の絶対下限 |
+| HIGH_REGISTER_MIN_HZ | 523.0 | AP/HNR 閾値の切替ポイント (C5) |
+| AP_THRESHOLD_HIGH | 0.28 | 高音域の AP ゲート閾値 |
+| AP_THRESHOLD_TRANSITION | 0.35 | 遷移帯域の AP ゲート閾値 |
+| HNR_THRESHOLD_HIGH | 8.0 | 高音域の HNR ゲート閾値 (dB) |
+| HNR_THRESHOLD_TRANSITION | 6.0 | 遷移帯域の HNR ゲート閾値 (dB) |
+| RF_CHEST_THRESHOLD | 0.60 | 曖昧フレームの RF フォールバック閾値 |
 
 ---
 
-## 10. 開発環境セットアップ
+## 5. API 構成（実装基準）
 
-### 前提条件
+### 5.1 認証 (`routers/auth.py`, prefix=`/auth`)
 
-- Node.js 18+
-- Python 3.10+ (バックエンド)
+- `POST /auth/signup`
+- `POST /auth/signin`
+- `POST /auth/signout`
+- `POST /auth/refresh`
+- `POST /auth/reset-password`
+- `POST /auth/update-password`
 
-### フロントエンド
+### 5.2 分析 (`routers/analysis.py`)
 
-```bash
-cd frontend
-npm install
-cp .env.example .env   # Supabase の URL と Anon Key を設定
-npm start              # http://localhost:3000
-```
+- `POST /analyze`
+- `POST /analyze-karaoke`
 
-### 環境変数 (`frontend/.env`)
+### 5.3 楽曲・アーティスト (`routers/songs.py`)
 
-```
-REACT_APP_SUPABASE_URL=https://xxx.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=eyJ...
-```
+- `GET /artists`
+- `GET /artists/{artist_id}/songs`
+- `GET /songs`
+- `GET /recommend/challenge`
+- `GET /recommend`
+- `GET /similar-artists`
 
-> 環境変数が未設定でもアプリは動作する（認証機能のみ無効）。
+### 5.4 ユーザー (`routers/users.py`)
 
-### バックエンド
+- `GET /profile/me`
+- `PUT /profile/me`
+- `PUT /profile/vocal-range`
+- `POST /analysis`
+- `GET /analysis/history`
+- `GET /analysis/integrated-range`
+- `GET /analysis/timeline`
+- `GET /analysis/growth`
+- `DELETE /analysis/history/{record_id}`
+- `PATCH /analysis/history/{record_id}`
+- `POST /favorites`
+- `DELETE /favorites/{song_id}`
+- `GET /favorites`
+- `GET /favorites/check/{song_id}`
+- `POST /favorites/batch-check`
+- `POST /favorite-artists`
+- `DELETE /favorite-artists/{artist_id}`
+- `GET /favorite-artists`
+- `GET /favorite-artists/check/{artist_id}`
 
-```bash
-cd backend
-pip install -r requirements.txt
-cp .env.example .env   # Supabase サービスキー等を設定
-uvicorn main:app --reload  # http://127.0.0.1:8000
-```
+---
 
-### バックエンド環境変数 (`backend/.env`)
+## 6. データストア
 
-```
-SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_KEY=eyJ...           # service_role キー
-SUPABASE_JWT_SECRET=xxx
-```
+### 6.1 SQLite（`backend/songs.db`）
+
+- 用途: 楽曲カタログ（約5000曲、約850アーティスト）
+- 主に読み取り用途
+- アクセス層: `backend/db/songs.py`
+
+### 6.2 Supabase（PostgreSQL + Auth）
+
+- 用途: ユーザー認証、プロフィール、分析履歴、お気に入り
+- アクセス層: `backend/db/users.py`, `backend/auth.py`
+- スキーマ参照: `backend/supabase_migration.sql`
+
+---
+
+## 7. 設定・運用上の重要事項
+
+- 解析閾値・定数は `backend/config.py` に集約する
+- 音階基準は A4=442Hz（`backend/note_converter.py`）
+- フロント API 呼び出しは `frontend/src/api/client.ts` の Axios インスタンスを使用
+- `frontend/src/supabaseClient.ts` の null ガードを維持する
+- 解析 API の公開インターフェース（`/analyze`, `/analyze-karaoke`）は互換性維持
+
+---
+
+## 8. 技術スタック対応表
+
+| レイヤー | 技術 | ファイル |
+|---------|------|---------|
+| ボーカル分離 | MelBandRoformers (audio-separator) | `audio/separator.py` |
+| ノイズ除去 | DeepFilterNet3 | `audio/noise.py` |
+| ピッチ/特徴抽出 | WORLD pyworld | `analysis/feature_extractor.py` |
+| フレーム判定 | AP/HNR ゲート + RF フォールバック | `analysis/classifier.py` |
+| セグメント推論 | RandomForest (20次元 WORLD 特徴) | `analysis/pipeline.py` |
+| 歌唱力分析 | 音域/安定性/表現力の3軸スコア | `analysis/scoring.py` |
+| 楽曲推薦 | Hz 範囲マッチング + キー変更提案 | `recommender.py` |

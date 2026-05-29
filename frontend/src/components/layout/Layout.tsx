@@ -4,7 +4,7 @@
  * 特徴：画面遷移による中身（Outlet）の切り替えや、グローバル検索の処理を担当します。
  */
 
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 // ── ルーター関連のフックをインポート ──
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 // 各種共通部品を読み込み
@@ -14,13 +14,33 @@ import { useAppContext } from "../../contexts/AppContext";
 import { useAuth } from "../../contexts/AuthContext";
 
 /** ── ロード待ちの表示 (Fallback) ──
- * lazy で読み込んでいるページが表示されるまでの間、画面中央に出るアニメーションです。
+ * 変更: 長時間待機時に補助メッセージを表示して、無限待機の切り分けをしやすくします。
  */
-const LoadingFallback: React.FC = () => (
-  <div className="flex items-center justify-center min-h-[60vh]">
-    <div className="text-slate-500 text-lg animate-pulse">Loading...</div>
-  </div>
-);
+const LoadingFallback: React.FC = () => {
+  const [showHint, setShowHint] = useState(false);
+
+  useEffect(() => {
+    // 追加: 8秒以上続く場合のみヒントを表示して、見た目のノイズを最小化する
+    const hintTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      setShowHint(true);
+    }, 8000);
+
+    return () => {
+      clearTimeout(hintTimer);
+    };
+  }, []);
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-2">
+      <div className="text-slate-500 text-lg animate-pulse">Loading...</div>
+      {showHint && (
+        <p className="text-slate-400 text-sm">
+          読み込みが長引いています。認証設定やネットワーク状態を確認してください。
+        </p>
+      )}
+    </div>
+  );
+};
 
 const Layout: React.FC = () => {
   // ── グローバルなデータと機能の取得 ──
@@ -53,7 +73,7 @@ const Layout: React.FC = () => {
   return (
     /** pb-24: スマホ版ナビバーが画面下部に重ならないように余白を作っています */
     <div className="pb-24 md:pb-0 min-h-[100dvh] relative bg-slate-900 overflow-hidden font-sans selection:bg-pink-500 selection:text-white text-slate-200">
-      
+
       {/* ── 全画面共通の背景グラデーション装飾 ── */}
       <div className="fixed inset-0 z-0 opacity-20 pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[120%] h-[40%] bg-gradient-to-r from-red-600 to-transparent -skew-y-3 transform" />
@@ -74,12 +94,18 @@ const Layout: React.FC = () => {
 
         {/* ── メインコンテンツ ──
            💡 URLに応じて Outlet の部分に各ページの内容が流し込まれます。
-           isLoading 中はセッション確認が終わっていないため、ページを描画しない。
-           これにより、再ログイン時に以前のページが一瞬映るフラッシュを防ぐ。
+           変更: 裏画面の初期描画を優先し、認証確認中でもページ本体を先に表示します。
         */}
         <Suspense fallback={<LoadingFallback />}>
-          {isLoading ? <LoadingFallback /> : <Outlet />}
+          <Outlet />
         </Suspense>
+
+        {isLoading && (
+          // 追加: 認証確認中であることだけを非ブロッキングで表示する
+          <div className="fixed top-3 right-3 z-20 rounded-md bg-slate-900/70 border border-slate-700 px-3 py-1 text-xs text-slate-300 backdrop-blur-sm">
+            認証確認中...
+          </div>
+        )}
 
         {/* ── 共通ボトムナビ (スマホ用) ── */}
         <BottomNav

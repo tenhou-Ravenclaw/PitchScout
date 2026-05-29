@@ -1,4 +1,4 @@
-import { useItemCollection } from "./useItemCollection";
+import { useItemList } from "./useItemList";
 
 /**
  * **useFavoriteArtists カスタムフック**
@@ -25,7 +25,7 @@ import { useItemCollection } from "./useItemCollection";
  * ```
  */
 export const useFavoriteArtists = () => {
-  const { ids, toggle, isIncluded } = useItemCollection("favoriteArtist");
+  const { ids, toggle, isIncluded } = useItemList("favoriteArtist");
   return {
     favoriteIds: ids,
     toggleFavorite: (artistId: number, artistName: string) => toggle(artistId, artistName),

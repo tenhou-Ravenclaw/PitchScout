@@ -1,241 +1,165 @@
 # Backend API
 
-声域解析と楽曲音域検索を提供する FastAPI バックエンド。
+PitchScout の FastAPI バックエンドです。音声変換、ボーカル分離、声域解析、楽曲検索、推薦、認証済みユーザーデータの保存を担当します。
 
 ## セットアップ
 
 ```bash
 cd backend
-
-# 仮想環境の作成と有効化
 python3 -m venv venv
 source venv/bin/activate
-
-# 依存関係インストール
+python -m pip install --upgrade pip wheel
 pip install -r requirements.txt
-
-# サーバー起動
-uvicorn main:app --reload
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-サーバーは `http://localhost:8000` で起動します。
+サーバーは `http://127.0.0.1:8000` で起動します。
 
-### 楽曲データベースの構築（任意）
+`backend/.env`:
 
-`songs.db` はリポジトリに含まれているため通常は不要ですが、データを更新したい場合:
-
-```bash
-rm -f songs.db
-python scraper.py
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-backend-supabase-key-here
+JWT_SECRET=<generated-secret>
+MAX_CONCURRENT_VOICE_ANALYSES=2
+MAX_CONCURRENT_KARAOKE_ANALYSES=1
+PITCHSCOUT_SAVE_DEBUG_AUDIO=false
 ```
 
-音域速報（voice-key.news）から約 260 組・3,900 曲のデータを取得します（約 8 分）。
+`SUPABASE_KEY` はバックエンド専用です。service role など強いキーを使う場合は、絶対にフロントエンドへ渡さず、`backend/.env` もコミットしないでください。
 
----
+## 起動時に初期化するもの
 
-## エンドポイント一覧
+- SQLite 楽曲 DB (`songs.db`)
+- DeepFilterNet3
+- Silero VAD
 
-| メソッド | パス | 説明 |
-|---------|------|------|
-| `POST` | `/analyze` | アカペラ/マイク録音から音域を解析 |
-| `POST` | `/analyze-karaoke` | カラオケ音源から音域を解析 (ボーカル分離あり) |
-| `GET` | `/songs` | 楽曲一覧を取得 (検索対応) |
+DeepFilterNet の依存がない環境では警告を出して処理を継続します。Python 3.12 系では DeepFilterNet が有効、Python 3.14 系では audio-separator 新版を優先する依存構成です。
 
----
+## 運用上の保護
 
-## 📊 処理時間について
+- `/analyze` と `/analyze-karaoke` は同期エンドポイントとして threadpool で実行されます。
+- `MAX_CONCURRENT_VOICE_ANALYSES` と `MAX_CONCURRENT_KARAOKE_ANALYSES` で、プロセスごとの同時解析数を制限します。
+- 上限に達した場合は `429` を返します。
+- `PITCHSCOUT_SAVE_DEBUG_AUDIO=false` が既定です。ユーザー音声を含む WAV を保存するため、本番では有効化しないでください。
 
-### `/analyze` (アカペラ・マイク録音)
-- **処理時間**: 約10〜30秒
-- **用途**: ボーカルのみの音源、マイク録音
+## 音声解析
 
-### `/analyze-karaoke` (カラオケ音源)
-- **処理時間**: 約1〜3分 (高速モード)
-- **Demucsモデル**: `htdemucs_6s` (超軽量版、3〜5倍高速)
-- **用途**: 伴奏付きの音源からボーカルを自動分離
+| エンドポイント | 用途 | 処理 |
+|----------------|------|------|
+| `POST /analyze` | アカペラ・マイク録音 | 16kHz mono WAV 変換 -> WORLD -> AP/HNR + RandomForest |
+| `POST /analyze-karaoke` | BGM 付きカラオケ音源 | 44.1kHz stereo WAV 変換 -> MelBandRoformers -> DeepFilterNet -> WORLD -> AP/HNR + RandomForest |
 
-#### 高速化のポイント
-1. **軽量モデル使用**: `htdemucs` (高速) vs `htdemucs_ft` (高品質)
-2. **GPU自動検出**: CUDAが使える環境では自動的にGPU処理
-3. **最適化された音域分析**: 必要最小限の処理で高精度を維持
-
----
-
-## エンドポイント詳細
-
-### POST /analyze
-
-録音した音声ファイルから声域を解析する。
-
-**リクエスト**: `multipart/form-data`
-
-| パラメータ | 型 | 説明 |
-|-----------|-----|------|
-| `file` | ファイル | 音声ファイル（.webm, .wav 等） |
+どちらも `multipart/form-data` で `file` を受け取り、任意で `no_falsetto` を指定できます。ログイン済みユーザーの JWT があれば、分析履歴も保存します。
 
 ```bash
-curl -X POST http://localhost:8000/analyze \
+curl -X POST http://127.0.0.1:8000/analyze \
   -F "file=@recording.webm"
 ```
 
----
-
-### GET /health
-
-サーバーの稼働状態を確認する。
-
 ```bash
-curl http://localhost:8000/health
+curl -X POST http://127.0.0.1:8000/analyze-karaoke \
+  -F "file=@karaoke.mp3"
 ```
 
-**レスポンス**:
+## 楽曲 API
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| `GET` | `/songs` | 楽曲一覧・検索・音域フィルタ |
+| `GET` | `/artists` | アーティスト一覧・検索 |
+| `GET` | `/artists/{artist_id}/songs` | アーティスト別楽曲一覧 |
+| `GET` | `/recommend` | 声域に合うおすすめ曲 |
+| `GET` | `/recommend/challenge` | 少し背伸びするチャレンジ曲 |
+| `GET` | `/similar-artists` | 声域が近いアーティスト |
+
+### 楽曲検索
+
+```bash
+curl "http://127.0.0.1:8000/songs?q=Lemon&limit=20"
+```
+
+`q` は曲名、アーティスト名、ふりがなに部分一致します。音域パラメータを付けるとキー推薦情報を付与できます。
+
+```bash
+curl "http://127.0.0.1:8000/songs?chest_min_hz=130&chest_max_hz=440&falsetto_max_hz=659&filter_by_range=true"
+```
+
+### おすすめ曲
+
+```bash
+curl "http://127.0.0.1:8000/recommend?chest_min_hz=130&chest_max_hz=440&chest_avg_hz=220&falsetto_max_hz=659&limit=10"
+```
+
+ログイン済みの場合は、お気に入りアーティストを優先しつつ、ディスカバリー枠を残して推薦します。
+
+### チャレンジ曲
+
+```bash
+curl "http://127.0.0.1:8000/recommend/challenge?chest_min_hz=130&chest_max_hz=440&chest_avg_hz=220&falsetto_max_hz=659&limit=5"
+```
+
+通常推薦の下限より少し難しい曲のうち、低音・高音ペナルティが現実的な範囲のものを返します。
+
+## 認証・ユーザー API
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| `POST` | `/auth/signup` | メール登録 |
+| `POST` | `/auth/signin` | ログイン |
+| `POST` | `/auth/signout` | ログアウト |
+| `POST` | `/auth/refresh` | セッション更新 |
+| `POST` | `/auth/reset-password` | パスワードリセットメール送信 |
+| `POST` | `/auth/update-password` | パスワード更新 |
+| `GET/PUT` | `/profile/me` | プロファイル取得・更新 |
+| `PUT` | `/profile/vocal-range` | 現在の声域更新 |
+| `GET` | `/analysis/history` | 分析履歴 |
+| `GET` | `/analysis/integrated-range` | 統合声域 |
+| `GET` | `/analysis/timeline` | 声域タイムライン |
+| `GET` | `/analysis/growth` | 成長指標 |
+| `GET/POST` | `/favorites` | お気に入り楽曲 |
+| `GET/POST` | `/favorite-artists` | お気に入りアーティスト |
+
+## 楽曲データベース
+
+`songs.db` は同梱済みなので通常は再構築不要です。現在の DB には 5,428 曲・858 アーティストが含まれます。
+
+| ソース | 曲数 |
+|--------|------|
+| voice-key.news | 3,871 |
+| vocal-range.com | 1,557 |
+
+更新する場合:
+
+```bash
+cd backend
+rm -f songs.db
+python scraper.py
+python scraper_vocal_range.py
+python update_all_readings.py
+```
+
+## モデル再学習
+
+```bash
+cd backend
+source venv/bin/activate
+python ml/train.py \
+  --dataset-root ml/vocalset_data/FULL \
+  --manifest ml/training_data/vocalset_manifest.csv
+```
+
+主な出力:
+
+- `ml/models/register_model.joblib`
+- `ml/training_data/world_dataset.npz`
+
+## ヘルスチェック
+
+```bash
+curl http://127.0.0.1:8000/health
+```
 
 ```json
 { "status": "ok" }
 ```
-
----
-
-### GET /songs/search
-
-曲名またはアーティスト名で楽曲を検索する（部分一致）。
-
-| パラメータ | 型 | 必須 | 説明 |
-|-----------|-----|------|------|
-| `q` | string | はい | 検索キーワード（1文字以上） |
-
-```bash
-curl "http://localhost:8000/songs/search?q=Lemon"
-```
-
-**レスポンス**:
-
-```json
-{
-  "results": [
-    {
-      "id": 353,
-      "title": "Lemon",
-      "artist": "米津玄師",
-      "range": {
-        "lowest": "mid1B",
-        "highest": "hiB",
-        "falsetto": "hiB"
-      },
-      "note": "ラスサビのみ地声hiB...",
-      "source": "voice-key.news"
-    }
-  ]
-}
-```
-
-検索結果は最大 20 件まで返します。
-
----
-
-### GET /songs/{id}
-
-楽曲 ID を指定して音域データを取得する。
-
-```bash
-curl http://localhost:8000/songs/1
-```
-
-**レスポンス**:
-
-```json
-{
-  "id": 1,
-  "title": "ANTENNA",
-  "artist": "Mrs. GREEN APPLE",
-  "range": {
-    "lowest": "mid1D#",
-    "highest": "hiA#",
-    "falsetto": "hiE"
-  },
-  "note": "サビとBメロで地声hiA#計5回使用。",
-  "source": "voice-key.news"
-}
-```
-
-楽曲が見つからない場合は `404` を返します。
-
----
-
-### GET /artists
-
-アーティスト一覧を取得する。
-
-| パラメータ | 型 | 必須 | デフォルト | 説明 |
-|-----------|-----|------|-----------|------|
-| `limit` | int | いいえ | 100 | 取得件数（1〜500） |
-| `offset` | int | いいえ | 0 | 取得開始位置 |
-
-```bash
-curl "http://localhost:8000/artists?limit=3"
-```
-
-**レスポンス**:
-
-```json
-{
-  "artists": [
-    { "id": 233, "name": "04 Limited Sazabys", "slug": "04-limited-sazabys", "song_count": 17 },
-    { "id": 186, "name": "AAA", "slug": "aaa", "song_count": 16 },
-    { "id": 85, "name": "AKASAKI", "slug": "akasaki", "song_count": 4 }
-  ]
-}
-```
-
----
-
-### GET /artists/{id}/songs
-
-指定アーティストの全楽曲を取得する。
-
-```bash
-curl http://localhost:8000/artists/7/songs
-```
-
-**レスポンス**:
-
-```json
-{
-  "songs": [
-    {
-      "id": 353,
-      "title": "Lemon",
-      "artist": "米津玄師",
-      "range": {
-        "lowest": "mid1B",
-        "highest": "hiB",
-        "falsetto": "hiB"
-      },
-      "note": "ラスサビのみ地声hiB...",
-      "source": "voice-key.news"
-    }
-  ]
-}
-```
-
-アーティストが見つからない場合は `404` を返します。
-
----
-
-## 音域表記について
-
-楽曲の音域はカラオケ音域表記で記録されています。
-
-| 表記 | 音域帯 | ピアノ音名 |
-|------|--------|-----------|
-| `lowF`〜`lowB` | 低音域 | F2〜B2 |
-| `mid1C`〜`mid1B` | 中低音域 | C3〜B3 |
-| `mid2C`〜`mid2B` | 中高音域 | C4〜B4 |
-| `hiA`〜`hiG` | 高音域 | A4〜G5 |
-| `hihiA`〜`hihiG` | 超高音域 | A5〜G6 |
-
-`#` が付くとシャープ（半音上）です。例: `mid1C#` = C#3
-
-## データソース
-
-楽曲音域データは [音域速報（voice-key.news）](https://voice-key.news/) から取得しています。

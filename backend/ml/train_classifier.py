@@ -22,7 +22,7 @@ import sys
 import argparse
 import numpy as np
 
-# ml/ から実行時に親ディレクトリ (backend/) の feature_extractor を見つける
+# ml/ から実行時に親ディレクトリ (backend/) の analysis パッケージを見つける
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from sklearn.ensemble import RandomForestClassifier
@@ -33,7 +33,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.pipeline import Pipeline
 import joblib
 
-from feature_extractor import FEATURE_NAMES
+from analysis.features import FEATURE_NAMES
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "training_data")
 DATASET_PATH = os.path.join(DATA_DIR, "dataset.npz")

@@ -160,7 +160,51 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
       mediaRecorder.current.onstop = async () => {
         if (animationIdRef.current)
           cancelAnimationFrame(animationIdRef.current);
-        const blob = new Blob(chunks.current, { type: "audio/webm" });
+
+        // MediaRecorder.mimeType は Safari で空文字を返すことがあり信頼できない。
+        // 録音データの先頭バイト（マジックバイト）を読み取り、実際のフォーマットを判定する。
+        // これにより Safari(MP4)・Firefox(OGG)・Chrome(WebM) のすべてで正しい拡張子が決まる。
+        const rawBlob = new Blob(chunks.current);
+        const headerBytes = new Uint8Array(await rawBlob.slice(0, 12).arrayBuffer());
+
+        let detectedExt: string;
+        let detectedMime: string;
+
+        // WebM / Matroska: EBML ヘッダ 0x1A 0x45 0xDF 0xA3
+        if (
+          headerBytes[0] === 0x1a && headerBytes[1] === 0x45 &&
+          headerBytes[2] === 0xdf && headerBytes[3] === 0xa3
+        ) {
+          detectedExt = ".webm";
+          detectedMime = "audio/webm";
+        }
+        // MP4 / M4A: ISO Base Media (ftyp ボックス) — bytes[4:8] === "ftyp"
+        else if (
+          headerBytes[4] === 0x66 && headerBytes[5] === 0x74 &&
+          headerBytes[6] === 0x79 && headerBytes[7] === 0x70
+        ) {
+          detectedExt = ".m4a";
+          detectedMime = "audio/mp4";
+        }
+        // OGG: "OggS" シグネチャ
+        else if (
+          headerBytes[0] === 0x4f && headerBytes[1] === 0x67 &&
+          headerBytes[2] === 0x67 && headerBytes[3] === 0x53
+        ) {
+          detectedExt = ".ogg";
+          detectedMime = "audio/ogg";
+        }
+        // 不明な場合は mimeType から推定してフォールバック
+        else {
+          const rawMime = (mediaRecorder.current?.mimeType || "audio/webm").split(";")[0].trim();
+          detectedExt = rawMime.includes("mp4") || rawMime.includes("m4a") ? ".m4a"
+            : rawMime.includes("ogg") ? ".ogg"
+            : ".webm";
+          detectedMime = rawMime || "audio/webm";
+        }
+
+        const blob = new Blob(chunks.current, { type: detectedMime });
+        const recordingFilename = `recording${detectedExt}`;
 
         // モードに合わせて解析タイマーを始動
         if (initialUseDemucs) {
@@ -172,8 +216,8 @@ const Recorder: React.FC<Props> = ({ onResult, initialUseDemucs = false }) => {
         try {
           // サーバーへの送信（カラオケモードか通常マイクかで分岐）
           const data = initialUseDemucs
-            ? await analyzeKaraoke(blob, "recording.webm", noFalsetto)
-            : await analyzeVoice(blob, noFalsetto);
+            ? await analyzeKaraoke(blob, recordingFilename, noFalsetto)
+            : await analyzeVoice(blob, recordingFilename, noFalsetto);
 
           stopAnalysisTimer();
           setProgress(100);

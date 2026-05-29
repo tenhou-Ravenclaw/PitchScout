@@ -552,7 +552,7 @@ npm start              # http://localhost:3000
 
 ```
 REACT_APP_SUPABASE_URL=https://xxx.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=eyJ...
+REACT_APP_SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
 
 > 環境変数が未設定でもアプリは動作する（認証機能のみ無効）。
@@ -570,7 +570,7 @@ uvicorn main:app --reload  # http://127.0.0.1:8000
 
 ```
 SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_KEY=eyJ...           # service_role キー
+SUPABASE_KEY=your-backend-supabase-key
 SUPABASE_JWT_SECRET=xxx
 ```
 

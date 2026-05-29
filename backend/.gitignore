@@ -17,6 +17,20 @@ venv/
 # アップロードファイル
 uploads/
 separated/
+debugfile/
 
 # OS
 .DS_Store
+
+ml/training_data/
+ml/vocalset_data/
+
+# データディレクトリ
+data/
+
+# デバッグ用スクリプト・出力（コミット不要）
+debug_falsetto/
+debug_falsetto_audio.py
+
+.venv/
+**/__pycache__/

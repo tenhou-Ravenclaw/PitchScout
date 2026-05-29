@@ -30,10 +30,10 @@ import librosa
 import torch
 import torchcrepe
 
-# ml/ から実行時に親ディレクトリ (backend/) の feature_extractor を見つける
+# ml/ から実行時に親ディレクトリ (backend/) の analysis パッケージを見つける
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from feature_extractor import extract_features, FEATURE_NAMES
+from analysis.features import extract_features, FEATURE_NAMES
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "training_data")
 DATASET_PATH = os.path.join(DATA_DIR, "dataset.npz")

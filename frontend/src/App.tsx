@@ -18,7 +18,9 @@ function AppRoutes() {
 }
 
 export default function App() {
-  // アプリ起動時のアニメーション（スプラッシュ）を表示するかどうかの状態
+  // アプリ起動時のアニメーション（スプラッシュ）を表示するかどうかの状態。
+  // OAuth リダイレクト時はURLのクエリ/ハッシュに認証情報が含まれるため、
+  // 初期レンダリング前にURLを書き換えるとログインセッションを失う。
   const [showSplash, setShowSplash] = useState(true);
 
   // アニメーションが終わったら非表示にする関数
@@ -33,10 +35,10 @@ export default function App() {
       <AuthProvider>      {/* ログイン情報を共有 */}
         <AnalysisProvider> {/* 解析の状態を共有 */}
           <AppProvider>      {/* アプリ全体のデータを共有 */}
-            
+
             {/* 起動時アニメーションの表示 */}
             {showSplash && <LogoSplash onAnimationEnd={handleSplashEnd} />}
-            
+
             {/* 現在のURLに合わせた画面（ページ）の表示 */}
             <AppRoutes />
 

@@ -6,13 +6,14 @@
  */
 import React, { useEffect, useState, useRef } from "react";
 // API通信用の関数と型定義をインポート
-import { collectionApi, AnalysisHistoryRecord, toUserMessage } from "../api";
+import { listApi, AnalysisHistoryRecord, toUserMessage, fetchAnalysisTimeline, AnalysisTimeline } from "../api";
 import { useToast } from "../hooks/useToast";
 import ErrorBanner from "../components/ui/ErrorBanner";
 import LoadingState from "../components/ui/LoadingState";
 import PageStateContainer from "../components/ui/PageStateContainer";
 import Toast from "../components/ui/Toast";
 import AuthRequiredCard from "../components/ui/cards/AuthRequiredCard";
+import VocalGrowthChart from "../components/features/VocalGrowthChart";
 import { PencilIcon, TrashIcon, CheckIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 /** 画面のプロパティ（設定） */
@@ -39,10 +40,12 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   const [history, setHistory] = useState<AnalysisHistoryRecord[]>([]); // 履歴データ
   const [loading, setLoading] = useState(true);                        // 読み込み中フラグ
   const [error, setError] = useState<string | null>(null);             // エラーメッセージ
+  const [timeline, setTimeline] = useState<AnalysisTimeline | null>(null); // 成長グラフデータ
   const [swipedId, setSwipedId] = useState<string | null>(null);       // 現在スワイプ中のアイテムID
   const [deletingId, setDeletingId] = useState<string | null>(null);   // 現在削除アニメーション中のID
   const [editingId, setEditingId] = useState<string | null>(null);     // 編集中のアイテムID
-  const [editValue, setEditValue] = useState<string>("");              // 編集中のファイル名
+  const [editValue, setEditValue] = useState<string>("");              // 編集中のファイル名（拡張子を除いた部分）
+  const [editExt, setEditExt] = useState<string>("");                  // 編集中のファイルの拡張子（変更不可）
   const [swipeOffset, setSwipeOffset] = useState<number>(0);           // スワイプの移動距離（正：左スワイプ＝削除、負：右スワイプ＝編集）
   const { toastMessage, showToast, hideToast } = useToast();
   const swipeStates = useRef<Record<string, SwipeState>>({});         // 各アイテムのスワイプ状態を保持
@@ -59,7 +62,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
     const fetchHistory = async () => {
       try {
-        const data = await collectionApi.analysisHistory.get();
+        const data = await listApi.analysisHistory.get();
         setHistory(data);
       } catch (err: unknown) {
         setError("履歴の取得に失敗しました。");
@@ -70,6 +73,9 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
     };
 
     fetchHistory();
+
+    // 成長グラフ用タイムラインを取得（失敗しても履歴表示は続ける）
+    fetchAnalysisTimeline(40).then(setTimeline).catch(() => {});
   }, [isAuthenticated]);
 
   /** ── 削除処理（ボタンクリック時：確認あり） ── */
@@ -80,11 +86,25 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
     await performDelete(recordId);
   };
 
+  /**
+   * ファイル名を basename と拡張子に分割します。
+   * "recording.mp3" → { baseName: "recording", ext: ".mp3" }
+   * "名称未設定"    → { baseName: "名称未設定", ext: "" }
+   */
+  const splitFileName = (fileName: string): { baseName: string; ext: string } => {
+    const dotIndex = fileName.lastIndexOf(".");
+    return dotIndex > 0
+      ? { baseName: fileName.slice(0, dotIndex), ext: fileName.slice(dotIndex) }
+      : { baseName: fileName, ext: "" };
+  };
+
   /** ── 編集開始 ── */
   const handleEdit = (e: React.MouseEvent, record: AnalysisHistoryRecord) => {
     e.stopPropagation();
+    const { baseName, ext } = splitFileName(record.file_name || "");
     setEditingId(record.id);
-    setEditValue(record.file_name || "");
+    setEditValue(baseName);
+    setEditExt(ext);
     setSwipedId(null);
     setSwipeOffset(0);
   };
@@ -93,7 +113,8 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
   const saveEdit = async (e: React.FormEvent | React.MouseEvent, recordId: string) => {
     e.stopPropagation();
     try {
-      const updated = await collectionApi.analysisHistory.update(recordId, { file_name: editValue });
+      // 入力した basename に保持していた拡張子を結合して保存する
+      const updated = await listApi.analysisHistory.update(recordId, { file_name: editValue + editExt });
       setHistory(prev => prev.map(r => r.id === recordId ? { ...r, file_name: updated.file_name } : r));
       setEditingId(null);
       showToast("ファイル名を更新しました。");
@@ -120,7 +141,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
     try {
       // サーバー側のデータを削除
-      await collectionApi.analysisHistory.remove(recordId);
+      await listApi.analysisHistory.remove(recordId);
       // 画面上のリストからも消す
       setHistory((prev) => prev.filter((record) => record.id !== recordId));
     } catch (err) {
@@ -173,8 +194,10 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
       // 右に深くスワイプ：編集モード
       const record = history.find(r => r.id === recordId);
       if (record) {
+        const { baseName, ext } = splitFileName(record.file_name || "");
         setEditingId(recordId);
-        setEditValue(record.file_name || "");
+        setEditValue(baseName);
+        setEditExt(ext);
       }
       setSwipedId(null);
       setSwipeOffset(0);
@@ -225,6 +248,16 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
           ←スワイプで削除 / 編集スワイプ→
         </p>
       </div>
+
+      {/* 成長グラフ（3件以上ある場合のみ表示） */}
+      {timeline && timeline.timeline.length >= 3 && (
+        <div className="bg-slate-900/60 backdrop-blur-xl border border-cyan-500/30 rounded-2xl p-5 mb-6">
+          <VocalGrowthChart
+            timeline={timeline.timeline}
+            stableRange={timeline.stable_range}
+          />
+        </div>
+      )}
 
       {loading ? (
         <PageStateContainer className="min-h-0 p-0">
@@ -287,17 +320,26 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
                   <p className="text-[10px] text-cyan-400/80 font-bold mb-1 tracking-widest">
                     {new Date(record.created_at).toLocaleString("ja-JP")}
                   </p>
-                  
+
                   {editingId === record.id ? (
                     <div className="flex items-center gap-2 mt-1" onClick={e => e.stopPropagation()}>
-                      <input
-                        autoFocus
-                        type="text"
-                        value={editValue}
-                        onChange={e => setEditValue(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && saveEdit(e, record.id)}
-                        className="bg-slate-900 border border-blue-500 text-white text-sm px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 w-full max-w-[200px]"
-                      />
+                      {/* 拡張子より前の部分のみ編集可能 */}
+                      <div className="flex items-center border border-blue-500 rounded overflow-hidden bg-slate-900 focus-within:ring-1 focus-within:ring-blue-400">
+                        <input
+                          autoFocus
+                          type="text"
+                          value={editValue}
+                          onChange={e => setEditValue(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && saveEdit(e, record.id)}
+                          className="bg-transparent text-white text-sm px-2 py-1 focus:outline-none w-full max-w-[150px]"
+                        />
+                        {/* 拡張子は変更不可として固定表示 */}
+                        {editExt && (
+                          <span className="text-slate-400 text-sm px-2 py-1 border-l border-slate-600 bg-slate-800 select-none">
+                            {editExt}
+                          </span>
+                        )}
+                      </div>
                       <button onClick={e => saveEdit(e, record.id)} className="p-1 text-green-400 hover:text-green-300">
                         <CheckIcon className="w-5 h-5" />
                       </button>
@@ -334,15 +376,15 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
 
                   {/* PCでのみ表示されるアクションボタン */}
                   <div className="hidden sm:flex items-center gap-2 ml-2">
-                    <button 
-                      onClick={(e) => handleEdit(e, record)} 
+                    <button
+                      onClick={(e) => handleEdit(e, record)}
                       className="p-2 bg-slate-800 border border-blue-500 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all duration-300"
                       title="名前を編集"
                     >
                       <PencilIcon className="w-4 h-4" />
                     </button>
-                    <button 
-                      onClick={(e) => handleDelete(e, record.id)} 
+                    <button
+                      onClick={(e) => handleDelete(e, record.id)}
                       className="p-2 bg-slate-800 border border-red-500 text-red-500 hover:bg-red-600 hover:text-white rounded-lg transition-all duration-300"
                       title="削除"
                     >
