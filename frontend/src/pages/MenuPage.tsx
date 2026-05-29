@@ -50,7 +50,7 @@ const MenuPage: React.FC<MenuPageProps> = ({ onNormalClick, onKaraokeClick, onUp
                         </span>
                         <br />
                         <span className="text-sm md:text-base font-medium text-slate-300 mt-2 inline-block">
-                            解析が完了すると自動的に結果画面へ移動します。新しく録音することはできません。
+                            解析が完了すると自動的に結果画面へ移動します。解析中は新しく録音できませんが、履歴は閲覧できます。
                         </span>
                     </div>
                 )}
@@ -100,10 +100,9 @@ const MenuPage: React.FC<MenuPageProps> = ({ onNormalClick, onKaraokeClick, onUp
                         </div>
                     </button>
 
-                    {/* 4. 履歴ボタン (小サイズ) */}
+                    {/* 4. 履歴ボタン (小サイズ) — 解析中でも閲覧は可能なので disabled にしない */}
                     <button
                         onClick={onHistoryClick}
-                        disabled={isAnalyzing}
                         className="group relative col-span-1 md:col-span-3 h-40 bg-slate-900/80 border-4 border-emerald-400 transform -skew-x-3 hover:skew-x-0 transition-all duration-300 shadow-[8px_8px_0px_0px_rgba(52,211,153,0.6)]"
                     >
                         <div className="absolute inset-0 flex flex-col items-center justify-center z-10 p-4">
