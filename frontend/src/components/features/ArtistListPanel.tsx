@@ -39,6 +39,7 @@ const ArtistListPanel: React.FC<ArtistListPanelProps> = ({
         <div
           key={artist.id}
           id={`artist-${artist.id}`}
+          // 五十音インデックスジャンプ時のスクロール対象。同行に複数アーティストがいる場合は querySelector が最初の要素を返す
           data-row={getConsonantRow(artist.reading || "")}
           className="group relative flex items-center w-full border-b border-cyan-500/10 last:border-0 hover:bg-cyan-900/20 transition-all duration-300"
         >

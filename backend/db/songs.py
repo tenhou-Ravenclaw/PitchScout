@@ -471,6 +471,23 @@ def search_artists(query: str, limit: int = 100, offset: int = 0) -> list[dict]:
     finally:
         conn.close()
 
+# 五十音行の reading コードポイント境界（ひらがな）。
+# _consonant_row の判定ロジックと 1:1 対応する。
+# カタカナ版は各文字に +0x60 して算出する。
+_ROW_BOUNDS_HIRAGANA: list[tuple[str, str]] = [
+    ('\u3041', '\u304b'),  # 0: あ行 [ぁ, か)
+    ('\u304b', '\u3055'),  # 1: か行 [か, さ)
+    ('\u3055', '\u305f'),  # 2: さ行 [さ, た)
+    ('\u305f', '\u306a'),  # 3: た行 [た, な)
+    ('\u306a', '\u306f'),  # 4: な行 [な, は)
+    ('\u306f', '\u307e'),  # 5: は行 [は, ま)
+    ('\u307e', '\u3083'),  # 6: ま行 [ま, ゃ)
+    ('\u3083', '\u3089'),  # 7: や行 [ゃ, ら)
+    ('\u3089', '\u308e'),  # 8: ら行 [ら, ゎ)
+    ('\u308e', '\u3094'),  # 9: わ行 [ゎ, ゔ)
+]
+
+
 def _consonant_row(text: str) -> int:
     """
     先頭文字から五十音の行番号（0〜9）を返す。
@@ -519,6 +536,7 @@ def get_artist_index_page(char: str, limit: int = 10) -> int | None:
 
     全アーティストを reading 順に並べ、指定された行（あ行〜わ行）が
     最初に出現するページ番号（0-indexed）を返す。
+    idx_artists_reading インデックスを使った2クエリで算出し、全件スキャンを避ける。
 
     Args:
         char: 五十音インデックス文字（例: "あ", "か"）。
@@ -535,22 +553,41 @@ def get_artist_index_page(char: str, limit: int = 10) -> int | None:
     if target_row == 99:
         return None
 
+    h_lo, h_hi = _ROW_BOUNDS_HIRAGANA[target_row]
+    # readings がカタカナで格納されている場合にも対応（ひらがな +0x60 = カタカナ）
+    k_lo = chr(ord(h_lo) + 0x60)
+    k_hi = chr(ord(h_hi) + 0x60)
+
     conn = get_connection()
     try:
-        rows = conn.execute(
+        # ① 対象行で最初に出現する reading を取得（idx_artists_reading を使用）
+        first_row = conn.execute(
             """
-            SELECT reading
+            SELECT MIN(reading) AS first_reading
             FROM artists
             WHERE song_count > 0
-            ORDER BY reading
+              AND (
+                (reading >= :h_lo AND reading < :h_hi)
+                OR (reading >= :k_lo AND reading < :k_hi)
+              )
+            """,
+            {"h_lo": h_lo, "h_hi": h_hi, "k_lo": k_lo, "k_hi": k_hi},
+        ).fetchone()
+
+        if first_row is None or first_row["first_reading"] is None:
+            return None
+
+        # ② その reading より前に位置するアーティスト数を数え、ページ番号を算出
+        count_row = conn.execute(
             """
-        ).fetchall()
+            SELECT COUNT(*) AS cnt
+            FROM artists
+            WHERE song_count > 0 AND reading < :first
+            """,
+            {"first": first_row["first_reading"]},
+        ).fetchone()
 
-        for index, row in enumerate(rows):
-            if _consonant_row(row["reading"] or "") == target_row:
-                return index // limit
-
-        return 0
+        return (count_row["cnt"] if count_row else 0) // limit
     finally:
         conn.close()
 
