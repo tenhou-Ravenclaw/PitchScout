@@ -302,7 +302,7 @@ const HistoryPage: React.FC<HistoryPageProps> = ({
               {/* === 前面：実際の履歴カード === */}
               <div
                 style={{
-                  transform: swipedId === record.id ? `translateX(-${swipeOffset}px)` : "translateX(0)",
+                  transform: swipedId === record.id ? `translateX(${-swipeOffset}px)` : "translateX(0)",
                   transition: swipeStates.current[record.id] ? "none" : "transform 0.2s ease-out",
                 }}
                 className={`bg-slate-950/80 backdrop-blur-xl p-6 rounded-xl border ${editingId === record.id ? 'border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'border-cyan-500/80 shadow-[inset_0_0_15px_rgba(34,211,238,0.2),0_0_15px_rgba(34,211,238,0.4)]'} flex flex-col sm:flex-row justify-between sm:items-center gap-4 relative group cursor-pointer hover:-translate-y-1 hover:scale-[1.02] transition-all duration-300 overflow-hidden`}
