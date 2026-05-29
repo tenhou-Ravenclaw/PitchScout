@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import { getArtistIndexPage } from "../api/songs";
 import { INDEX_KANA, ARTISTS_PER_PAGE } from "../constants/songListConstants";
 
@@ -18,14 +17,14 @@ export const useIndexJump = (
   setPageInput: (v: string) => void
 ) => {
   // インデックスジャンプ操作
-  const handleIndexJump = useCallback(async (char: string) => {
+  const handleIndexJump = async (char: string): Promise<void> => {
     const targetRow = INDEX_KANA.indexOf(char);
     if (targetRow === -1 || totalArtists === 0) return;
 
     const containerSelector = "#artist-list-panel";
 
     const scrollTargetRow = (): void => {
-      const el = document.querySelector(`${containerSelector} [data-row=\"${targetRow}\"]`) as HTMLElement | null;
+      const el = document.querySelector(`${containerSelector} [data-row="${targetRow}"]`) as HTMLElement | null;
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "start" });
         return;
@@ -47,7 +46,7 @@ export const useIndexJump = (
     } catch (err) {
       notifyError("インデックス移動に失敗しました。");
     }
-  }, [totalArtists, setArtistPage, notifyError, fetchArtists, setPageInput]);
+  };
 
   return { handleIndexJump };
 };
