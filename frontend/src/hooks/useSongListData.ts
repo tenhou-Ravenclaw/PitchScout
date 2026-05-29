@@ -85,8 +85,13 @@ export const useSongListData = ({
     totalArtists,
     totalPages,
     setArtistPage,
-    notifyError
+    notifyError,
+    fetchArtists,
+    artistPage
+    ,
+    setPageInput
   );
+  
 
   // アーティスト選択・楽曲取得
   const handleSelectArtist = useCallback(async (artist: Artist) => {
