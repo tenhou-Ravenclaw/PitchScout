@@ -5,10 +5,11 @@
 - /recommend
 - /similar-artists
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from db.songs import (
     get_all_songs, get_all_songs_raw, search_songs, count_songs,
     get_artists, get_artist_songs, count_artists, search_artists,
+    get_artist_index_page,
 )
 from config import MAX_FILTER_SONGS
 from recommender import (
@@ -39,6 +40,24 @@ def read_artists(
         artists = get_artists(limit, offset)
         total = count_artists()
     return {"artists": artists, "total": total}
+
+
+@router.get("/artists/index-page")
+def read_artist_index_page(
+    char: str = Query(..., min_length=1, max_length=1, description="五十音インデックス文字（例: あ, か）"),
+    limit: int = Query(10, ge=1, le=100),
+) -> dict:
+    """
+    五十音インデックス文字に対応するページ番号を返す。
+
+    全アーティストを reading 順に並べた場合に、指定文字の行が
+    最初に出現するページ番号（0-indexed）を返す。
+    クライアント側の線形探索・バイナリサーチを不要にする。
+    """
+    page = get_artist_index_page(char, limit)
+    if page is None:
+        raise HTTPException(status_code=404, detail="対応するページが見つかりません")
+    return {"page": page}
 
 
 @router.get("/artists/{artist_id}/songs")

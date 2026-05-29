@@ -460,6 +460,90 @@ def search_artists(query: str, limit: int = 100, offset: int = 0) -> list[dict]:
     finally:
         conn.close()
 
+def _consonant_row(text: str) -> int:
+    """
+    先頭文字から五十音の行番号（0〜9）を返す。
+
+    Args:
+        text: ひらがな読み仮名文字列。
+
+    Returns:
+        0=あ行, 1=か行, 2=さ行, 3=た行, 4=な行, 5=は行, 6=ま行, 7=や行, 8=ら行, 9=わ行, 99=該当なし。
+    """
+    if not text:
+        return 99
+
+    code = ord(text[0])
+    # カタカナをひらがなに変換して判定
+    if 0x30A1 <= code <= 0x30F6:
+        code -= 0x60
+
+    if 0x3041 <= code <= 0x3093:
+        if code <= 0x304A:
+            return 0  # あ行
+        if code <= 0x3054:
+            return 1  # か行
+        if code <= 0x305E:
+            return 2  # さ行
+        if code <= 0x3069:
+            return 3  # た行
+        if code <= 0x306E:
+            return 4  # な行
+        if code <= 0x307D:
+            return 5  # は行
+        if code <= 0x3082:
+            return 6  # ま行
+        if code <= 0x3088:
+            return 7  # や行
+        if code <= 0x308D:
+            return 8  # ら行
+        return 9  # わ行
+
+    return 99
+
+
+def get_artist_index_page(char: str, limit: int = 10) -> int | None:
+    """
+    五十音インデックス文字に対応する最初のページ番号を返す。
+
+    全アーティストを reading 順に並べ、指定された行（あ行〜わ行）が
+    最初に出現するページ番号（0-indexed）を返す。
+
+    Args:
+        char: 五十音インデックス文字（例: "あ", "か"）。
+        limit: 1ページあたりの件数。
+
+    Returns:
+        該当するページ番号（0-indexed）。見つからない場合は None。
+    """
+    if not char or limit <= 0:
+        return None
+
+    normalized = _hiragana_normalize(unicodedata.normalize("NFKC", char))
+    target_row = _consonant_row(normalized)
+    if target_row == 99:
+        return None
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT reading
+            FROM artists
+            WHERE song_count > 0
+            ORDER BY reading
+            """
+        ).fetchall()
+
+        for index, row in enumerate(rows):
+            if _consonant_row(row["reading"] or "") == target_row:
+                return index // limit
+
+        return 0
+    finally:
+        conn.close()
+
+
 def get_artist_songs(artist_id: int) -> list[dict]:
     """
     特定のアーティストの楽曲一覧を取得する。

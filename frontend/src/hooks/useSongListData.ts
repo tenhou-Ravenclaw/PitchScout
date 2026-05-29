@@ -81,17 +81,12 @@ export const useSongListData = ({
 
   // 五十音インデックスジャンプ
   const { handleIndexJump } = useIndexJump(
-    artists,
     totalArtists,
-    totalPages,
     setArtistPage,
     notifyError,
     fetchArtists,
-    artistPage
-    ,
     setPageInput
   );
-  
 
   // アーティスト選択・楽曲取得
   const handleSelectArtist = useCallback(async (artist: Artist) => {
