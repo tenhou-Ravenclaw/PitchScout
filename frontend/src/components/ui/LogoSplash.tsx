@@ -27,9 +27,11 @@ export const LogoSplash: React.FC<LogoSplashProps> = ({ onAnimationEnd }) => {
     setIsVisible(false); // 表示フラグをOFFにする
   };
 
-  /** ── フェイルセーフ処理 ──
-   * 追加: prefers-reduced-motion や animation event 未発火時でも
-   * 一定時間で確実にスプラッシュを閉じて遷移を継続します。
+  /** ── アニメーション完了タイマー ──
+   * <img> の animationend イベントは animation-delay と組み合わせた場合に
+   * Safari 等で発火しないことがあるため、アニメーション総時間（delay 1s + duration 3s = 4000ms）
+   * に合わせたタイマーをメインの終了トリガーとする。
+   * prefers-reduced-motion 時は即時終了。
    */
   useEffect(() => {
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -39,11 +41,10 @@ export const LogoSplash: React.FC<LogoSplashProps> = ({ onAnimationEnd }) => {
       return;
     }
 
+    // CSS: animation-delay(1s) + animation-duration(3s) = 4000ms
     const splashTimeout: ReturnType<typeof setTimeout> = setTimeout(() => {
-      console.warn("[WARN] スプラッシュの終了イベントが発火しなかったため、フェイルセーフで遷移します。");
       handleWaveAnimationEnd();
-    // 変更: アニメーション完了を待てるよう、フェイルセーフ時間を標準値に戻す
-    }, 5500);
+    }, 4000);
 
     return () => {
       clearTimeout(splashTimeout);
