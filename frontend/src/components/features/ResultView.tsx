@@ -5,7 +5,7 @@
  */
 
 import React from "react";
-import { AnalysisResult, RecommendedSong, SimilarArtist } from "../../api";
+import { AnalysisResult, NoteDistribution, RecommendedSong, SimilarArtist } from "../../api";
 import PianoKeyboard from "../ui/PianoKeyboard";
 
 interface Props {
@@ -35,6 +35,63 @@ const scoreRank = (score: number) => {
   if (score >= 65) return "B";
   if (score >= 50) return "C";
   return "D";
+};
+
+/* ───── 音階分布チャート ───── */
+/**
+ * 音階ごとのフレーム数を横棒グラフで表示する。
+ * 地声（indigo）と裏声（emerald）を積み上げ表示する。
+ */
+const NoteDistributionChart: React.FC<{ distribution: NoteDistribution[] }> = ({ distribution }) => {
+  const maxTotal = Math.max(...distribution.map((d) => d.total));
+  if (maxTotal === 0) return null;
+
+  return (
+    <div className="bg-slate-900/60 backdrop-blur-md rounded-xl p-5 shadow-xl border border-white/10">
+      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">音階分布</h3>
+      <p className="text-[10px] text-slate-600 mb-3">検出された音階ごとのフレーム数</p>
+      <div className="space-y-1.5">
+        {distribution.map((d) => {
+          const chestPct = (d.chest / maxTotal) * 100;
+          const falsettoPct = (d.falsetto / maxTotal) * 100;
+          return (
+            <div key={d.label} className="flex items-center gap-2">
+              <span className="w-16 text-right text-[11px] font-mono font-bold text-slate-400 flex-shrink-0">
+                {d.label}
+              </span>
+              <div className="flex-1 h-4 bg-slate-800/80 rounded overflow-hidden flex">
+                {d.chest > 0 && (
+                  <div
+                    className="h-full bg-indigo-500/80"
+                    style={{ width: `${chestPct}%` }}
+                  />
+                )}
+                {d.falsetto > 0 && (
+                  <div
+                    className="h-full bg-emerald-400/80"
+                    style={{ width: `${falsettoPct}%` }}
+                  />
+                )}
+              </div>
+              <span className="w-12 text-right text-[10px] text-slate-500 flex-shrink-0 tabular-nums">
+                {d.total}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-4 mt-3 text-[10px] text-slate-500">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 bg-indigo-500 rounded-full inline-block" />
+          地声
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 bg-emerald-400 rounded-full inline-block" />
+          裏声
+        </span>
+      </div>
+    </div>
+  );
 };
 
 /* ════════════════════════════════════════════════
@@ -154,6 +211,11 @@ const ResultView: React.FC<Props> = ({ result }) => {
           falsettoMax={result.falsetto_max}
         />
       </div>
+
+      {/* ──── 3.5. 音階分布（フレーム数） ──── */}
+      {result.note_distribution && result.note_distribution.length > 0 && (
+        <NoteDistributionChart distribution={result.note_distribution} />
+      )}
 
       {/* ──── 4. 音域詳細カード（地声・裏声） ──── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

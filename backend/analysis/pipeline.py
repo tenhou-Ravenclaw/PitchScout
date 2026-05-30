@@ -32,7 +32,15 @@ from analysis.feature_extractor import (
     extract_segment_features,
 )
 from analysis.scoring import analyze_singing_ability
-from config import FALSETTO_HARD_MIN_HZ, REGISTER_LOG_LEVEL, VOICE_MAX_HZ, VOICE_MIN_HZ
+from config import (
+    FALSETTO_HARD_MIN_HZ,
+    REGISTER_LOG_LEVEL,
+    SUSTAINED_CHEST_MIN_FRAMES,
+    SUSTAINED_FALSETTO_MIN_FRAMES,
+    SUSTAINED_LOW_MIN_FRAMES,
+    VOICE_MAX_HZ,
+    VOICE_MIN_HZ,
+)
 from note_converter import hz_to_label_and_hz
 
 _MODEL_PATH = os.path.join(
@@ -161,6 +169,146 @@ def _split_by_gate(
     return chest_mask, falsetto_mask
 
 
+def _filter_unsustained_top(
+    f0: np.ndarray,
+    mask: np.ndarray,
+    min_consecutive: int = SUSTAINED_CHEST_MIN_FRAMES,
+) -> np.ndarray:
+    """
+    最高音ノートが min_consecutive フレーム以上連続していなければ除外する。
+
+    繰り返し適用し、報告される最高音が必ず持続音であることを保証する。
+    ノイズや楽器リークによる瞬間的な高音ピーク誤検出を排除する目的。
+
+    Args:
+        f0: 全フレームの基本周波数配列。
+        mask: 対象フレームの boolean マスク（chest_mask / falsetto_mask）。
+        min_consecutive: 最高音として認定する最小連続フレーム数。
+
+    Returns:
+        非持続の最高音フレームを除外した新しいマスク。
+    """
+    result_mask = mask.copy()
+
+    # 有効範囲内のフレームのノートラベルを事前計算
+    all_indices = np.where(mask)[0]
+    labels: dict[int, str] = {}
+    for idx in all_indices:
+        hz_val = float(f0[idx])
+        if VOICE_MIN_HZ <= hz_val <= VOICE_MAX_HZ:
+            label, _ = hz_to_label_and_hz(hz_val)
+            labels[idx] = label
+
+    while True:
+        # 現在有効なフレームを取得
+        active = sorted(idx for idx in labels if result_mask[idx])
+        if not active:
+            break
+
+        # 最高音のノートラベルを特定
+        max_hz = max(f0[idx] for idx in active)
+        max_label, _ = hz_to_label_and_hz(max_hz)
+
+        # そのラベルに該当するフレームのインデックス（時系列順）
+        top_indices = [idx for idx in active if labels[idx] == max_label]
+        if not top_indices:
+            break
+
+        # 最大連続フレーム数を計算
+        best_run = 1
+        run = 1
+        for i in range(1, len(top_indices)):
+            if top_indices[i] == top_indices[i - 1] + 1:
+                run += 1
+                best_run = max(best_run, run)
+            else:
+                run = 1
+
+        if best_run >= min_consecutive:
+            break  # 最高音が持続音として確認された
+
+        # 非持続の最高音フレームをマスクから除外
+        removed_label = max_label
+        for idx in top_indices:
+            result_mask[idx] = False
+
+        removed_count = len(top_indices)
+        if removed_count > 0:
+            print(
+                f"[DEBUG] 持続音フィルタ: {removed_label} を除外 "
+                f"({removed_count}フレーム, 最大連続{best_run}フレーム "
+                f"< 閾値{min_consecutive})"
+            )
+
+    return result_mask
+
+
+def _filter_unsustained_bottom(
+    f0: np.ndarray,
+    mask: np.ndarray,
+    min_consecutive: int = SUSTAINED_LOW_MIN_FRAMES,
+) -> np.ndarray:
+    """
+    最低音ノートが min_consecutive フレーム以上連続していなければ除外する。
+
+    _filter_unsustained_top の最低音版。
+
+    Args:
+        f0: 全フレームの基本周波数配列。
+        mask: 対象フレームの boolean マスク。
+        min_consecutive: 最低音として認定する最小連続フレーム数。
+
+    Returns:
+        非持続の最低音フレームを除外した新しいマスク。
+    """
+    result_mask = mask.copy()
+
+    all_indices = np.where(mask)[0]
+    labels: dict[int, str] = {}
+    for idx in all_indices:
+        hz_val = float(f0[idx])
+        if VOICE_MIN_HZ <= hz_val <= VOICE_MAX_HZ:
+            label, _ = hz_to_label_and_hz(hz_val)
+            labels[idx] = label
+
+    while True:
+        active = sorted(idx for idx in labels if result_mask[idx])
+        if not active:
+            break
+
+        min_hz = min(f0[idx] for idx in active)
+        min_label, _ = hz_to_label_and_hz(min_hz)
+
+        bottom_indices = [idx for idx in active if labels[idx] == min_label]
+        if not bottom_indices:
+            break
+
+        best_run = 1
+        run = 1
+        for i in range(1, len(bottom_indices)):
+            if bottom_indices[i] == bottom_indices[i - 1] + 1:
+                run += 1
+                best_run = max(best_run, run)
+            else:
+                run = 1
+
+        if best_run >= min_consecutive:
+            break
+
+        for idx in bottom_indices:
+            result_mask[idx] = False
+
+        removed_count = len(bottom_indices)
+        if removed_count > 0:
+            print(
+                f"[DEBUG] 持続音フィルタ(低): {min_label} を除外 "
+                f"({removed_count}フレーム, 最大連続{best_run}フレーム "
+                f"< 閾値{min_consecutive})"
+            )
+
+    return result_mask
+
+
 def _safe_note_list(f0: np.ndarray) -> list[float]:
     """
     人声音域に収まる周波数のみリスト化する。
@@ -205,6 +353,57 @@ def _add_range(result: dict[str, Any], notes: list[float], prefix: str) -> None:
     result[f"{prefix}_count"] = int(arr.size)
 
 
+def _build_note_distribution(
+    chest_notes: list[float],
+    falsetto_notes: list[float],
+) -> list[dict[str, Any]]:
+    """
+    音階ごとのフレーム数を集計する。
+
+    地声・裏声それぞれのフレーム数を音階ラベル別にまとめ、
+    フロントエンドでの分布表示用データを返す。
+    低音から高音順にソートされる。
+
+    Args:
+        chest_notes: 地声フレームの Hz リスト。
+        falsetto_notes: 裏声フレームの Hz リスト。
+
+    Returns:
+        [{"label": "mid2C", "hz": 262.8, "chest": 45, "falsetto": 0, "total": 45}, ...]
+    """
+    from collections import Counter
+
+    chest_labels = [hz_to_label_and_hz(hz)[0] for hz in chest_notes]
+    falsetto_labels = [hz_to_label_and_hz(hz)[0] for hz in falsetto_notes]
+
+    chest_counts = Counter(chest_labels)
+    falsetto_counts = Counter(falsetto_labels)
+    all_labels = set(chest_counts) | set(falsetto_counts)
+
+    dist: list[dict[str, Any]] = []
+    for label in all_labels:
+        _, defined_hz = hz_to_label_and_hz(0)  # ダミー
+        # label → Hz を逆引き
+        for hz_val in chest_notes + falsetto_notes:
+            lbl, dhz = hz_to_label_and_hz(hz_val)
+            if lbl == label:
+                defined_hz = dhz
+                break
+
+        c = chest_counts.get(label, 0)
+        f = falsetto_counts.get(label, 0)
+        dist.append({
+            "label": label,
+            "hz": defined_hz,
+            "chest": c,
+            "falsetto": f,
+            "total": c + f,
+        })
+
+    dist.sort(key=lambda x: x["hz"])
+    return dist
+
+
 def _build_result(
     world: WorldFeatures,
     chest_mask: np.ndarray,
@@ -220,6 +419,11 @@ def _build_result(
         "register_confidence": round(segment_confidence, 4),
         "rf_chest_probability": round(rf_chest_probability, 4),
     }
+
+    # 瞬間的なピーク（ノイズ/楽器リーク）を除外
+    chest_mask = _filter_unsustained_top(world.f0, chest_mask, SUSTAINED_CHEST_MIN_FRAMES)
+    chest_mask = _filter_unsustained_bottom(world.f0, chest_mask, SUSTAINED_LOW_MIN_FRAMES)
+    falsetto_mask = _filter_unsustained_top(world.f0, falsetto_mask, SUSTAINED_FALSETTO_MIN_FRAMES)
 
     chest_notes = _safe_note_list(world.f0[chest_mask])
     falsetto_notes = _safe_note_list(world.f0[falsetto_mask])
@@ -248,6 +452,9 @@ def _build_result(
     result["chest_ratio"] = round(chest_ratio, 1)
     result["falsetto_ratio"] = round(falsetto_ratio, 1)
     result["chest_avg_hz"] = round(float(np.mean(chest_notes)), 1) if chest_notes else 0.0
+
+    # ノート分布（音階ごとのフレーム数）
+    result["note_distribution"] = _build_note_distribution(chest_notes, falsetto_notes)
 
     # 倍音スコア平均（デバッグ用）
     voiced_mask = world.voiced_mask

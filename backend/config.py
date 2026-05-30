@@ -151,6 +151,15 @@ CHALLENGE_SCORE_MAX: float = 30.0           # チャレンジ曲の最高スコ�
 CHALLENGE_LOW_PENALTY_MAX: float = 3.0      # 低音ペナルティ上限（半音）
 CHALLENGE_HIGH_PENALTY_MAX: float = 5.0     # 高音ペナルティ上限（半音）
 
+# === 持続音フィルタ ===
+# 最高音として認定するために必要な最小連続フレーム数。
+# WORLD_FRAME_PERIOD_MS=5.0ms のとき 20フレーム = 100ms、10フレーム = 50ms。
+# ノイズや楽器リークによる瞬間的なピッチ検出誤りを除外する。
+# 裏声は地声より短いフレーズで出ることが多いため閾値を緩める。
+SUSTAINED_CHEST_MIN_FRAMES: int = 20     # 地声最高音: 20フレーム (100ms)
+SUSTAINED_FALSETTO_MIN_FRAMES: int = 10  # 裏声最高音: 10フレーム (50ms)
+SUSTAINED_LOW_MIN_FRAMES: int = 15       # 最低音: 15フレーム (75ms)
+
 # === 解析時間警告 ===
 ANALYSIS_TIME_WARNING_SEC: int = 240        # 処理時間警告閾値 (秒)
 

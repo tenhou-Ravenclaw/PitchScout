@@ -72,6 +72,20 @@ export interface FavoriteSong {
   created_at: string;
 }
 
+/** 音階ごとのフレーム数分布（1音階分） */
+export interface NoteDistribution {
+  /** 音階ラベル（例: "mid2C"） */
+  label: string;
+  /** 定義周波数 (Hz) */
+  hz: number;
+  /** 地声フレーム数 */
+  chest: number;
+  /** 裏声フレーム数 */
+  falsetto: number;
+  /** 合計フレーム数 */
+  total: number;
+}
+
 export interface AnalysisResult {
   overall_min: string;
   overall_max: string;
@@ -96,6 +110,7 @@ export interface AnalysisResult {
   voice_type?: VoiceType;
   recommended_songs?: RecommendedSong[];
   similar_artists?: SimilarArtist[];
+  note_distribution?: NoteDistribution[];
   error?: string;
 }
 
