@@ -98,6 +98,55 @@ def _semitones(hz1: float, hz2: float) -> float:
 
 
 # ============================================================
+# 楽曲データキャッシュ（songs.db は実行時読み取り専用）
+# ============================================================
+_song_cache: list[dict] | None = None
+
+
+def _get_all_songs_with_hz() -> list[dict]:
+    """
+    全楽曲を Hz 変換済みでキャッシュから返す。
+
+    初回呼び出しで DB から全曲ロード + label_to_hz 変換を行い、
+    以降はメモリキャッシュを返す（songs.db は実行時読み取り専用）。
+
+    Returns:
+        lo_hz / hi_hz を含む楽曲辞書のリスト（変換不可な曲は除外済み）。
+    """
+    global _song_cache
+    if _song_cache is not None:
+        return _song_cache
+
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT s.id, s.title, a.id as artist_id, a.name as artist,
+                   a.song_count,
+                   s.lowest_note, s.highest_note, s.falsetto_note, s.source
+            FROM songs s
+            JOIN artists a ON s.artist_id = a.id
+            WHERE s.lowest_note IS NOT NULL AND s.highest_note IS NOT NULL
+        """).fetchall()
+    finally:
+        conn.close()
+
+    cache: list[dict] = []
+    for row in rows:
+        r = dict(row)
+        lo_hz = label_to_hz(r["lowest_note"])
+        hi_hz = label_to_hz(r["highest_note"])
+        if lo_hz is None or hi_hz is None or lo_hz <= 0 or hi_hz <= 0:
+            continue
+        r["lo_hz"] = lo_hz
+        r["hi_hz"] = hi_hz
+        cache.append(r)
+
+    _song_cache = cache
+    print(f"[INFO] 楽曲キャッシュ構築完了: {len(cache)} 曲")
+    return _song_cache
+
+
+# ============================================================
 # 1. おすすめ曲
 # ============================================================
 
@@ -118,6 +167,9 @@ def _pick_with_diversity(candidates: list[dict], n: int) -> list[dict]:
     Returns:
         アーティスト多様性を考慮して選んだ楽曲リスト（最大 n 曲）。
     """
+    if n <= 0 or not candidates:
+        return []
+
     result_list: list[dict] = []
     artist_count: dict[str, int] = {}
     for c in candidates:
@@ -155,122 +207,111 @@ def recommend_songs(
     """
     fav_ids: set[int] = set(favorite_artist_ids) if favorite_artist_ids else set()
 
-    conn = get_connection()
-    try:
-        rows = conn.execute("""
-            SELECT s.id, s.title, a.id as artist_id, a.name as artist,
-                   s.lowest_note, s.highest_note, s.falsetto_note, s.source
-            FROM songs s
-            JOIN artists a ON s.artist_id = a.id
-            WHERE s.lowest_note IS NOT NULL AND s.highest_note IS NOT NULL
-        """).fetchall()
+    all_songs = _get_all_songs_with_hz()
 
-        # 裏声があればそこまで上限を広げる
-        effective_max = chest_max_hz
-        if falsetto_max_hz and falsetto_max_hz > chest_max_hz:
-            effective_max = falsetto_max_hz
+    # 裏声があればそこまで上限を広げる
+    effective_max = chest_max_hz
+    if falsetto_max_hz and falsetto_max_hz > chest_max_hz:
+        effective_max = falsetto_max_hz
 
-        fav_candidates: list[dict] = []
-        normal_candidates: list[dict] = []
+    fav_candidates: list[dict] = []
+    normal_candidates: list[dict] = []
 
-        for row in rows:
-            r = dict(row)
-            lo_hz = label_to_hz(r["lowest_note"])
-            hi_hz = label_to_hz(r["highest_note"])
-            # label_to_hz は未知ラベルで None、0Hz では無効値として明示的に None チェックする
-            if lo_hz is None or hi_hz is None or lo_hz <= 0 or hi_hz <= 0 or lo_hz > hi_hz:
-                continue
+    for r in all_songs:
+        lo_hz = r["lo_hz"]
+        hi_hz = r["hi_hz"]
+        if lo_hz > hi_hz:
+            continue
 
-            # ペナルティ（半音単位）
-            low_penalty = 0.0
-            high_penalty = 0.0
+        # ペナルティ（半音単位）
+        low_penalty = 0.0
+        high_penalty = 0.0
 
-            if lo_hz < chest_min_hz:
-                low_penalty = _semitones(lo_hz, chest_min_hz)
-            if hi_hz > effective_max:
-                high_penalty = _semitones(effective_max, hi_hz)
+        if lo_hz < chest_min_hz:
+            low_penalty = _semitones(lo_hz, chest_min_hz)
+        if hi_hz > effective_max:
+            high_penalty = _semitones(effective_max, hi_hz)
 
-            # 中心音のずれ
-            song_center = math.sqrt(lo_hz * hi_hz)
-            center_diff = abs(_semitones(chest_avg_hz, song_center)) if chest_avg_hz > 0 else 0.0
+        # 中心音のずれ
+        song_center = math.sqrt(lo_hz * hi_hz)
+        center_diff = abs(_semitones(chest_avg_hz, song_center)) if chest_avg_hz > 0 else 0.0
 
-            # スコア計算
-            score = 100.0
-            score -= low_penalty * RECOMMEND_LOW_PENALTY_WEIGHT
-            score -= high_penalty * RECOMMEND_HIGH_PENALTY_WEIGHT
-            score -= center_diff * RECOMMEND_CENTER_DIFF_WEIGHT
+        # スコア計算
+        score = 100.0
+        score -= low_penalty * RECOMMEND_LOW_PENALTY_WEIGHT
+        score -= high_penalty * RECOMMEND_HIGH_PENALTY_WEIGHT
+        score -= center_diff * RECOMMEND_CENTER_DIFF_WEIGHT
 
-            if low_penalty == 0 and high_penalty == 0:
-                score += RECOMMEND_PERFECT_BONUS
+        if low_penalty == 0 and high_penalty == 0:
+            score += RECOMMEND_PERFECT_BONUS
 
-            if score <= RECOMMEND_MIN_SCORE:
-                continue
+        if score <= RECOMMEND_MIN_SCORE:
+            continue
 
-            entry = {
-                "id": r["id"],
-                "title": r["title"],
-                "artist": r["artist"],
-                "artist_id": r["artist_id"],
-                "lowest_note": r["lowest_note"],
-                "highest_note": r["highest_note"],
-                "match_score": round(min(100.0, score), 1),
-            }
+        entry = {
+            "id": r["id"],
+            "title": r["title"],
+            "artist": r["artist"],
+            "artist_id": r["artist_id"],
+            "lowest_note": r["lowest_note"],
+            "highest_note": r["highest_note"],
+            "match_score": round(min(100.0, score), 1),
+        }
 
-            if fav_ids and r["artist_id"] in fav_ids:
-                fav_candidates.append(entry)
-            else:
-                normal_candidates.append(entry)
-
-        fav_candidates.sort(key=lambda x: x["match_score"], reverse=True)
-        normal_candidates.sort(key=lambda x: x["match_score"], reverse=True)
-
-        # --- 枠配分 ---
-        # お気に入りがない場合は全部 normal に
-        if not fav_ids:
-            fav_slots = 0
+        if fav_ids and r["artist_id"] in fav_ids:
+            fav_candidates.append(entry)
         else:
-            fav_slots = min(FAV_MAX_SLOTS, limit - DISCOVERY_SLOTS)
+            normal_candidates.append(entry)
 
-        discovery_slots = limit - fav_slots
+    fav_candidates.sort(key=lambda x: x["match_score"], reverse=True)
+    normal_candidates.sort(key=lambda x: x["match_score"], reverse=True)
 
-        # お気に入りアーティスト枠
-        fav_picks = _pick_with_diversity(fav_candidates, fav_slots)
-        fav_artist_names_used = {c["artist"] for c in fav_picks}
+    # --- 枠配分 ---
+    # お気に入りがない場合は全部 normal に
+    if not fav_ids:
+        fav_slots = 0
+    else:
+        # limit が小さい場合は discovery を優先し、負数スロットを作らない。
+        reserved_discovery = min(DISCOVERY_SLOTS, limit)
+        fav_slots = min(FAV_MAX_SLOTS, max(0, limit - reserved_discovery))
 
-        # ディスカバリー枠: お気に入りアーティストを除外
-        discovery_pool = [c for c in normal_candidates if c["artist"] not in fav_artist_names_used]
-        discovery_picks = _pick_with_diversity(discovery_pool, discovery_slots)
+    discovery_slots = max(0, limit - fav_slots)
 
-        # お気に入り枠が埋まらなかった場合は normal で補完
-        shortfall = fav_slots - len(fav_picks)
-        if shortfall > 0:
-            extra_pool = [
-                c for c in normal_candidates
-                if c["artist"] not in fav_artist_names_used
-                and c not in discovery_picks
-            ]
-            extra_picks = _pick_with_diversity(extra_pool, shortfall)
-            discovery_picks.extend(extra_picks)
+    # お気に入りアーティスト枠
+    fav_picks = _pick_with_diversity(fav_candidates, fav_slots)
+    fav_artist_names_used = {c["artist"] for c in fav_picks}
 
-        combined = fav_picks + discovery_picks
+    # ディスカバリー枠: お気に入りアーティストを除外
+    discovery_pool = [c for c in normal_candidates if c["artist"] not in fav_artist_names_used]
+    discovery_picks = _pick_with_diversity(discovery_pool, discovery_slots)
 
-        # --- キー変更おすすめを付与、artist_id を削除 ---
-        fav_artist_set = {entry["artist"] for entry in fav_picks}
-        result_final = []
-        for c in combined:
-            key_info = recommend_key_for_song(
-                c.get("lowest_note"), c.get("highest_note"),
-                chest_min_hz, effective_max,
-            )
-            c.update(key_info)
-            c.pop("artist_id", None)
-            c["is_favorite_artist"] = c["artist"] in fav_artist_set
-            result_final.append(c)
+    # お気に入り枠が埋まらなかった場合は normal で補完
+    shortfall = fav_slots - len(fav_picks)
+    if shortfall > 0:
+        extra_pool = [
+            c for c in normal_candidates
+            if c["artist"] not in fav_artist_names_used
+            and c not in discovery_picks
+        ]
+        extra_picks = _pick_with_diversity(extra_pool, shortfall)
+        discovery_picks.extend(extra_picks)
 
-        return result_final[:limit]
+    combined = fav_picks + discovery_picks
 
-    finally:
-        conn.close()
+    # --- キー変更おすすめを付与、artist_id を削除 ---
+    fav_artist_set = {entry["artist"] for entry in fav_picks}
+    result_final = []
+    for c in combined:
+        key_info = recommend_key_for_song(
+            c.get("lowest_note"), c.get("highest_note"),
+            chest_min_hz, effective_max,
+        )
+        c.update(key_info)
+        c.pop("artist_id", None)
+        c["is_favorite_artist"] = c["artist"] in fav_artist_set
+        result_final.append(c)
+
+    return result_final[:limit]
 
 
 # ============================================================
@@ -328,68 +369,57 @@ def recommend_challenge_songs(
     if falsetto_max_hz and falsetto_max_hz > chest_max_hz:
         effective_max = falsetto_max_hz
 
-    conn = get_connection()
-    try:
-        rows = conn.execute("""
-            SELECT s.id, s.title, a.id as artist_id, a.name as artist,
-                   s.lowest_note, s.highest_note
-            FROM songs s
-            JOIN artists a ON s.artist_id = a.id
-            WHERE s.lowest_note IS NOT NULL AND s.highest_note IS NOT NULL
-        """).fetchall()
+    all_songs = _get_all_songs_with_hz()
 
-        candidates: list[dict] = []
-        for row in rows:
-            r = dict(row)
-            lo_hz = label_to_hz(r["lowest_note"])
-            hi_hz = label_to_hz(r["highest_note"])
-            if lo_hz is None or hi_hz is None or lo_hz <= 0 or hi_hz <= 0 or lo_hz > hi_hz:
-                continue
+    candidates: list[dict] = []
+    for r in all_songs:
+        lo_hz = r["lo_hz"]
+        hi_hz = r["hi_hz"]
+        if lo_hz > hi_hz:
+            continue
 
-            low_penalty = _semitones(lo_hz, chest_min_hz) if lo_hz < chest_min_hz else 0.0
-            high_penalty = _semitones(effective_max, hi_hz) if hi_hz > effective_max else 0.0
-            song_center = math.sqrt(lo_hz * hi_hz)
-            center_diff = abs(_semitones(chest_avg_hz, song_center)) if chest_avg_hz > 0 else 0.0
+        low_penalty = _semitones(lo_hz, chest_min_hz) if lo_hz < chest_min_hz else 0.0
+        high_penalty = _semitones(effective_max, hi_hz) if hi_hz > effective_max else 0.0
+        song_center = math.sqrt(lo_hz * hi_hz)
+        center_diff = abs(_semitones(chest_avg_hz, song_center)) if chest_avg_hz > 0 else 0.0
 
-            score = 100.0
-            score -= low_penalty * RECOMMEND_LOW_PENALTY_WEIGHT
-            score -= high_penalty * RECOMMEND_HIGH_PENALTY_WEIGHT
-            score -= center_diff * RECOMMEND_CENTER_DIFF_WEIGHT
+        score = 100.0
+        score -= low_penalty * RECOMMEND_LOW_PENALTY_WEIGHT
+        score -= high_penalty * RECOMMEND_HIGH_PENALTY_WEIGHT
+        score -= center_diff * RECOMMEND_CENTER_DIFF_WEIGHT
 
-            # チャレンジ曲: スコア CHALLENGE_SCORE_MIN〜MAX かつペナルティが現実的な範囲
-            if not (CHALLENGE_SCORE_MIN < score <= CHALLENGE_SCORE_MAX):
-                continue
-            if low_penalty > CHALLENGE_LOW_PENALTY_MAX:
-                continue  # 低音が大幅不足な曲は喉への負担が大きいため除外
-            if high_penalty > CHALLENGE_HIGH_PENALTY_MAX:
-                continue  # 高音ペナルティが上限を超える曲は短期練習で届かないため除外
+        # チャレンジ曲: スコア CHALLENGE_SCORE_MIN〜MAX かつペナルティが現実的な範囲
+        if not (CHALLENGE_SCORE_MIN < score <= CHALLENGE_SCORE_MAX):
+            continue
+        if low_penalty > CHALLENGE_LOW_PENALTY_MAX:
+            continue  # 低音が大幅不足な曲は喉への負担が大きいため除外
+        if high_penalty > CHALLENGE_HIGH_PENALTY_MAX:
+            continue  # 高音ペナルティが上限を超える曲は短期練習で届かないため除外
 
-            key_info = recommend_key_for_song(
-                r["lowest_note"], r["highest_note"],
-                chest_min_hz, effective_max,
-            )
-            candidates.append({
-                "id": r["id"],
-                "title": r["title"],
-                "artist": r["artist"],
-                "artist_id": r["artist_id"],
-                "lowest_note": r["lowest_note"],
-                "highest_note": r["highest_note"],
-                "match_score": round(score, 1),
-                "challenge_reason": _challenge_reason(high_penalty, low_penalty, center_diff),
-                **key_info,
-            })
+        key_info = recommend_key_for_song(
+            r["lowest_note"], r["highest_note"],
+            chest_min_hz, effective_max,
+        )
+        candidates.append({
+            "id": r["id"],
+            "title": r["title"],
+            "artist": r["artist"],
+            "artist_id": r["artist_id"],
+            "lowest_note": r["lowest_note"],
+            "highest_note": r["highest_note"],
+            "match_score": round(score, 1),
+            "challenge_reason": _challenge_reason(high_penalty, low_penalty, center_diff),
+            **key_info,
+        })
 
-        candidates.sort(key=lambda x: x["match_score"], reverse=True)
+    candidates.sort(key=lambda x: x["match_score"], reverse=True)
 
-        # アーティスト多様性フィルタ
-        result = _pick_with_diversity(candidates, limit)
-        for c in result:
-            c.pop("artist_id", None)
+    # アーティスト多様性フィルタ
+    result = _pick_with_diversity(candidates, limit)
+    for c in result:
+        c.pop("artist_id", None)
 
-        return result
-    finally:
-        conn.close()
+    return result
 
 
 # ============================================================
@@ -405,68 +435,53 @@ def find_similar_artists(
     ユーザーの音域に最も近いアーティストを返す。
     各アーティストの全楽曲の中央値(最低音/最高音)で比較。
     """
-    conn = get_connection()
-    try:
-        rows = conn.execute("""
-            SELECT a.id, a.name, a.song_count,
-                   s.lowest_note, s.highest_note
-            FROM songs s
-            JOIN artists a ON s.artist_id = a.id
-            WHERE s.lowest_note IS NOT NULL AND s.highest_note IS NOT NULL
-        """).fetchall()
+    all_songs = _get_all_songs_with_hz()
 
-        artists: dict[int, dict] = {}
-        for row in rows:
-            r = dict(row)
-            aid = r["id"]
-            lo_hz = label_to_hz(r["lowest_note"])
-            hi_hz = label_to_hz(r["highest_note"])
-            if lo_hz is None or hi_hz is None or lo_hz <= 0 or hi_hz <= 0:
-                continue
-            if aid not in artists:
-                artists[aid] = {
-                    "id": aid,
-                    "name": r["name"],
-                    "song_count": r["song_count"],
-                    "lows": [],
-                    "highs": [],
-                }
-            artists[aid]["lows"].append(lo_hz)
-            artists[aid]["highs"].append(hi_hz)
+    artists: dict[int, dict] = {}
+    for r in all_songs:
+        aid = r["artist_id"]
+        if aid not in artists:
+            artists[aid] = {
+                "id": aid,
+                "name": r["artist"],
+                "song_count": r.get("song_count", 0),
+                "lows": [],
+                "highs": [],
+            }
+        artists[aid]["lows"].append(r["lo_hz"])
+        artists[aid]["highs"].append(r["hi_hz"])
 
-        results = []
-        for data in artists.values():
-            if len(data["lows"]) < 2:
-                continue
+    results = []
+    for data in artists.values():
+        if len(data["lows"]) < 2:
+            continue
 
-            med_low = float(np.median(data["lows"]))
-            med_high = float(np.median(data["highs"]))
-            med_center = math.sqrt(med_low * med_high)
+        med_low = float(np.median(data["lows"]))
+        med_high = float(np.median(data["highs"]))
+        med_center = math.sqrt(med_low * med_high)
 
-            low_diff = abs(_semitones(med_low, chest_min_hz))
-            high_diff = abs(_semitones(med_high, chest_max_hz))
-            center_diff = (
-                abs(_semitones(med_center, chest_avg_hz)) if chest_avg_hz > 0 else 99.0
-            )
+        low_diff = abs(_semitones(med_low, chest_min_hz))
+        high_diff = abs(_semitones(med_high, chest_max_hz))
+        center_diff = (
+            abs(_semitones(med_center, chest_avg_hz)) if chest_avg_hz > 0 else 99.0
+        )
 
-            similarity = 100.0 - (low_diff * 3.0 + high_diff * 3.0 + center_diff * 4.0)
+        similarity = 100.0 - (low_diff * 3.0 + high_diff * 3.0 + center_diff * 4.0)
 
-            if similarity > 20:
-                lo_label, _ = hz_to_label_and_hz(med_low)
-                hi_label, _ = hz_to_label_and_hz(med_high)
-                results.append({
-                    "id": data["id"],
-                    "name": data["name"],
-                    "song_count": data["song_count"],
-                    "typical_lowest": lo_label,
-                    "typical_highest": hi_label,
-                    "similarity_score": round(min(100.0, similarity), 1),
-                })
+        if similarity > 20:
+            lo_label, _ = hz_to_label_and_hz(med_low)
+            hi_label, _ = hz_to_label_and_hz(med_high)
+            results.append({
+                "id": data["id"],
+                "name": data["name"],
+                "song_count": data["song_count"],
+                "typical_lowest": lo_label,
+                "typical_highest": hi_label,
+                "similarity_score": round(min(100.0, similarity), 1),
+            })
 
-        results.sort(key=lambda x: x["similarity_score"], reverse=True)
-        return results[:limit]
-    finally:
-        conn.close()
+    results.sort(key=lambda x: x["similarity_score"], reverse=True)
+    return results[:limit]
 
 
 # ============================================================

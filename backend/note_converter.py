@@ -14,6 +14,7 @@ note_converter.py
 """
 
 import math
+from functools import lru_cache
 
 # ========== 対応表 (A4=442Hz基準) ==========
 NOTE_TABLE = [
@@ -104,6 +105,7 @@ NOTE_TABLE = [
 ]
 
 _FREQS = [row[2] for row in NOTE_TABLE]
+_LOG_FREQS = [math.log2(f) for f in _FREQS]  # 起動時に1回だけ計算
 
 # label → NOTE_TABLE インデックス（音高順位）のキャッシュ
 # NOTE_TABLE は低音から高音順なのでインデックス = 音高順位
@@ -127,11 +129,13 @@ def label_to_rank(label: str) -> int:
     return _LABEL_TO_RANK.get(label, -1)
 
 
+@lru_cache(maxsize=512)
 def hz_to_label_and_hz(hz: float) -> tuple[str, float]:
     """
     Hz → (ラベル, 定義Hz) を対応表から返す。
 
     対数スケールで最近傍を探索する（音楽的に正しい距離計算）。
+    結果は LRU キャッシュされる（同一 Hz の再計算を回避）。
 
     Args:
         hz: 変換する周波数 (Hz)。0 以下なら ("unknown", 0.0) を返す。
@@ -142,9 +146,8 @@ def hz_to_label_and_hz(hz: float) -> tuple[str, float]:
     if hz <= 0:
         return "unknown", 0.0
 
-    log_hz    = math.log2(hz)
-    log_freqs = [math.log2(f) for f in _FREQS]
-    idx       = min(range(len(log_freqs)), key=lambda i: abs(log_freqs[i] - log_hz))
+    log_hz = math.log2(hz)
+    idx    = min(range(len(_LOG_FREQS)), key=lambda i: abs(_LOG_FREQS[i] - log_hz))
 
     _, label, defined_hz = NOTE_TABLE[idx]
     return label, defined_hz

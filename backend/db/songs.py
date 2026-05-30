@@ -340,9 +340,12 @@ def get_songs_by_ids(song_ids: list[int]) -> dict[int, dict]:
         conn.close()
 
 
-def get_artist(artist_id: int) -> dict | None:
+@lru_cache(maxsize=1024)
+def _get_artist_cached(artist_id: int) -> dict | None:
     """
     ID でアーティストを取得する。
+
+    結果は LRU キャッシュされる（songs.db は実行時読み取り専用）。
 
     Args:
         artist_id: アーティスト ID。
@@ -359,6 +362,17 @@ def get_artist(artist_id: int) -> dict | None:
         return dict(row) if row else None
     finally:
         conn.close()
+
+
+def get_artist(artist_id: int) -> dict | None:
+    """
+    ID でアーティストを取得する。
+
+    キャッシュ済みデータの破壊的変更が他リクエストへ波及しないよう、
+    毎回コピーを返す。
+    """
+    artist = _get_artist_cached(artist_id)
+    return dict(artist) if artist else None
 
 
 def get_artists(limit: int = 100, offset: int = 0) -> list[dict]:
@@ -596,11 +610,13 @@ def get_artist_songs(artist_id: int) -> list[dict]:
     """
     特定のアーティストの楽曲一覧を取得する。
 
+    結果は LRU キャッシュされる（songs.db は実行時読み取り専用）。
+
     Args:
         artist_id: アーティスト ID。
 
     Returns:
-        楽曲情報の辞書リスト（曲名順）。
+        楽曲情報の辞書タプル（曲名順）。
     """
     conn = get_connection()
     try:
@@ -613,9 +629,18 @@ def get_artist_songs(artist_id: int) -> list[dict]:
             WHERE s.artist_id = ?
             ORDER BY s.title
         """, (artist_id,)).fetchall()
-        return [dict(r) for r in rows]
+        return tuple(dict(r) for r in rows)
     finally:
         conn.close()
+
+
+def get_artist_songs(artist_id: int) -> list[dict]:
+    """
+    特定のアーティストの楽曲一覧を取得する。
+
+    キャッシュ本体を不変に保つため、毎回 dict を複製して返す。
+    """
+    return [dict(song) for song in _get_artist_songs_cached(artist_id)]
 
 
 def get_all_songs_raw(query: str = "") -> list[dict]:
