@@ -138,6 +138,10 @@ export interface ArtistsResponse {
   total: number;
 }
 
+export interface ArtistIndexPageResponse {
+  page: number;
+}
+
 export interface AnalysisHistoryRecord {
   id: string;
   user_id: string;

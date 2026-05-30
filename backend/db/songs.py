@@ -120,6 +120,7 @@ def init_db(db_path: str = DB_PATH) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title);
             CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist_id);
+            CREATE INDEX IF NOT EXISTS idx_artists_reading ON artists(reading);
         """)
 
         # マイグレーション: 既存DBに reading カラムを追加
@@ -135,6 +136,11 @@ def init_db(db_path: str = DB_PATH) -> None:
             conn.commit()
         except sqlite3.OperationalError:
             pass  # カラムが既に存在する場合は無視
+
+        # マイグレーション: 既存DBに idx_artists_reading インデックスを追加
+        # reading 前方一致検索（かな検索）を高速化するため
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_artists_reading ON artists(reading)")
+        conn.commit()
 
         # 既存の重複データを除去（IDが最小のレコードを残す）
         conn.execute("""
@@ -394,9 +400,13 @@ def get_artists(limit: int = 100, offset: int = 0) -> list[dict]:
         conn.close()
 
 
+@lru_cache(maxsize=256)
 def count_artists(query: str = "") -> int:
     """
     アーティスト総数を取得する（カタカナ対応）。
+
+    songs.db は実行時読み取り専用のため lru_cache でキャッシュしている。
+    同一クエリでのページ遷移ごとに DB をスキャンするコストを排除する。
 
     Args:
         query: 検索文字列。空文字なら全件カウント。
@@ -475,8 +485,128 @@ def search_artists(query: str, limit: int = 100, offset: int = 0) -> list[dict]:
     finally:
         conn.close()
 
-@lru_cache(maxsize=256)
-def _get_artist_songs_cached(artist_id: int) -> tuple[dict, ...]:
+# 五十音行の reading コードポイント境界（ひらがな）。
+# _consonant_row の判定ロジックと 1:1 対応する。
+# カタカナ版は各文字に +0x60 して算出する。
+_ROW_BOUNDS_HIRAGANA: list[tuple[str, str]] = [
+    ('\u3041', '\u304b'),  # 0: あ行 [ぁ, か)
+    ('\u304b', '\u3055'),  # 1: か行 [か, さ)
+    ('\u3055', '\u305f'),  # 2: さ行 [さ, た)
+    ('\u305f', '\u306a'),  # 3: た行 [た, な)
+    ('\u306a', '\u306f'),  # 4: な行 [な, は)
+    ('\u306f', '\u307e'),  # 5: は行 [は, ま)
+    ('\u307e', '\u3083'),  # 6: ま行 [ま, ゃ)
+    ('\u3083', '\u3089'),  # 7: や行 [ゃ, ら)
+    ('\u3089', '\u308e'),  # 8: ら行 [ら, ゎ)
+    ('\u308e', '\u3094'),  # 9: わ行 [ゎ, ゔ)
+]
+
+
+def _consonant_row(text: str) -> int:
+    """
+    先頭文字から五十音の行番号（0〜9）を返す。
+
+    Args:
+        text: ひらがな読み仮名文字列。
+
+    Returns:
+        0=あ行, 1=か行, 2=さ行, 3=た行, 4=な行, 5=は行, 6=ま行, 7=や行, 8=ら行, 9=わ行, 99=該当なし。
+    """
+    if not text:
+        return 99
+
+    code = ord(text[0])
+    # カタカナをひらがなに変換して判定
+    if 0x30A1 <= code <= 0x30F6:
+        code -= 0x60
+
+    if 0x3041 <= code <= 0x3093:
+        if code <= 0x304A:
+            return 0  # あ行
+        if code <= 0x3054:
+            return 1  # か行
+        if code <= 0x305E:
+            return 2  # さ行
+        if code <= 0x3069:
+            return 3  # た行
+        if code <= 0x306E:
+            return 4  # な行
+        if code <= 0x307D:
+            return 5  # は行
+        if code <= 0x3082:
+            return 6  # ま行
+        if code <= 0x3088:
+            return 7  # や行
+        if code <= 0x308D:
+            return 8  # ら行
+        return 9  # わ行
+
+    return 99
+
+
+def get_artist_index_page(char: str, limit: int = 10) -> int | None:
+    """
+    五十音インデックス文字に対応する最初のページ番号を返す。
+
+    全アーティストを reading 順に並べ、指定された行（あ行〜わ行）が
+    最初に出現するページ番号（0-indexed）を返す。
+    idx_artists_reading インデックスを使った2クエリで算出し、全件スキャンを避ける。
+
+    Args:
+        char: 五十音インデックス文字（例: "あ", "か"）。
+        limit: 1ページあたりの件数。
+
+    Returns:
+        該当するページ番号（0-indexed）。見つからない場合は None。
+    """
+    if not char or limit <= 0:
+        return None
+
+    normalized = _hiragana_normalize(unicodedata.normalize("NFKC", char))
+    target_row = _consonant_row(normalized)
+    if target_row == 99:
+        return None
+
+    h_lo, h_hi = _ROW_BOUNDS_HIRAGANA[target_row]
+    # readings がカタカナで格納されている場合にも対応（ひらがな +0x60 = カタカナ）
+    k_lo = chr(ord(h_lo) + 0x60)
+    k_hi = chr(ord(h_hi) + 0x60)
+
+    conn = get_connection()
+    try:
+        # ① 対象行で最初に出現する reading を取得（idx_artists_reading を使用）
+        first_row = conn.execute(
+            """
+            SELECT MIN(reading) AS first_reading
+            FROM artists
+            WHERE song_count > 0
+              AND (
+                (reading >= :h_lo AND reading < :h_hi)
+                OR (reading >= :k_lo AND reading < :k_hi)
+              )
+            """,
+            {"h_lo": h_lo, "h_hi": h_hi, "k_lo": k_lo, "k_hi": k_hi},
+        ).fetchone()
+
+        if first_row is None or first_row["first_reading"] is None:
+            return None
+
+        # ② その reading より前に位置するアーティスト数を数え、ページ番号を算出
+        count_row = conn.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM artists
+            WHERE song_count > 0 AND reading < :first
+            """,
+            {"first": first_row["first_reading"]},
+        ).fetchone()
+
+        return (count_row["cnt"] if count_row else 0) // limit
+    finally:
+        conn.close()
+
+
+def get_artist_songs(artist_id: int) -> list[dict]:
     """
     特定のアーティストの楽曲一覧を取得する。
 
